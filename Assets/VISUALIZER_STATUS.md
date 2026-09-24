@@ -66,7 +66,7 @@ Stages 1–2 run once per session; stages 3–6 form a repeating loop, one itera
 | `LevelGenerator` | Checkpoint anchoring, template selection, placement search, mesh validation, fallback ladder | `ARAnchorManager`, `ARRaycastManager` |
 | `GameStateManager` | Authoritative game state: score, lives, stage progress, power-ups, object lifecycle | — |
 | `EventResolver` | Gate chain of Section 2.3 step 5; maps classified actions to game outcomes | `GameStateManager` |
-| `NetworkClient` | Secure WebSocket to gateway, cert pinning, JSON (de)serialisation, dedup, `EVENT_ACK`, `HAPTIC_CMD`, reconnect w/ backoff | `System.Net.WebSockets` / `NativeWebSocket` |
+| `NetworkClient` | Secure WebSocket to gateway, cert pinning, JSON (de)serialisation, dedup, `EVENT_ACK`, `HAPTIC_CMD`, reconnect w/ backoff | `GatewayConnection` (TcpClient + SslStream + `WebSocket.CreateFromStream`) |
 | `RenderManager` | Occlusion configuration, material/effect management, camera background | `AROcclusionManager`, `ARCameraBackground` |
 | `HUDController` | Screen-space UI, connection status, degraded-mode messaging | Unity UI |
 | `AudioManager` | Impact, collect, and rejection audio cues | Unity Audio |
@@ -114,7 +114,7 @@ XR Origin                           (XROrigin)
 GameManager                         (plain GameObject, not under XR Origin)
 ├─ GameStateManager     [script]
 ├─ EventResolver         [script]
-└─ DebugActionInput      [script]   (temporary — see §5)
+└─ NetworkClient         [script]   (gateway URL + pinned cert SHA-256 set in Inspector)
 
 [Scene-only test objects, not prefabs, used for Play Mode testing:]
 - A plain cube with TestInteractable attached (for EventResolver testing)
@@ -174,15 +174,28 @@ Authoritative state: `score`, `lives` (default 3), `stageIndex`, `hasFireFlower`
 `bool IsActionable { get; }`, `bool RespondsTo(string actionLabel)`, `void ResolveHit(string actionLabel, GameStateManager gameState)`. Anything `EventResolver` can target implements this.
 
 ### `EventResolver.cs` — 🟡 (most thoroughly validated module, zero device dependency)
-Implements the full six-gate chain exactly as specified above. Contains the `GameEvent` struct (`actionLabel`, `confidence`, `eventId`, `timestamp`) — the stand-in shape for the eventual real `GAME_EVENT` payload; once `NetworkClient` exists, it deserializes into one of these and calls `Resolve()` directly, no other change needed. Rejection at each gate logs distinctly (`REJECTED @ Gate N (reason): 'action'`). `minConfidence` defaults to 0.6; Gate 2 dedup uses an in-memory, unbounded `HashSet<string>` of seen event IDs (fine for a test session, worth reconsidering for a long real one). Gate 3's capability check is currently a `switch` with only `"fireball"` mapped to `hasFireFlower`; everything else passes through. `[RequireComponent(typeof(GameStateManager))]`. Lives on `GameManager`.
-- **Confirmed in Unity Editor Play Mode** (this logic has zero AR/device dependency and can be tested without building at all): a real target (a test cube with `TestInteractable`) was successfully resolved via a fake `"stomp"` action, incrementing score; a second `"stomp"` on the same target was correctly rejected at Gate 5 (already spent); `"fireball"` was correctly rejected at Gate 3 (no fire flower); moving the target out of range/facing correctly triggered Gate 4 rejection; manually toggling `IsSessionReady` off correctly triggered Gate 1 rejection. **Every gate has been individually exercised and confirmed correct.**
-- Gate 6's resolution currently only logs and calls the target's `ResolveHit` — spawn effects, `AudioManager` cues, and `NetworkClient`'s `HAPTIC_CMD` are explicitly TODO-commented, pending those modules.
+Implements the full six-gate chain exactly as specified above. `Resolve(GameEvent)` returns a `ResolutionResult`:
+- `Gate` is 1–5 for the gate that rejected the event, or 6 when it resolved.
+- `Reason` is the rejection reason.
+- `Target` is the object that was hit.
+- `NotRegistered` is true for gates 1–2; `NotPermitted` is true for gates 3–5.
+
+It also raises the C# event `OnEventProcessed(GameEvent, ResolutionResult)`. NetworkClient listens to it for ACKs and haptics; the HUD and AudioManager should use it as well. EventResolver itself still depends only on `GameStateManager`.
+
+Other details:
+- `GameEvent` carries `actionLabel`, `confidence`, `eventId`, `sessionId`, `windowId` and `timestamp` (the gateway's clock, used for logging only).
+- Gate 2's duplicate check uses `sessionId/eventId` as the key, with a bounded history of the last 1024 IDs (`dedupHistorySize`).
+- `minConfidence` defaults to 0.6.
+- Gate 3's capability check only maps `"fireball"` to `hasFireFlower` so far.
+- Every rejection is logged as `REJECTED @ Gate N (reason)`.
+- **Confirmed** in Editor Play Mode earlier. On 2026-09-25 it was confirmed again end to end through NetworkClient (see below).
+- Still TODO at Gate 6: spawning effects and the AudioManager cue. Haptics are handled by NetworkClient.
 
 ### `TestInteractable.cs` — 🟡 (test-only placeholder, not real game content)
 Implements `IInteractable`. Responds to `"stomp"` by default (configurable string array), awards a configurable score (default 100), becomes permanently spent after one hit. Attached to a plain Scene cube, separate from the `TestStage` prefab — used purely to validate `EventResolver`.
 
-### `DebugActionInput.cs` — 🟡 (explicitly temporary, will be deleted/replaced)
-Binds keyboard keys 1–6 to fake `GameEvent`s for the six action labels, fixed confidence 0.95, auto-incrementing fake event IDs, feeding directly into `EventResolver.Resolve()`. Uses legacy `UnityEngine.Input`, which required switching **Active Input Handling to "Both"** in Player Settings (Unity 6 templates default to the new Input System exclusively, which throws on legacy `Input` calls). Only works with a real keyboard — i.e., in Unity Editor Play Mode, or on-device only if a Bluetooth keyboard is paired (untested). **This script's entire purpose is to be deleted once `NetworkClient` exists and produces real events.**
+### `DebugActionInput.cs` — 🗑️ deleted (2026-09-25)
+Replaced by NetworkClient + `tools/mock_gateway.py` (interactive mode = type action names). Active Input Handling is still "Both"; it could go back to the new Input System only.
 
 ### `RenderManager.cs` — ✅ (rewritten 2026-09-24; the earlier version was never saved in the project)
 Occlusion configuration + camera background (NOT tracking-state, which is `ARSessionManager`'s job). Lives on **Main Camera** next to `AROcclusionManager`, not on XR Origin. Checks `descriptor.environmentDepthImageSupported` every frame until it stops being `Unknown`, then:
@@ -218,8 +231,42 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
 ### `HUDController` — ❌ mostly not started
 Only the narrow `ScanHUD.cs` (scan-progress-specific) exists. The report's actual `HUDController` scope — score/lives/stage display, connection status, degraded-mode messaging — has not been built. None of `EventResolver`'s six distinct rejection reasons, nor `LevelGenerator`'s `OnPlacementFailed` event, are currently wired to any player-visible feedback; they only reach `Debug.Log`.
 
-### `NetworkClient` — ❌ not started
-No WebSocket code exists at all. `DebugActionInput` is the explicit placeholder. When building this: it can be developed against a local mock WebSocket server (e.g. a small Python script) without waiting on John's real gateway, then pointed at the real URL once available. Needs: secure WebSocket connection, certificate pinning, `VISUALIZER_READY` handshake on connect, `GAME_EVENT` JSON deserialization into the existing `GameEvent` struct, `EVENT_ACK` replies, duplicate event ID handling (note: `EventResolver`'s Gate 2 already does dedup — decide whether that logic should move here, be duplicated, or stay put and have `NetworkClient` just feed everything through), `HAPTIC_CMD` sending, and reconnect-with-backoff.
+### `NetworkClient` — 🟡 built and tested headless against the mock gateway (2026-09-25)
+The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still needs John's sign-off**. `GatewayMessages.cs` is the only file to change if the field names change.
+
+**`GatewayConnection.cs`** (plain C#, no Unity dependency) handles the transport:
+- TcpClient → SslStream (TLS 1.2) → the RFC 6455 upgrade handshake → `WebSocket.CreateFromStream`.
+- **Cert pinning** compares the SHA-256 of the certificate's DER bytes against the pinned value. With a pin set, chain errors are ignored (the gateway cert is self-signed), but an unpinned CA-signed cert is still rejected.
+- **Why not `ClientWebSocket`:** Unity's implementation ignores both `ServicePointManager.ServerCertificateValidationCallback` and `ClientWebSocketOptions.RemoteCertificateValidationCallback` (set by reflection). A pinned self-signed cert therefore always fails with `UNITYTLS_X509VERIFY_FLAG_NOT_TRUSTED`. This was verified; don't switch back.
+- Receiving runs off the main thread into a `ConcurrentQueue`.
+
+**`NetworkClient.cs`** (on GameManager):
+- Drains that queue in `Update` and calls `EventResolver.Resolve`.
+- Replies with an `EVENT_ACK` for **every** event, including duplicates, carrying the outcome, gate, reason and processing time.
+- Duplicate detection stays in Gate 2 only.
+- Sends `HAPTIC_CMD` from `OnEventProcessed`:
+  - "success" on resolve, "denied" on gates 3–5, nothing on gates 1–2
+  - fireball→wrist, stomp→ankle, anything else→both
+- Reconnects with backoff starting at 0.5 s, doubling to a cap of 8 s, with ±20 % jitter. It sends `VISUALIZER_READY` after every connect.
+- Exposes `State`, `IsConnected`, `LastError`, `EventsReceived`, `LastProcessingMs` and `OnConnectionStateChanged` for the HUD.
+
+**`IOSPostProcess.cs`** adds `NSLocalNetworkUsageDescription` to Info.plist. Without it, iOS 14+ blocks LAN connections.
+
+**Tooling:**
+- `tools/mock_gateway.py` stands in for the gateway. It needs `pip install websockets`. It generates a self-signed cert into the gitignored `tools/certs/` and prints the fingerprint.
+  - Modes: interactive, `--auto <s>`, and `--script "stomp,dup,low:jump,…" --exit-after-acks`.
+  - Commands: `dup`, `newsession`, `kick` (tests reconnect).
+- `NetworkSmokeTest.cs` is a headless end-to-end test. Run it with Unity closed and **no `-quit`**:
+  `Unity -batchmode -projectPath . -executeMethod NetworkSmokeTest.Run -gatewayUrl wss://127.0.0.1:8765/ -pin <sha>`
+  It builds a throwaway scene with a stomp target 1 m ahead, expects gates `6,5,2,3,2,4`, and exits 0 or 1.
+- `NetworkSetup.cs` (**Tools ▸ MARIO ▸ Configure Network**, or run it headless with `-gatewayUrl`/`-pin`) adds the client to the scene.
+
+**Results:**
+- The smoke test passed: all six gate outcomes, their ACKs and haptics were correct. Local round trip was 1–5 ms, and processing on the phone side under 0.5 ms.
+- A wrong pin was refused, and the log printed the fingerprint the gateway actually presented.
+- Reconnect-with-backoff was seen when the gateway went away.
+
+**Scene values:** currently `wss://192.168.0.111:8765/` (the dev Mac) and the mock gateway's pin. **Change both for John's gateway.**
 
 ### `AudioManager` — ❌ not started
 No audio code exists at all.
@@ -250,7 +297,12 @@ These cost real debugging time once already — don't rediscover them:
 ## 6. Open coordination items with teammates
 
 - **Xavier**: inference hop-rate alignment (~100ms windows, 90% overlap) needs to be matched against the BLE batch size on the wearable side — unresolved as of last note, relevant once real `GAME_EVENT` traffic starts arriving and timing/dedup assumptions in `EventResolver`/`NetworkClient` need to match reality.
-- **John**: `HAPTIC_CMD` protocol/format on the wire hasn't been coordinated yet from the visualizer side — needed before `NetworkClient` can actually send it. Also the Section 4 haptic-origin correction mentioned above.
+- **John**: review and agree to `Docs/GATEWAY_PROTOCOL.md`. In particular:
+  - field names
+  - EVENT_ACK semantics (ACK every event, including duplicates)
+  - the `HAPTIC_CMD` target and pattern values
+
+  He also needs to provide his gateway certificate's SHA-256 fingerprint and the gateway URL. Separately, there's the Section 4 haptic-origin correction mentioned above.
 - **General**: `EventResolver`'s `minConfidence` (currently 0.6, arbitrarily chosen for testing) has not been validated against what Xavier's actual classifier outputs for true positives/negatives — worth revisiting once real data is available.
 
 ---
@@ -258,7 +310,7 @@ These cost real debugging time once already — don't rediscover them:
 ## 7. Suggested next steps, roughly in priority order
 
 1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
-2. **Build `NetworkClient`.** Can start immediately against a local mock WebSocket server without waiting on John. This is the biggest remaining structural piece and is what finally lets `DebugActionInput` be deleted.
+2. ~~Build `NetworkClient`~~: built and tested headless on 2026-09-25. What's left is testing it on the iPhone 17 against the mock gateway, then integrating with John's real gateway.
 3. **Build Step 6 (stage completion loop)** in `LevelGenerator` — needed before there's any actual "game" rather than a single static stage.
 4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.
 5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.

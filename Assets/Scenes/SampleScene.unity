@@ -401,7 +401,7 @@ GameObject:
   - component: {fileID: 104318745}
   - component: {fileID: 104318748}
   - component: {fileID: 104318747}
-  - component: {fileID: 104318746}
+  - component: {fileID: 104318749}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -424,20 +424,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!114 &104318746
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 104318744}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c0b0c571c55944daeafa65f5d9bf84c7, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::DebugActionInput
-  eventResolver: {fileID: 104318747}
-  fakeConfidence: 0.95
 --- !u!114 &104318747
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -453,6 +439,7 @@ MonoBehaviour:
   gameState: {fileID: 104318748}
   arCamera: {fileID: 93323756}
   minConfidence: 0.6
+  dedupHistorySize: 1024
   interactionRadius: 1.5
   facingAngleThreshold: 45
   interactableLayerMask:
@@ -475,6 +462,26 @@ MonoBehaviour:
   stageIndex: 1
   hasFireFlower: 0
   isSessionReady: 1
+--- !u!114 &104318749
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104318744}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33bb6dddb29d94d699441843d9194655, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::NetworkClient
+  eventResolver: {fileID: 104318747}
+  gatewayUrl: wss://192.168.0.111:8765/
+  pinnedCertSha256: 0FBB1549E2C7688DB21D9F74877693FEAAE4D9CF2B2E2275415C1767F607520C
+  connectOnStart: 1
+  initialBackoffSeconds: 0.5
+  maxBackoffSeconds: 8
+  backoffJitter: 0.2
+  sendHaptics: 1
 --- !u!1 &231384775
 GameObject:
   m_ObjectHideFlags: 0
