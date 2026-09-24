@@ -20,6 +20,14 @@ using UnityEngine.XR.ARSubsystems;
 /// fits anywhere, it signals OnPlacementFailed (for an HUD move-prompt)
 /// and retries automatically after a short delay.
 ///
+/// On LiDAR devices the scanned room mesh (ARMeshManager, on its own
+/// ARMesh layer) is what the CheckBox tests against. Because that mesh
+/// includes the floor itself, the test box is lifted by
+/// floorClearanceMargin so floor triangles and depth noise don't count as
+/// obstructions. Placement also waits briefly for the mesh to settle after
+/// the scan completes, so stages don't land inside unmeshed furniture.
+/// On non-LiDAR devices meshing never runs and there is no wait.
+///
 /// Note: this places a single stage. Chaining further stages across a
 /// repeating loop is Step 6, and depends on stage-completion logic that
 /// doesn't exist yet.
@@ -32,6 +40,8 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private ARAnchorManager anchorManager;
     [SerializeField] private ARRaycastManager raycastManager;
     [SerializeField] private Camera arCamera;
+    [Tooltip("Optional: the ARMeshManager (on the 'AR Meshes' child). Auto-found in children if left empty.")]
+    [SerializeField] private ARMeshManager meshManager;
 
     [Header("Debug")]
     [Tooltip("Optional: a simple visible placeholder instantiated under the checkpoint anchor, so you can confirm placement before real stage prefabs exist.")]
@@ -50,9 +60,22 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private float angleStep = 15f;
     [Tooltip("Yaw rotations tried at each candidate position.")]
     [SerializeField] private float[] rotationCandidates = { 0f, 90f, 180f, 270f };
+    [Tooltip("Layers that count as obstructions. Should be the ARMesh layer only, so debug markers and stage colliders don't block placement.")]
     [SerializeField] private LayerMask obstructionLayerMask = ~0;
+    [Tooltip("Height (metres) the obstruction test box is lifted off the floor, so the LiDAR floor mesh and its noise don't count as obstructions.")]
+    [SerializeField] private float floorClearanceMargin = 0.1f;
     [Tooltip("Seconds to wait before retrying if no placement is found anywhere.")]
     [SerializeField] private float retryDelaySeconds = 2f;
+
+    [Header("LiDAR Mesh Settling")]
+    [Tooltip("Seconds after scan completion to let the room mesh fill in before searching for placements (LiDAR devices only).")]
+    [SerializeField] private float meshSettleSeconds = 3f;
+    [Tooltip("Minimum number of mesh chunks required before searching for placements (LiDAR devices only).")]
+    [SerializeField] private int minMeshChunks = 1;
+    [Tooltip("Give up waiting for mesh chunks after this many seconds and place anyway.")]
+    [SerializeField] private float maxMeshWaitSeconds = 10f;
+    [Tooltip("Seconds between checks while waiting for the mesh to settle.")]
+    [SerializeField] private float meshWaitPollSeconds = 0.5f;
 
     [Header("Events")]
     [Tooltip("Fired each time a full search (all templates, all candidates) fails to find a placement.")]
@@ -60,8 +83,23 @@ public class LevelGenerator : MonoBehaviour
 
     public ARAnchor CheckpointAnchor { get; private set; }
 
+    /// <summary>True while placement is deferred waiting for the LiDAR mesh to settle.</summary>
+    public bool IsWaitingForMesh { get; private set; }
+    /// <summary>Number of room-mesh chunks currently tracked (0 on non-LiDAR devices).</summary>
+    public int MeshChunkCount => IsMeshingActive ? meshManager.meshes.Count : 0;
+    public bool IsMeshingActive => meshManager != null && meshManager.enabled
+        && meshManager.subsystem != null && meshManager.subsystem.running;
+    /// <summary>Candidates rejected because something on the obstruction layers was in the way, across all searches.</summary>
+    public int TotalObstructedCandidates { get; private set; }
+    /// <summary>Name of the collider that most recently blocked a candidate.</summary>
+    public string LastObstructionName { get; private set; } = "";
+
     private bool _stagePlaced;
+    private float _scanCompleteTime;
+    private int _searchObstructed;
+    private int _searchNoFloor;
     private static readonly List<ARRaycastHit> s_Hits = new();
+    private static readonly Collider[] s_Overlap = new Collider[1];
 
     private void Awake()
     {
@@ -69,6 +107,7 @@ public class LevelGenerator : MonoBehaviour
         if (anchorManager == null) anchorManager = GetComponent<ARAnchorManager>();
         if (raycastManager == null) raycastManager = GetComponent<ARRaycastManager>();
         if (arCamera == null) arCamera = Camera.main;
+        if (meshManager == null) meshManager = GetComponentInChildren<ARMeshManager>();
     }
 
     private void OnEnable()
@@ -84,6 +123,7 @@ public class LevelGenerator : MonoBehaviour
     private void HandleScanComplete()
     {
         if (CheckpointAnchor != null) return; // one checkpoint per session
+        _scanCompleteTime = Time.time;
         CreateCheckpointAnchorAsync();
     }
 
@@ -119,13 +159,24 @@ public class LevelGenerator : MonoBehaviour
     {
         if (CheckpointAnchor == null || _stagePlaced) return;
 
+        if (ShouldWaitForMesh())
+        {
+            IsWaitingForMesh = true;
+            Invoke(nameof(TryPlaceStage), meshWaitPollSeconds);
+            return;
+        }
+        IsWaitingForMesh = false;
+
+        _searchObstructed = 0;
+        _searchNoFloor = 0;
+
         if (FindAndInstantiateStage())
         {
             _stagePlaced = true;
             return;
         }
 
-        Debug.LogWarning("[LevelGenerator] No valid placement found for any template — prompting player to move and retrying shortly.");
+        Debug.LogWarning($"[LevelGenerator] No valid placement found for any template ({_searchObstructed} candidates obstructed, last by '{LastObstructionName}'; {_searchNoFloor} with no floor below) — prompting player to move and retrying shortly.");
         OnPlacementFailed?.Invoke();
         Invoke(nameof(TryPlaceStage), retryDelaySeconds);
     }
@@ -143,7 +194,7 @@ public class LevelGenerator : MonoBehaviour
             if (TryFindValidPlacement(footprint, out var pose))
             {
                 Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
-                Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position}.");
+                Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position} after {_searchObstructed} obstructed candidates ({MeshChunkCount} mesh chunks).");
                 return true;
             }
         }
@@ -177,7 +228,10 @@ public class LevelGenerator : MonoBehaviour
                 var approximatePoint = anchorTransform.position + direction.normalized * distance;
 
                 if (!TryGetFloorProjectedPose(approximatePoint, out var floorPose))
+                {
+                    _searchNoFloor++;
                     continue;
+                }
 
                 foreach (var rotationY in rotationCandidates)
                 {
@@ -195,11 +249,45 @@ public class LevelGenerator : MonoBehaviour
         return false;
     }
 
+    /// <summary>
+    /// On LiDAR devices, defers placement until the room mesh has had time to
+    /// fill in. Gives up after maxMeshWaitSeconds so a sparse mesh can't stall
+    /// the game forever. Always false when meshing isn't running.
+    /// </summary>
+    private bool ShouldWaitForMesh()
+    {
+        if (!IsMeshingActive) return false;
+
+        float elapsed = Time.time - _scanCompleteTime;
+        if (elapsed >= maxMeshWaitSeconds)
+        {
+            if (MeshChunkCount < minMeshChunks)
+                Debug.LogWarning($"[LevelGenerator] Mesh still sparse after {maxMeshWaitSeconds}s ({MeshChunkCount} chunks) — placing anyway.");
+            return false;
+        }
+
+        bool settled = elapsed >= meshSettleSeconds && MeshChunkCount >= minMeshChunks;
+        if (!settled && !IsWaitingForMesh)
+            Debug.Log($"[LevelGenerator] Waiting for room mesh to settle ({MeshChunkCount} chunks so far).");
+        return !settled;
+    }
+
     private bool IsPlacementClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation)
     {
+        // Lift the box off the floor by the margin (shrinking it to keep the same
+        // top), so the floor's own mesh triangles don't register as obstructions.
         var halfExtents = footprint.HalfExtents;
-        var boxCenter = floorPosition + Vector3.up * halfExtents.y;
-        return !Physics.CheckBox(boxCenter, halfExtents, rotation, obstructionLayerMask);
+        float margin = Mathf.Min(floorClearanceMargin, footprint.clearance * 0.5f);
+        halfExtents.y -= margin * 0.5f;
+        var boxCenter = floorPosition + Vector3.up * (margin + halfExtents.y);
+
+        int hits = Physics.OverlapBoxNonAlloc(boxCenter, halfExtents, s_Overlap, rotation, obstructionLayerMask, QueryTriggerInteraction.Ignore);
+        if (hits == 0) return true;
+
+        _searchObstructed++;
+        TotalObstructedCandidates++;
+        LastObstructionName = s_Overlap[0].name;
+        return false;
     }
 
     /// <summary>

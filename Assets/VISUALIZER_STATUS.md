@@ -44,7 +44,8 @@ The design report is a 33-page PDF and is the single source of truth for anythin
 
 **Test hardware:**
 - **iPhone 17 (non-Pro)** — Oliver's personal device. Supports basic ARKit tracking (world tracking, plane detection, tracking-state reporting) but **has no LiDAR scanner**, so anything depending on `ARMeshManager` (scene mesh reconstruction) or `AROcclusionManager` (depth occlusion) produces no data / reports unsupported on this device. This is a known, permanent limitation of this specific phone, not a bug.
-- **iPhone 16 Pro Max** — the actual project device (has LiDAR), used by the team for final integration and anything LiDAR-dependent. Access has been limited during solo development.
+- **"Wen Le" — iPhone 17 Pro Max (iPhone18,2), has LiDAR** — used from 2026-09-24 for all LiDAR work (occlusion, scene mesh). Occlusion and meshing confirmed working on it.
+- **iPhone 16 Pro Max** — the team's project device (has LiDAR), for final integration.
 
 ### The six-stage algorithm (design report Section 2.3)
 
@@ -101,12 +102,14 @@ XR Origin                           (XROrigin)
 ├─ ARSessionManager     [script]
 ├─ LevelGenerator       [script]
 ├─ Camera Offset
-│  └─ Main Camera                  (ARCameraManager, ARCameraBackground, TrackedPoseDriver)
-│     └─ [RenderManager should live here — see §5, not yet attached]
+│  └─ Main Camera                  (ARCameraManager, ARCameraBackground, TrackedPoseDriver,
+│                                     AROcclusionManager, RenderManager)
 └─ AR Meshes                        (child GameObject — ARMeshManager MUST live on a
                                      child of XR Origin, not on XR Origin itself; mesh
-                                     prefab = empty GO + MeshFilter + MeshCollider,
-                                     Convex unchecked, no MeshRenderer)
+                                     prefab = "AR Mesh (Debug)" during LiDAR bring-up
+                                     (AR Mesh + translucent cyan MeshRenderer); switch to
+                                     plain "AR Mesh" via Tools ▸ MARIO ▸ Mesh Debug View ▸ Off.
+                                     Both are on the ARMesh layer (6), Convex unchecked)
 
 GameManager                         (plain GameObject, not under XR Origin)
 ├─ GameStateManager     [script]
@@ -125,7 +128,7 @@ GameManager                         (plain GameObject, not under XR Origin)
   the only entry in LevelGenerator's Stage Templates list so far
 
 A screen-space Canvas + TextMeshPro text object exists with ScanHUD attached,
-showing live scan progress.
+showing live scan progress, plus a "LidarDebug (TMP)" object with LidarDebugHUD.
 ```
 
 ---
@@ -150,9 +153,15 @@ Simple screen-space `TMP_Text` readout: shows `"Scanning floor: X / Y m²"` whil
 - **Step 3 (stage generation)**: `TryPlaceStage()` orders `stageTemplates` (each requiring a `StageFootprint` component) by footprint area descending. For each template, searches the anchor's forward arc (±60°, configurable) at several distances (0.5–2.5m), falling back to the full circle if the arc yields nothing; at each candidate, tries several yaw rotations (0/90/180/270°); validates each with `Physics.CheckBox` against the candidate's footprint half-extents. On success, instantiates the prefab as a child of the checkpoint anchor. On total failure across all templates, fires `OnPlacementFailed` and retries automatically after `retryDelaySeconds` (default 2s) via `Invoke` — no tap-to-retry, consistent with the no-touch-input constraint.
 - `[RequireComponent(typeof(ARSessionManager), typeof(ARAnchorManager), typeof(ARRaycastManager))]`. Lives on XR Origin.
 - **Confirmed on-device**: anchor stays correctly pinned to the floor across movement (ARKit's anchor-correction working as expected). Stage placement succeeds; one real multi-retry-then-success case was observed and diagnosed as the floor plane's *polygon boundary* not yet having grown to cover the candidate point at the exact moment scanning completed (not a Physics.CheckBox rejection) — a few seconds of continued passive tracking resolved it. This is expected behavior, not a bug.
+- **LiDAR additions (2026-09-24), ✅ confirmed on the LiDAR iPhone**:
+  - `obstructionLayerMask` = `ARMesh` layer only, so the debug marker sphere and stage colliders no longer block placement.
+  - The LiDAR mesh includes the floor, so `IsPlacementClear` lifts the test box by `floorClearanceMargin` (0.1 m). Without this, every candidate hits the floor mesh.
+  - On LiDAR devices, placement waits `meshSettleSeconds` (3 s) after scan completion and for ≥ `minMeshChunks` chunks, capped at `maxMeshWaitSeconds` (10 s). Non-LiDAR devices don't wait.
+  - Uses `Physics.OverlapBoxNonAlloc`, not `CheckBox`, so it can record the blocking collider. It exposes `TotalObstructedCandidates`, `LastObstructionName`, `MeshChunkCount`, `IsMeshingActive` and `IsWaitingForMesh`.
+  - First on-device run (a small bedroom): 144 candidates were rejected by real room-mesh chunks, then the stage was placed on open floor.
 - **Caveats / not yet exercised**:
   - Only **one stage template** (`TestStage`) exists — the "fall back to a smaller compact template" tier has never actually been tested since there's nothing smaller to fall back to.
-  - `Physics.CheckBox` has only ever encountered the **debug marker sphere's own default collider** as an obstruction (this actually happened once, correctly rejecting close-in candidates) — it has never been tested against real room geometry, since that requires the LiDAR mesh collider pipeline, which produces no data on the non-Pro test device.
+  - The obstruction test has now run against real room mesh, but it hasn't been measured systematically (for example, how often valid floor near furniture is wrongly rejected). ARKit mesh classification (removing floor-classified faces instead of using a margin) is a possible refinement.
   - Currently places **exactly one stage per checkpoint** and stops (a `_stagePlaced` guard) — chaining further stages is Step 6, not yet built.
 
 ### `StageFootprint.cs` — ✅
@@ -175,10 +184,36 @@ Implements `IInteractable`. Responds to `"stomp"` by default (configurable strin
 ### `DebugActionInput.cs` — 🟡 (explicitly temporary, will be deleted/replaced)
 Binds keyboard keys 1–6 to fake `GameEvent`s for the six action labels, fixed confidence 0.95, auto-incrementing fake event IDs, feeding directly into `EventResolver.Resolve()`. Uses legacy `UnityEngine.Input`, which required switching **Active Input Handling to "Both"** in Player Settings (Unity 6 templates default to the new Input System exclusively, which throws on legacy `Input` calls). Only works with a real keyboard — i.e., in Unity Editor Play Mode, or on-device only if a Bluetooth keyboard is paired (untested). **This script's entire purpose is to be deleted once `NetworkClient` exists and produces real events.**
 
-### `RenderManager.cs` — ⚠️ NOT YET TESTED
-Occlusion configuration + camera background (the narrower, correct scope per the module table — NOT tracking-state, which is `ARSessionManager`'s job). Polls `AROcclusionManager.descriptor.environmentDepthImageSupported` every frame until it resolves from `Supported.Unknown` to a definite answer (this can take a few frames after session start, per AR Foundation's own docs — don't check only once in `Awake`). If supported: sets `requestedEnvironmentDepthMode = EnvironmentDepthMode.Best` and `requestedOcclusionPreferenceMode = OcclusionPreferenceMode.PreferEnvironmentOcclusion`. If unsupported: logs a warning (the expected outcome on the non-Pro test device). `[RequireComponent(typeof(AROcclusionManager))]`.
-- **Must be attached to the actual AR Camera GameObject** (the one with `ARCameraManager`/`ARCameraBackground`, a child of XR Origin under Camera Offset) — **not** to XR Origin's root, unlike every other manager script in this project. This is a placement detail specific to this one script; get it wrong and it'll either fail to find its dependencies or configure the wrong camera.
-- **Status as of this document**: code was written and delivered, but as of the last exchange, the developer had not yet confirmed access to LiDAR-capable hardware, so this has likely **not yet even been attached to the scene**, let alone tested. Confirm hardware access before spending more time here.
+### `RenderManager.cs` — ✅ (rewritten 2026-09-24; the earlier version was never saved in the project)
+Occlusion configuration + camera background (NOT tracking-state, which is `ARSessionManager`'s job). Lives on **Main Camera** next to `AROcclusionManager`, not on XR Origin. Checks `descriptor.environmentDepthImageSupported` every frame until it stops being `Unknown`, then:
+- if supported: environment depth `Best`, temporal smoothing on, `PreferEnvironmentOcclusion`
+- if unsupported: logs a warning and disables the `AROcclusionManager`
+
+Human segmentation is always off. Exposes `IsResolved`, `OcclusionSupported`, `OcclusionActive` and the `OnOcclusionStateResolved(bool)` event.
+- **Confirmed on the LiDAR iPhone**: the HUD reports occlusion active, and a person and a desk correctly hide virtual content behind them.
+
+### `LidarDebugHUD.cs` — ✅ (temporary)
+A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed candidate count and the last collider that blocked a placement. Delete once `HUDController` exists.
+
+### Editor tooling (`Assets/Editor/`) — ✅
+- `LidarSetup.cs` — **Tools ▸ MARIO ▸ Configure LiDAR** (or `-executeMethod LidarSetup.Run`). Safe to re-run. It:
+  - creates the `ARMesh` layer
+  - adds the occlusion components to Main Camera
+  - builds `AR Mesh (Debug).prefab` and `Assets/Materials/ARMeshDebug.mat`
+  - sets up LevelGenerator's mask and mesh reference
+  - creates the HUD object
+  - sets iOS signing (team U5T7NBV8MB, automatic)
+
+  Also **Tools ▸ MARIO ▸ Mesh Debug View ▸ On/Off**.
+- `BuildScript.cs` — **Tools ▸ MARIO ▸ Build iOS** (or `-executeMethod BuildScript.BuildIOS`). Writes a development build of the Xcode project to `ios-build/`, which is now gitignored.
+- Headless build → device loop (Unity must be closed):
+  ```
+  Unity -batchmode -quit -projectPath . -buildTarget iOS -executeMethod BuildScript.BuildIOS
+  xcodebuild -project ios-build/Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Debug \
+    -destination generic/platform=iOS -derivedDataPath <dd> -allowProvisioningUpdates build
+  xcrun devicectl device install app --device <id> <dd>/Build/Products/Debug-iphoneos/MARIO.app
+  xcrun devicectl device process launch --device <id> --console com.cg4002.mario
+  ```
 
 ### `HUDController` — ❌ mostly not started
 Only the narrow `ScanHUD.cs` (scan-progress-specific) exists. The report's actual `HUDController` scope — score/lives/stage display, connection status, degraded-mode messaging — has not been built. None of `EventResolver`'s six distinct rejection reasons, nor `LevelGenerator`'s `OnPlacementFailed` event, are currently wired to any player-visible feedback; they only reach `Debug.Log`.
@@ -202,6 +237,8 @@ These cost real debugging time once already — don't rediscover them:
 - **Unity 6 defaults to the new Input System exclusively.** Any script using legacy `UnityEngine.Input` (like `DebugActionInput`) throws `InvalidOperationException` until Player Settings → Active Input Handling is set to **"Both"** (requires an Editor restart).
 - **`ARMeshManager` must be a child GameObject of XR Origin, not XR Origin itself** — unlike `ARPlaneManager`, `ARAnchorManager`, and `ARRaycastManager`, which all go directly on XR Origin's root. Unity throws a hierarchy error if you get this wrong.
 - **`MeshCollider.convex` must stay unchecked** on the AR Mesh prefab — room geometry is non-convex, and Convex mode would collapse it into a simplified hull, losing gaps like the space under furniture. Static (non-Rigidbody) concave MeshColliders work fine with `Physics.CheckBox`/`OverlapSphere` queries.
+- **The first install on a new phone won't launch** ("invalid code signature… not explicitly trusted") until you trust the developer profile on the phone: Settings ▸ General ▸ VPN & Device Management.
+- **The yellow translucent planes with black edges** in the camera view are the `AR Default Plane` visualiser. The **cyan** overlay is the LiDAR debug mesh. The debug mesh sits right on real surfaces, so parts of it flicker or disappear under depth occlusion. That's expected.
 - **The non-Pro iPhone 17 has no LiDAR.** `ARMeshManager` produces zero mesh data and `AROcclusionManager.descriptor.environmentDepthImageSupported` reports `Unsupported` on this device — permanently, not a transient bug. This blocks real-world validation of: `LevelGenerator`'s obstruction-rejection against actual furniture, and all of `RenderManager`'s occlusion behavior. Both need the team's iPhone 16 Pro Max (or another LiDAR-capable device) to properly test. Don't burn time trying to make these work on the non-Pro phone.
 - **The debug marker sphere has its own default `SphereCollider`** (from being created as a plain Unity 3D primitive) and sits at the checkpoint anchor. It has already caused a real, correct `Physics.CheckBox` rejection during placement search testing — worth remembering this exists when interpreting *any* future placement-search behavior, since it's easy to mistake for either a bug or evidence the physics validation is testing against real room geometry (it isn't, yet).
 - **New/very recent iPhone hardware sometimes needs the latest Xcode** to mount a compatible on-device "developer disk image" — if you see `kAMDMobileImageMounterPersonalizedBundleMissingVariantError`, the fix is almost always updating Xcode (and macOS, if the App Store won't offer the update otherwise).
@@ -220,7 +257,7 @@ These cost real debugging time once already — don't rediscover them:
 
 ## 7. Suggested next steps, roughly in priority order
 
-1. **Confirm LiDAR hardware access.** This unblocks `RenderManager` testing and real obstruction-testing for `LevelGenerator`'s placement search — both currently unverified against real geometry.
+1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
 2. **Build `NetworkClient`.** Can start immediately against a local mock WebSocket server without waiting on John. This is the biggest remaining structural piece and is what finally lets `DebugActionInput` be deleted.
 3. **Build Step 6 (stage completion loop)** in `LevelGenerator` — needed before there's any actual "game" rather than a single static stage.
 4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.

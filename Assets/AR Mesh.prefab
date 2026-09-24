@@ -11,7 +11,7 @@ GameObject:
   - component: {fileID: 6321708812891937337}
   - component: {fileID: 551805240323841657}
   - component: {fileID: 5243184357071135703}
-  m_Layer: 0
+  m_Layer: 6
   m_Name: AR Mesh
   m_TagString: Untagged
   m_Icon: {fileID: 0}
