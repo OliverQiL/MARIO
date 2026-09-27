@@ -231,7 +231,7 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
 ### `HUDController` — ❌ mostly not started
 Only the narrow `ScanHUD.cs` (scan-progress-specific) exists. The report's actual `HUDController` scope — score/lives/stage display, connection status, degraded-mode messaging — has not been built. None of `EventResolver`'s six distinct rejection reasons, nor `LevelGenerator`'s `OnPlacementFailed` event, are currently wired to any player-visible feedback; they only reach `Debug.Log`.
 
-### `NetworkClient` — 🟡 built and tested headless against the mock gateway (2026-09-25)
+### `NetworkClient` — ✅ tested on the iPhone 17 against the mock gateway over Wi-Fi (2026-09-28)
 The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still needs John's sign-off**. `GatewayMessages.cs` is the only file to change if the field names change.
 
 **`GatewayConnection.cs`** (plain C#, no Unity dependency) handles the transport:
@@ -265,6 +265,14 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 - The smoke test passed: all six gate outcomes, their ACKs and haptics were correct. Local round trip was 1–5 ms, and processing on the phone side under 0.5 ms.
 - A wrong pin was refused, and the log printed the fingerprint the gateway actually presented.
 - Reconnect-with-backoff was seen when the gateway went away.
+
+**On-device test** (iPhone 17 connected to the dev Mac over Wi-Fi, 2026-09-28):
+- The first attempts timed out (errno 60) while the Local Network permission prompt was showing. After "Allow" was tapped, the retry connected by itself.
+- `VISUALIZER_READY` arrived. All 6 scripted events were ACKed with the correct gates, with no target in view on the phone: 4, 2 (duplicate), 3, 2 (low confidence), 4 and 4.
+- Every HAPTIC_CMD had the right target and pattern.
+- After the gateway exited, the phone kept retrying with backoff (errno 61 = connection refused).
+- Phone-side processing took 0.7–3.8 ms.
+- **Round trip was about 100–185 ms, compared with 1–5 ms in the local headless test.** That is a large share of the 275 ms budget and needs investigating before integration. Likely causes are iPhone Wi-Fi power-save and the wait for the next frame's `Update` before the phone processes an event. To measure, have the gateway timestamp each event and compare with the ACK, and test on the team's router.
 
 **Scene values:** currently `wss://192.168.0.111:8765/` (the dev Mac) and the mock gateway's pin. **Change both for John's gateway.**
 
@@ -310,7 +318,7 @@ These cost real debugging time once already — don't rediscover them:
 ## 7. Suggested next steps, roughly in priority order
 
 1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
-2. ~~Build `NetworkClient`~~: built and tested headless on 2026-09-25. What's left is testing it on the iPhone 17 against the mock gateway, then integrating with John's real gateway.
+2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
 3. **Build Step 6 (stage completion loop)** in `LevelGenerator` — needed before there's any actual "game" rather than a single static stage.
 4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.
 5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.
