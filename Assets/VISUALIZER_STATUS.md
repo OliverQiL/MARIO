@@ -279,8 +279,24 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 ### `AudioManager` — ❌ not started
 No audio code exists at all.
 
-### Step 6 (stage completion loop) — ❌ not started
-`LevelGenerator` currently has no concept of a stage being "completed" (no goal-detection logic), no destruction of spent stage geometry/anchor, and no re-anchoring-and-looping-back-to-Step-3 logic. This needs `EventResolver`'s Gate 6 resolution path to actually signal stage completion somehow (not yet designed), and probably a `_stagePlaced` reset in `LevelGenerator` plus a new anchor-creation call.
+### Step 6 (stage completion loop) — ⚠️ built; headless regression passes; walking test on device pending (2026-09-28)
+- **`StageGoal.cs`** goes on a child of a stage prefab. It counts as reached when the player (the AR camera) stays within `reachRadius` (0.6 m, measured horizontally) for `dwellSeconds` (0.5 s). It fires `OnReached` once and exposes `PlayerDistance`. `TestStage` now has a "Goal" child at its far (+Z) edge, with a pole and a yellow flag (visual only, no colliders), added by `StageLoopSetup`.
+- **The loop in `LevelGenerator`:**
+  - Placing a stage finds its `StageGoal` and fires `OnStageStarted`.
+  - Reaching the goal fires `OnStageCompleted`. After `transitionDelaySeconds` (1.5 s), the stage is destroyed, the anchor is removed (`TryRemoveAnchor`), a new checkpoint anchor is created at the player's current floor position and heading, and placement runs again.
+  - Exposes `CurrentStage`, `CurrentGoal`, `IsTransitioning` and `StagesCompleted`.
+  - Creating the checkpoint now retries if there's no floor under the player or the anchor call fails, and is guarded against running twice at once.
+- **Fixed the checkpoint yaw:** it used the floor plane's arbitrary rotation. It now uses the camera's heading projected onto the floor, as the design intends, so the "forward arc" search really is in front of the player.
+- **Session readiness in `GameStateManager`** (Gate 1) is now `isTracking && isStageActive`:
+  - `SetSessionReady`/`SetSessionNotReady` (the method names are kept for the existing listeners) now only drive tracking.
+  - `BeginStage()` / `CompleteStage()` drive the stage flag. `CompleteStage` also awards `stageClearBonus` (500) and increments `stageIndex`.
+  - As a result, Gate 1 now correctly drops events during scanning, placement and stage transitions. Before this change it defaulted to open.
+- Wiring: persistent UnityEvent listeners (LevelGenerator → GameStateManager), added by **Tools ▸ MARIO ▸ Configure Stage Loop** (`StageLoopSetup.cs`).
+- The `ScanHUD` line shows `Stage N · Score S — walk to the flag (X m)` after the scan, then "placing stage…" or "Stage clear!".
+- **Not yet:**
+  - A goal can't require clearing the stage's targets first.
+  - Lives aren't lost anywhere, so the "loss of all lives" exit doesn't exist.
+  - Reaching a goal while tracking is lost isn't specially handled. The camera pose freezes, so in practice it can't happen.
 
 ---
 
@@ -319,7 +335,7 @@ These cost real debugging time once already — don't rediscover them:
 
 1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
 2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
-3. **Build Step 6 (stage completion loop)** in `LevelGenerator` — needed before there's any actual "game" rather than a single static stage.
+3. ~~Build Step 6 (stage completion loop)~~: built on 2026-09-28; the walking test on the device is still to do.
 4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.
 5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.
 6. **Build `AudioManager`** — currently entirely unstarted.

@@ -461,7 +461,9 @@ MonoBehaviour:
   lives: 3
   stageIndex: 1
   hasFireFlower: 0
-  isSessionReady: 1
+  stageClearBonus: 500
+  isTracking: 1
+  isStageActive: 0
 --- !u!114 &104318749
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -889,6 +891,8 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ScanHUD
   sessionManager: {fileID: 2027910256}
   statusText: {fileID: 546084746}
+  levelGenerator: {fileID: 2027910260}
+  gameState: {fileID: 104318748}
   scanningFormat: "Scanning floor: {0:F1} / {1:F1} m\xB2"
   completeFormat: "Scan complete! ({0:F1} m\xB2 scanned)"
   scanningColor: {r: 1, g: 1, b: 1, a: 1}
@@ -1632,9 +1636,40 @@ MonoBehaviour:
   minMeshChunks: 1
   maxMeshWaitSeconds: 10
   meshWaitPollSeconds: 0.5
+  transitionDelaySeconds: 1.5
   OnPlacementFailed:
     m_PersistentCalls:
       m_Calls: []
+  OnStageStarted:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 104318748}
+        m_TargetAssemblyTypeName: GameStateManager, Assembly-CSharp
+        m_MethodName: BeginStage
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  OnStageCompleted:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 104318748}
+        m_TargetAssemblyTypeName: GameStateManager, Assembly-CSharp
+        m_MethodName: CompleteStage
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

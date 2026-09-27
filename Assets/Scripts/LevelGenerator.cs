@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
@@ -28,9 +29,13 @@ using UnityEngine.XR.ARSubsystems;
 /// the scan completes, so stages don't land inside unmeshed furniture.
 /// On non-LiDAR devices meshing never runs and there is no wait.
 ///
-/// Note: this places a single stage. Chaining further stages across a
-/// repeating loop is Step 6, and depends on stage-completion logic that
-/// doesn't exist yet.
+/// Step 6 (stage loop): each stage prefab carries a StageGoal. When the
+/// player physically reaches it, OnStageCompleted fires (closing Gate 1 via
+/// GameStateManager), and after a short pause the completed stage and its
+/// anchor are destroyed, a fresh checkpoint anchor is created at the
+/// player's current floor position/heading, and Step 3 runs again. Re-anchoring
+/// every stage bounds both memory and accumulated tracking drift.
+/// OnStageStarted fires each time a stage is placed and playable.
 /// </summary>
 [RequireComponent(typeof(ARSessionManager), typeof(ARAnchorManager), typeof(ARRaycastManager))]
 public class LevelGenerator : MonoBehaviour
@@ -77,11 +82,24 @@ public class LevelGenerator : MonoBehaviour
     [Tooltip("Seconds between checks while waiting for the mesh to settle.")]
     [SerializeField] private float meshWaitPollSeconds = 0.5f;
 
+    [Header("Stage Loop")]
+    [Tooltip("Seconds between reaching a goal and the next stage appearing, so the player registers the completion.")]
+    [SerializeField] private float transitionDelaySeconds = 1.5f;
+
     [Header("Events")]
     [Tooltip("Fired each time a full search (all templates, all candidates) fails to find a placement.")]
     public UnityEvent OnPlacementFailed;
+    [Tooltip("Fired when a stage has been placed and is playable. Wire to GameStateManager.BeginStage.")]
+    public UnityEvent OnStageStarted;
+    [Tooltip("Fired when the player reaches the current stage's goal. Wire to GameStateManager.CompleteStage.")]
+    public UnityEvent OnStageCompleted;
 
     public ARAnchor CheckpointAnchor { get; private set; }
+    /// <summary>The live stage instance, or null while scanning/placing/transitioning.</summary>
+    public GameObject CurrentStage { get; private set; }
+    public StageGoal CurrentGoal { get; private set; }
+    public bool IsTransitioning { get; private set; }
+    public int StagesCompleted { get; private set; }
 
     /// <summary>True while placement is deferred waiting for the LiDAR mesh to settle.</summary>
     public bool IsWaitingForMesh { get; private set; }
@@ -95,6 +113,7 @@ public class LevelGenerator : MonoBehaviour
     public string LastObstructionName { get; private set; } = "";
 
     private bool _stagePlaced;
+    private bool _creatingAnchor;
     private float _scanCompleteTime;
     private int _searchObstructed;
     private int _searchNoFloor;
@@ -129,16 +148,27 @@ public class LevelGenerator : MonoBehaviour
 
     private async void CreateCheckpointAnchorAsync()
     {
+        if (CheckpointAnchor != null || _creatingAnchor) return;
+
         if (!TryGetFloorProjectedPose(arCamera.transform.position, out var pose))
         {
-            Debug.LogWarning("[LevelGenerator] Scan completed but found no floor directly below the player.");
+            Debug.LogWarning("[LevelGenerator] No detected floor directly below the player — retrying checkpoint shortly.");
+            Invoke(nameof(CreateCheckpointAnchorAsync), retryDelaySeconds);
             return;
         }
 
+        // Keep only yaw: the stage should face the way the player is looking, level with the floor.
+        var forward = Vector3.ProjectOnPlane(arCamera.transform.forward, Vector3.up);
+        if (forward.sqrMagnitude > 1e-4f)
+            pose.rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
+
+        _creatingAnchor = true;
         var result = await anchorManager.TryAddAnchorAsync(pose);
+        _creatingAnchor = false;
         if (!result.status.IsSuccess())
         {
-            Debug.LogError($"[LevelGenerator] Failed to create checkpoint anchor: {result.status}");
+            Debug.LogError($"[LevelGenerator] Failed to create checkpoint anchor: {result.status} — retrying shortly.");
+            Invoke(nameof(CreateCheckpointAnchorAsync), retryDelaySeconds);
             return;
         }
 
@@ -193,8 +223,9 @@ public class LevelGenerator : MonoBehaviour
             var footprint = template.GetComponent<StageFootprint>();
             if (TryFindValidPlacement(footprint, out var pose))
             {
-                Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
+                CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
                 Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position} after {_searchObstructed} obstructed candidates ({MeshChunkCount} mesh chunks).");
+                StartStage();
                 return true;
             }
         }
@@ -247,6 +278,54 @@ public class LevelGenerator : MonoBehaviour
 
         pose = default;
         return false;
+    }
+
+    // ---- Step 6: stage loop ----
+
+    private void StartStage()
+    {
+        CurrentGoal = CurrentStage.GetComponentInChildren<StageGoal>();
+        if (CurrentGoal != null)
+        {
+            CurrentGoal.Initialise(arCamera.transform);
+            CurrentGoal.OnReached += HandleGoalReached;
+        }
+        else
+        {
+            Debug.LogWarning($"[LevelGenerator] Stage '{CurrentStage.name}' has no StageGoal — it can never be completed.");
+        }
+
+        OnStageStarted?.Invoke();
+    }
+
+    private void HandleGoalReached(StageGoal goal)
+    {
+        if (IsTransitioning || goal != CurrentGoal) return;
+
+        goal.OnReached -= HandleGoalReached;
+        IsTransitioning = true;
+        StagesCompleted++;
+        Debug.Log($"[LevelGenerator] Stage complete ({StagesCompleted} so far) — next stage in {transitionDelaySeconds:F1}s.");
+        OnStageCompleted?.Invoke();
+        StartCoroutine(TransitionToNextStage());
+    }
+
+    private IEnumerator TransitionToNextStage()
+    {
+        yield return new WaitForSeconds(transitionDelaySeconds);
+
+        if (CurrentStage != null) Destroy(CurrentStage);
+        CurrentStage = null;
+        CurrentGoal = null;
+
+        var oldAnchor = CheckpointAnchor;
+        CheckpointAnchor = null;
+        if (oldAnchor != null && !anchorManager.TryRemoveAnchor(oldAnchor))
+            Destroy(oldAnchor.gameObject);
+
+        _stagePlaced = false;
+        IsTransitioning = false;
+        CreateCheckpointAnchorAsync(); // re-anchor at the player's current pose, then Step 3 again
     }
 
     /// <summary>

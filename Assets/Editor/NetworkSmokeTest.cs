@@ -48,6 +48,7 @@ public static class NetworkSmokeTest
         s_Resolver = manager.AddComponent<EventResolver>();
         SetField(s_Resolver, "gameState", state);
         SetField(s_Resolver, "arCamera", cameraGO.GetComponent<Camera>());
+        state.BeginStage(); // Gate 1 needs a live stage (normally LevelGenerator.OnStageStarted)
 
         s_Client = manager.AddComponent<NetworkClient>();
         SetField(s_Client, "eventResolver", s_Resolver);

@@ -3,8 +3,13 @@ using UnityEngine;
 /// <summary>
 /// Authoritative game state: score, lives, stage progress, power-ups.
 /// No AR or networking dependency — this is pure state, mutated by
-/// EventResolver's resolution gate and (once wired) by ARSessionManager's
-/// tracking-loss events via SetSessionReady/SetSessionNotReady.
+/// EventResolver's resolution gate and, through Inspector-wired UnityEvents,
+/// by ARSessionManager (tracking) and LevelGenerator (stage lifecycle).
+///
+/// Session readiness (EventResolver's Gate 1) is two independent conditions,
+/// so neither source can accidentally reopen the gate the other closed:
+/// - tracking OK      — ARSessionManager.OnTrackingLost/Restored
+/// - a stage is live  — false while scanning, placing, and between stages
 /// </summary>
 public class GameStateManager : MonoBehaviour
 {
@@ -14,15 +19,23 @@ public class GameStateManager : MonoBehaviour
     [SerializeField] private int stageIndex = 1;
     [SerializeField] private bool hasFireFlower;
 
-    [Header("Session")]
-    [Tooltip("False while scanning, relocalising, or transitioning between stages. EventResolver's Gate 1 checks this.")]
-    [SerializeField] private bool isSessionReady = true;
+    [Header("Scoring")]
+    [SerializeField] private int stageClearBonus = 500;
+
+    [Header("Session (read-only at runtime)")]
+    [Tooltip("Driven by ARSessionManager tracking events.")]
+    [SerializeField] private bool isTracking = true;
+    [Tooltip("Driven by LevelGenerator: true only while a placed stage is being played.")]
+    [SerializeField] private bool isStageActive;
 
     public int Score => score;
     public int Lives => lives;
     public int StageIndex => stageIndex;
     public bool HasFireFlower => hasFireFlower;
-    public bool IsSessionReady { get => isSessionReady; set => isSessionReady = value; }
+    public bool IsTracking => isTracking;
+    public bool IsStageActive => isStageActive;
+    /// <summary>EventResolver's Gate 1: tracking is good and a stage is live.</summary>
+    public bool IsSessionReady => isTracking && isStageActive;
 
     public void AddScore(int amount)
     {
@@ -42,9 +55,25 @@ public class GameStateManager : MonoBehaviour
         Debug.Log($"[GameStateManager] Fire flower: {value}");
     }
 
-    /// <summary>Parameterless wrapper so this can be wired directly into a UnityEvent (e.g. ARSessionManager.OnTrackingLost) in the Inspector.</summary>
-    public void SetSessionNotReady() => IsSessionReady = false;
+    /// <summary>Wired to ARSessionManager.OnTrackingLost. (Name kept for the existing persistent listener.)</summary>
+    public void SetSessionNotReady() => isTracking = false;
 
-    /// <summary>Parameterless wrapper so this can be wired directly into a UnityEvent (e.g. ARSessionManager.OnTrackingRestored) in the Inspector.</summary>
-    public void SetSessionReady() => IsSessionReady = true;
+    /// <summary>Wired to ARSessionManager.OnTrackingRestored. (Name kept for the existing persistent listener.)</summary>
+    public void SetSessionReady() => isTracking = true;
+
+    /// <summary>Wired to LevelGenerator.OnStageStarted.</summary>
+    public void BeginStage()
+    {
+        isStageActive = true;
+        Debug.Log($"[GameStateManager] Stage {stageIndex} started.");
+    }
+
+    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter.</summary>
+    public void CompleteStage()
+    {
+        isStageActive = false;
+        Debug.Log($"[GameStateManager] Stage {stageIndex} cleared.");
+        AddScore(stageClearBonus);
+        stageIndex++;
+    }
 }
