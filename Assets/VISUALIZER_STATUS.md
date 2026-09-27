@@ -279,7 +279,7 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 ### `AudioManager` — ❌ not started
 No audio code exists at all.
 
-### Step 6 (stage completion loop) — ⚠️ built; headless regression passes; walking test on device pending (2026-09-28)
+### Step 6 (stage completion loop) — ✅ tested on the iPhone 17 (2026-09-28)
 - **`StageGoal.cs`** goes on a child of a stage prefab. It counts as reached when the player (the AR camera) stays within `reachRadius` (0.6 m, measured horizontally) for `dwellSeconds` (0.5 s). It fires `OnReached` once and exposes `PlayerDistance`. `TestStage` now has a "Goal" child at its far (+Z) edge, with a pole and a yellow flag (visual only, no colliders), added by `StageLoopSetup`.
 - **The loop in `LevelGenerator`:**
   - Placing a stage finds its `StageGoal` and fires `OnStageStarted`.
@@ -293,6 +293,12 @@ No audio code exists at all.
   - As a result, Gate 1 now correctly drops events during scanning, placement and stage transitions. Before this change it defaulted to open.
 - Wiring: persistent UnityEvent listeners (LevelGenerator → GameStateManager), added by **Tools ▸ MARIO ▸ Configure Stage Loop** (`StageLoopSetup.cs`).
 - The `ScanHUD` line shows `Stage N · Score S — walk to the flag (X m)` after the scan, then "placing stage…" or "Stage clear!".
+- **Walking test on the device:** 2 full cycles, stage 1 → 2 → 3, score 1000. Goal detection, the clear bonus, stage removal, re-anchoring and the next placement all worked. Tracking loss and recovery during play were handled.
+- **Bug found and fixed during that test:**
+  - **What happened:** stage 2 was placed 0.74 m above the floor, on a bed or table.
+  - **Cause:** the downward floor ray took the *first* plane hit, which is the highest one.
+  - **Fix:** `TryGetFloorProjectedPose` now considers only HorizontalUp planes. The checkpoint takes the lowest plane; placement candidates must be within `floorHeightTolerance` (0.15 m) of the anchor's floor height. Built and installed; **not yet re-tested by walking.**
+  - **Related, not fixed:** the scan-area total in `ARSessionManager` still counts furniture tops as "floor".
 - **Not yet:**
   - A goal can't require clearing the stage's targets first.
   - Lives aren't lost anywhere, so the "loss of all lives" exit doesn't exist.
@@ -335,7 +341,7 @@ These cost real debugging time once already — don't rediscover them:
 
 1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
 2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
-3. ~~Build Step 6 (stage completion loop)~~: built on 2026-09-28; the walking test on the device is still to do.
+3. ~~Build Step 6 (stage completion loop)~~: done and tested on the device on 2026-09-28. Re-check the furniture-plane fix on the next device session.
 4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.
 5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.
 6. **Build `AudioManager`** — currently entirely unstarted.

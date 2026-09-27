@@ -67,6 +67,8 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private float[] rotationCandidates = { 0f, 90f, 180f, 270f };
     [Tooltip("Layers that count as obstructions. Should be the ARMesh layer only, so debug markers and stage colliders don't block placement.")]
     [SerializeField] private LayerMask obstructionLayerMask = ~0;
+    [Tooltip("Placement candidates must land on a plane within this height (metres) of the checkpoint's floor, so stages never go on beds/tables.")]
+    [SerializeField] private float floorHeightTolerance = 0.15f;
     [Tooltip("Height (metres) the obstruction test box is lifted off the floor, so the LiDAR floor mesh and its noise don't count as obstructions.")]
     [SerializeField] private float floorClearanceMargin = 0.1f;
     [Tooltip("Seconds to wait before retrying if no placement is found anywhere.")]
@@ -258,7 +260,7 @@ public class LevelGenerator : MonoBehaviour
             {
                 var approximatePoint = anchorTransform.position + direction.normalized * distance;
 
-                if (!TryGetFloorProjectedPose(approximatePoint, out var floorPose))
+                if (!TryGetFloorProjectedPose(approximatePoint, out var floorPose, anchorTransform.position.y))
                 {
                     _searchNoFloor++;
                     continue;
@@ -373,18 +375,34 @@ public class LevelGenerator : MonoBehaviour
     /// Projects an approximate world point onto the floor by raycasting straight
     /// down against detected floor planes. Used both for the checkpoint anchor
     /// (from the camera) and for placement candidates (from search points).
+    ///
+    /// A downward ray can pass through several horizontal planes (a bed or
+    /// table above the floor), and the first hit is the highest one. So only
+    /// upward-facing planes are considered and, when <paramref name="floorHeight"/>
+    /// is known (placement candidates), only those within floorHeightTolerance
+    /// of it; otherwise (the checkpoint itself) the lowest plane is taken.
     /// </summary>
-    private bool TryGetFloorProjectedPose(Vector3 approximatePoint, out Pose pose)
+    private bool TryGetFloorProjectedPose(Vector3 approximatePoint, out Pose pose, float? floorHeight = null)
     {
-        var ray = new Ray(approximatePoint + Vector3.up * 2f, Vector3.down);
-
-        if (raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon))
-        {
-            pose = s_Hits[0].pose;
-            return true;
-        }
-
         pose = default;
-        return false;
+        var ray = new Ray(approximatePoint + Vector3.up * 2f, Vector3.down);
+        if (!raycastManager.Raycast(ray, s_Hits, TrackableType.PlaneWithinPolygon)) return false;
+
+        bool found = false;
+        float best = float.PositiveInfinity;
+        foreach (var hit in s_Hits)
+        {
+            if (hit.trackable is ARPlane plane && plane.alignment != PlaneAlignment.HorizontalUp) continue;
+
+            float y = hit.pose.position.y;
+            float score = floorHeight.HasValue ? Mathf.Abs(y - floorHeight.Value) : y;
+            if (floorHeight.HasValue && score > floorHeightTolerance) continue;
+            if (score >= best) continue;
+
+            best = score;
+            pose = hit.pose;
+            found = true;
+        }
+        return found;
     }
 }
