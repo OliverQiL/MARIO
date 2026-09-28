@@ -19,7 +19,6 @@ public static class LidarSetup
     private const string DebugMeshPrefabPath = "Assets/AR Mesh (Debug).prefab";
     private const string DebugMaterialPath = "Assets/Materials/ARMeshDebug.mat";
     private const string MeshLayerName = "ARMesh";
-    private const string LidarHudName = "LidarDebug (TMP)";
     private const string AppleTeamId = "U5T7NBV8MB";
 
     [MenuItem("Tools/MARIO/Configure LiDAR")]
@@ -149,37 +148,14 @@ public static class LidarSetup
 
     private static void EnsureLidarHud(RenderManager renderManager, LevelGenerator levelGenerator)
     {
-        var scanHud = Object.FindAnyObjectByType<ScanHUD>();
-        if (scanHud == null) throw new System.Exception("[LidarSetup] No ScanHUD in scene — can't find the Canvas.");
-        var scanText = scanHud.GetComponent<TMP_Text>();
-        var parent = scanHud.transform.parent;
+        var canvas = Object.FindAnyObjectByType<Canvas>();
+        if (canvas == null) throw new System.Exception("[LidarSetup] No Canvas in scene.");
 
-        var existing = parent.Find(LidarHudName);
-        var go = existing != null ? existing.gameObject : new GameObject(LidarHudName, typeof(RectTransform));
-        go.transform.SetParent(parent, false);
-        go.layer = scanHud.gameObject.layer;
-
-        var rect = (RectTransform)go.transform;
-        var scanRect = (RectTransform)scanHud.transform;
-        // The scan text's original 200px box wraps "Scan complete! (…)" onto
-        // four lines, which spill over the LiDAR readout. Widen it to one line.
-        scanRect.sizeDelta = new Vector2(900f, scanRect.sizeDelta.y);
-        if (scanText != null) scanText.textWrappingMode = TextWrappingModes.NoWrap;
-        rect.anchorMin = rect.anchorMax = scanRect.anchorMin;
-        rect.pivot = new Vector2(0.5f, 1f);
-        rect.sizeDelta = new Vector2(900f, 200f);
-        rect.anchoredPosition = scanRect.anchoredPosition + new Vector2(0f, -scanRect.sizeDelta.y * 0.5f - 10f);
-
-        var text = GetOrAdd<TextMeshProUGUI>(go);
-        if (scanText != null)
-        {
-            text.font = scanText.font;
-            text.fontSize = scanText.fontSize * 0.75f;
-        }
-        text.alignment = TextAlignmentOptions.Top;
-        text.richText = true;
-        text.textWrappingMode = TextWrappingModes.NoWrap;
+        // Bottom-left, small, out of the HUD's way (same layout HUDSetup applies).
+        var text = HUDSetup.EnsureText(canvas.transform, HUDSetup.LidarHudName, new Vector2(0f, 0f),
+            new Vector2(HUDSetup.SideMargin, 40f), new Vector2(1200f, 160f), 28f, TextAlignmentOptions.BottomLeft);
         text.text = "Occlusion: …\nMesh: …";
+        var go = text.gameObject;
 
         var hud = GetOrAdd<LidarDebugHUD>(go);
         var so = new SerializedObject(hud);

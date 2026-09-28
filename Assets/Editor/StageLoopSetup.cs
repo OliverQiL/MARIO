@@ -12,7 +12,6 @@ using UnityEngine.Events;
 /// - Wires LevelGenerator.OnStageStarted/OnStageCompleted to
 ///   GameStateManager.BeginStage/CompleteStage (persistent listeners, same
 ///   pattern as ARSessionManager's tracking events).
-/// - Points ScanHUD at LevelGenerator + GameStateManager.
 /// - Removes the old scene-only 1 m test cube (TestInteractable); the stage
 ///   Block carries TestInteractable instead, so stomps have a real target.
 ///
@@ -53,15 +52,6 @@ public static class StageLoopSetup
         {
             if (interactable.gameObject.scene == scene)
                 Object.DestroyImmediate(interactable.gameObject);
-        }
-
-        var scanHud = Object.FindAnyObjectByType<ScanHUD>();
-        if (scanHud != null)
-        {
-            var so = new SerializedObject(scanHud);
-            so.FindProperty("levelGenerator").objectReferenceValue = levelGenerator;
-            so.FindProperty("gameState").objectReferenceValue = gameState;
-            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         EditorSceneManager.MarkSceneDirty(scene);

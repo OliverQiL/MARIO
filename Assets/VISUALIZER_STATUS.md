@@ -145,8 +145,7 @@ Two responsibilities, both implemented:
 - **Confirmed on-device**: scan completion fires correctly and once; tracking loss/restore cycles correctly on real `InsufficientFeatures` events, logged in both directions repeatedly without issue.
 - **Wired to `GameStateManager`**: `OnTrackingLost` → `GameStateManager.SetSessionNotReady()`, `OnTrackingRestored` → `GameStateManager.SetSessionReady()`, via persistent Inspector listeners (not code coupling — keeps the module dependency graph clean per the report's table, since `ARSessionManager` has no listed dependency on `GameStateManager`). This automates what was previously a manual Inspector toggle for testing Gate 1.
 
-### `ScanHUD.cs` — ✅
-Simple screen-space `TMP_Text` readout: shows `"Scanning floor: X / Y m²"` while scanning, switches to green `"Scan complete! (X m² scanned)"` once done. Polls `ARSessionManager`'s public properties every `Update()`. Confirmed rendering correctly on-device, including the "Dynamic Island in landscape = pill-shaped camera-active indicator" system UI that's easy to mistake for a bug but isn't.
+### `ScanHUD.cs` — 🗑️ replaced by `HUDController` (2026-09-28)
 
 ### `LevelGenerator.cs` — ✅ (with caveats)
 - **Step 2 (checkpoint anchoring)**: on `OnScanComplete`, raycasts straight down from the camera against `TrackableType.PlaneWithinPolygon` to find the floor, retains only yaw, creates an `ARAnchor` via `anchorManager.TryAddAnchorAsync(pose)` (the modern async AR Foundation anchor API). Optionally instantiates a debug marker prefab under the anchor.
@@ -228,8 +227,25 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
   xcrun devicectl device process launch --device <id> --console com.cg4002.mario
   ```
 
-### `HUDController` — ❌ mostly not started
-Only the narrow `ScanHUD.cs` (scan-progress-specific) exists. The report's actual `HUDController` scope — score/lives/stage display, connection status, degraded-mode messaging — has not been built. None of `EventResolver`'s six distinct rejection reasons, nor `LevelGenerator`'s `OnPlacementFailed` event, are currently wired to any player-visible feedback; they only reach `Debug.Log`.
+### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
+On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
+- **Stats (top-left):** `Stage N   Score S   ♥♥♥`.
+- **Connection (top-right):** a coloured dot, showing Gateway, Connecting… or Gateway offline.
+- **Banner (top-centre):** the current state, polled every frame, highest priority first:
+  1. tracking lost ("look around slowly")
+  2. scan progress
+  3. "Stage clear!"
+  4. "No room here — move to a clearer area" (held 3 s after `OnPlacementFailed`)
+  5. "Mapping the room…" or "Placing stage…"
+  6. "Walk to the flag (X m)"
+- **Feedback (centre):** transient messages from `EventResolver.OnEventProcessed` and score changes. They fade after 1.5 s.
+  - Resolved: green `Stomp!  +100`. The stage-clear bonus shows as `+500`.
+  - Gates 3–5 ("not permitted"): orange, with the reason, e.g. "Need a fire flower…", "nothing in range", "already used".
+  - Gate 2 low confidence ("not registered"): grey "Move not recognised — try again".
+  - Duplicates and Gate 1: silent. The banner already explains why nothing is accepted during scanning, tracking loss or transitions.
+
+Layout: landscape, Canvas at constant pixel size, 180 px left margin to clear the Dynamic Island. The LiDAR debug readout moved to the bottom-left. `LidarSetup` and `StageLoopSetup` no longer depend on ScanHUD.
+Not yet: game-over screen (lives are never lost yet); audio cues (AudioManager).
 
 ### `NetworkClient` — ✅ tested on the iPhone 17 against the mock gateway over Wi-Fi (2026-09-28)
 The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still needs John's sign-off**. `GatewayMessages.cs` is the only file to change if the field names change.
@@ -362,7 +378,7 @@ These cost real debugging time once already — don't rediscover them:
 1. ~~Confirm LiDAR hardware access~~ — done 2026-09-24. Occlusion and mesh-based placement work on the LiDAR iPhone. Before release, switch the mesh debug view off and delete `LidarDebugHUD`.
 2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
 3. ~~Build Step 6 (stage completion loop)~~: done and tested on the device on 2026-09-28. Re-check the furniture-plane fix on the next device session.
-4. **Expand `HUDController`** beyond scan progress — score/lives/stage/connection status, and surfacing `EventResolver`'s distinct gate-rejection feedback and `LevelGenerator`'s `OnPlacementFailed` to the player instead of just the console.
+4. ~~Expand `HUDController`~~: built on 2026-09-28; the on-device check is pending.
 5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.
 6. **Build `AudioManager`** — currently entirely unstarted.
 7. Once `NetworkClient` exists and Xavier's classifier is producing real events, revisit `minConfidence` and Gate 2's dedup strategy against real traffic characteristics.
