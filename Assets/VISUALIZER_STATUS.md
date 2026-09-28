@@ -298,7 +298,19 @@ No audio code exists at all.
   - **What happened:** stage 2 was placed 0.74 m above the floor, on a bed or table.
   - **Cause:** the downward floor ray took the *first* plane hit, which is the highest one.
   - **Fix:** `TryGetFloorProjectedPose` now considers only HorizontalUp planes. The checkpoint takes the lowest plane; placement candidates must be within `floorHeightTolerance` (0.15 m) of the anchor's floor height. Built and installed; **not yet re-tested by walking.**
-  - **Related, not fixed:** the scan-area total in `ARSessionManager` still counts furniture tops as "floor".
+  - **Related, fixed 2026-09-28:** see "Floor-only scanning" below.
+- **Floor-only scanning** (2026-09-28, built; **not yet tested on a device**):
+  - `ARSessionManager.IsFloorPlane(ARPlane)` decides what counts as floor. The scan area uses it, and so does `LevelGenerator`'s floor projection, so the two always agree.
+    - ARKit's semantic plane classification wins when present: `Floor` counts, and any other label (Table, Seat, …) never does. It needs an A12 or newer chip, not LiDAR; the iPhone 17 qualifies.
+    - Planes ARKit hasn't classified yet count only within `floorHeightTolerance` (0.15 m) of `FloorHeight`.
+  - `FloorHeight` is the height of the largest Floor-classified plane. Without one, it's the lowest unclassified plane of at least 0.25 m².
+  - `ExcludedArea` reports the area rejected as not-floor, and it's logged alongside scan progress.
+  - `requiredFloorArea` in the scene was lowered from 10 m² to **3 m²**: with beds and tables no longer counted, 10 m² can be unreachable in a bedroom.
+- **TestStage resized** (2026-09-28): the root is now an empty pivot on the floor point.
+  - A 30 cm "Block" child rests on the floor. The old 1 m cube was half-sunk into it.
+  - The goal flag is 0.4 m past the block's centre line, 0.5 m tall, with `reachRadius` 0.35 m.
+  - Footprint is 0.6 × 1.0 m, clearance 0.5 m.
+  - Rebuilt by `StageLoopSetup`.
 - **Not yet:**
   - A goal can't require clearing the stage's targets first.
   - Lives aren't lost anywhere, so the "loss of all lives" exit doesn't exist.

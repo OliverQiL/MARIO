@@ -378,7 +378,7 @@ public class LevelGenerator : MonoBehaviour
     ///
     /// A downward ray can pass through several horizontal planes (a bed or
     /// table above the floor), and the first hit is the highest one. So only
-    /// upward-facing planes are considered and, when <paramref name="floorHeight"/>
+    /// floor planes (ARSessionManager.IsFloorPlane) are considered and, when <paramref name="floorHeight"/>
     /// is known (placement candidates), only those within floorHeightTolerance
     /// of it; otherwise (the checkpoint itself) the lowest plane is taken.
     /// </summary>
@@ -392,7 +392,7 @@ public class LevelGenerator : MonoBehaviour
         float best = float.PositiveInfinity;
         foreach (var hit in s_Hits)
         {
-            if (hit.trackable is ARPlane plane && plane.alignment != PlaneAlignment.HorizontalUp) continue;
+            if (hit.trackable is ARPlane plane && !sessionManager.IsFloorPlane(plane)) continue;
 
             float y = hit.pose.position.y;
             float score = floorHeight.HasValue ? Mathf.Abs(y - floorHeight.Value) : y;

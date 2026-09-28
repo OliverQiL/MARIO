@@ -1515,7 +1515,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ARSessionManager
   planeManager: {fileID: 2027910253}
-  requiredFloorArea: 10
+  requiredFloorArea: 3
+  floorHeightTolerance: 0.15
+  minFloorReferenceArea: 0.25
   OnScanComplete:
     m_PersistentCalls:
       m_Calls:
@@ -1630,6 +1632,7 @@ MonoBehaviour:
   obstructionLayerMask:
     serializedVersion: 2
     m_Bits: 64
+  floorHeightTolerance: 0.15
   floorClearanceMargin: 0.1
   retryDelaySeconds: 2
   meshSettleSeconds: 3

@@ -11,9 +11,11 @@ using UnityEngine.XR.ARSubsystems;
 ///
 /// Scan-phase orchestration: tracks total scanned floor area from AR
 /// Foundation's plane detection and signals when enough floor space has
-/// been scanned to place a stage. Only counts upward-facing horizontal
-/// planes (floors) — walls, ceilings, and anything not yet classified as
-/// horizontal-up are ignored.
+/// been scanned to place a stage. Only real floor counts — see IsFloorPlane:
+/// ARKit's semantic classification is trusted when present (Floor counts;
+/// Table/Seat/etc. never do), and still-unclassified upward-facing planes
+/// count only if they sit at the floor height (the lowest sizeable
+/// horizontal plane). LevelGenerator uses the same test for placement.
 ///
 /// Tracking-state monitoring: polls ARSession.notTrackingReason each frame.
 /// A transition away from None means tracking was lost — OnTrackingLost
@@ -32,6 +34,12 @@ public class ARSessionManager : MonoBehaviour
     [Tooltip("Total horizontal floor area (in square metres) required before scanning is considered complete.")]
     [SerializeField] private float requiredFloorArea = 4.0f;
 
+    [Header("Floor Detection")]
+    [Tooltip("Unclassified planes count as floor only within this height (metres) of the detected floor level.")]
+    [SerializeField] private float floorHeightTolerance = 0.15f;
+    [Tooltip("Minimum area (m²) for an unclassified plane to define the floor level, so a small spurious low plane can't.")]
+    [SerializeField] private float minFloorReferenceArea = 0.25f;
+
     [Header("Events")]
     [Tooltip("Fired once, the first time scanned floor area reaches the required amount.")]
     public UnityEvent OnScanComplete;
@@ -44,14 +52,19 @@ public class ARSessionManager : MonoBehaviour
     [Tooltip("Minimum change in scanned area (m²) before logging progress again, so every minor plane refinement doesn't spam the console.")]
     [SerializeField] private float logAreaIncrement = 0.2f;
 
-    private readonly Dictionary<TrackableId, float> _floorPlaneAreas = new();
+    private readonly Dictionary<TrackableId, ARPlane> _horizontalPlanes = new();
     private float _totalScannedArea;
+    private float _excludedArea;
     private float _lastLoggedArea;
     private bool _scanComplete;
 
     public float TotalScannedArea => _totalScannedArea;
     public float RequiredFloorArea => requiredFloorArea;
     public bool IsScanComplete => _scanComplete;
+    /// <summary>World-space height of the floor, once a floor plane has been found.</summary>
+    public float? FloorHeight { get; private set; }
+    /// <summary>Upward-facing area rejected as not-floor (beds, tables, seats…), for diagnostics.</summary>
+    public float ExcludedArea => _excludedArea;
 
     public bool IsTracking { get; private set; } = true;
     public NotTrackingReason LastNotTrackingReason { get; private set; } = NotTrackingReason.None;
@@ -109,32 +122,79 @@ public class ARSessionManager : MonoBehaviour
 
     // ---- Scan-phase orchestration (Step 1) ----
 
+    /// <summary>
+    /// True if this plane is part of the floor. ARKit's classification wins
+    /// when it has one (it arrives a little after the plane itself, on A12+
+    /// devices, no LiDAR needed); otherwise fall back to height.
+    /// </summary>
+    public bool IsFloorPlane(ARPlane plane)
+    {
+        if (plane == null || plane.alignment != PlaneAlignment.HorizontalUp) return false;
+
+        var classes = plane.classifications;
+        if ((classes & PlaneClassifications.Floor) != 0) return true;
+        if (classes != PlaneClassifications.None) return false; // Table, Seat, …
+
+        return FloorHeight.HasValue && Mathf.Abs(plane.center.y - FloorHeight.Value) <= floorHeightTolerance;
+    }
+
     private void OnTrackablesChanged(ARTrackablesChangedEventArgs<ARPlane> changes)
     {
         foreach (var plane in changes.added) RegisterOrUpdatePlane(plane);
         foreach (var plane in changes.updated) RegisterOrUpdatePlane(plane);
-        foreach (var kvp in changes.removed) _floorPlaneAreas.Remove(kvp.Key);
+        foreach (var kvp in changes.removed) _horizontalPlanes.Remove(kvp.Key);
 
+        UpdateFloorHeight();
         RecalculateTotalArea();
     }
 
     private void RegisterOrUpdatePlane(ARPlane plane)
     {
-        if (plane.alignment != PlaneAlignment.HorizontalUp)
+        if (plane.alignment == PlaneAlignment.HorizontalUp)
+            _horizontalPlanes[plane.trackableId] = plane;
+        else
+            _horizontalPlanes.Remove(plane.trackableId);
+    }
+
+    /// <summary>
+    /// Floor level = the largest Floor-classified plane's height if any;
+    /// otherwise the lowest unclassified plane of meaningful size.
+    /// </summary>
+    private void UpdateFloorHeight()
+    {
+        float bestClassifiedArea = 0f, lowestUnclassified = float.PositiveInfinity;
+        float? classifiedHeight = null;
+
+        foreach (var plane in _horizontalPlanes.Values)
         {
-            _floorPlaneAreas.Remove(plane.trackableId);
-            return;
+            float area = plane.size.x * plane.size.y;
+            if ((plane.classifications & PlaneClassifications.Floor) != 0)
+            {
+                if (area > bestClassifiedArea) { bestClassifiedArea = area; classifiedHeight = plane.center.y; }
+            }
+            else if (plane.classifications == PlaneClassifications.None && area >= minFloorReferenceArea)
+            {
+                lowestUnclassified = Mathf.Min(lowestUnclassified, plane.center.y);
+            }
         }
 
-        _floorPlaneAreas[plane.trackableId] = plane.size.x * plane.size.y;
+        var height = classifiedHeight ?? (float.IsPositiveInfinity(lowestUnclassified) ? (float?)null : lowestUnclassified);
+        if (height.HasValue && (!FloorHeight.HasValue || Mathf.Abs(height.Value - FloorHeight.Value) > 0.02f))
+        {
+            FloorHeight = height;
+            Debug.Log($"[ARSessionManager] Floor level {height.Value:F2} m ({(classifiedHeight.HasValue ? "ARKit-classified" : "lowest plane")}).");
+        }
     }
 
     private void RecalculateTotalArea()
     {
         _totalScannedArea = 0f;
-        foreach (var area in _floorPlaneAreas.Values)
+        _excludedArea = 0f;
+        foreach (var plane in _horizontalPlanes.Values)
         {
-            _totalScannedArea += area;
+            float area = plane.size.x * plane.size.y;
+            if (IsFloorPlane(plane)) _totalScannedArea += area;
+            else _excludedArea += area;
         }
 
         if (_scanComplete) return; // area still climbs as ARKit refines planes — not worth logging once we're done
@@ -142,7 +202,7 @@ public class ARSessionManager : MonoBehaviour
         if (_totalScannedArea - _lastLoggedArea >= logAreaIncrement)
         {
             _lastLoggedArea = _totalScannedArea;
-            Debug.Log($"[ARSessionManager] Scanned floor area: {_totalScannedArea:F2} / {requiredFloorArea:F2} m²");
+            Debug.Log($"[ARSessionManager] Scanned floor area: {_totalScannedArea:F2} / {requiredFloorArea:F2} m² ({_excludedArea:F2} m² of non-floor surfaces ignored)");
         }
 
         if (_totalScannedArea >= requiredFloorArea)
