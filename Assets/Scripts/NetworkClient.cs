@@ -15,8 +15,11 @@ using Debug = UnityEngine.Debug;
 ///   EventResolver.Resolve, and replies with an EVENT_ACK carrying the outcome.
 ///   Duplicates are still ACKed (so the gateway stops retrying) — dedup itself
 ///   stays in EventResolver's Gate 2, the single source of truth.
-/// - Listens to EventResolver.OnEventProcessed and issues HAPTIC_CMD: "success"
-///   on resolution, "denied" on Gates 3-5, nothing on Gates 1-2.
+/// - Issues HAPTIC_CMD (Docs/GAME_DESIGN.md): "success" on a hit and on a
+///   fireball impact (EventResolver.OnImpact), "denied" on Gates 3-5 for
+///   discrete actions only (continuous stand/walk/stomp are re-sent every
+///   window and would buzz constantly), "damage" to both straps when the
+///   player loses a life. Nothing for state-only actions or Gates 1-2.
 /// </summary>
 public class NetworkClient : MonoBehaviour
 {
@@ -62,6 +65,9 @@ public class NetworkClient : MonoBehaviour
     private void OnEnable()
     {
         eventResolver.OnEventProcessed += HandleEventProcessed;
+        eventResolver.OnImpact += HandleImpact;
+        var gs = GameStateManager.Instance;
+        if (gs != null) gs.OnLifeLost.AddListener(HandleLifeLost);
     }
 
     private void Start()
@@ -72,6 +78,9 @@ public class NetworkClient : MonoBehaviour
     private void OnDisable()
     {
         eventResolver.OnEventProcessed -= HandleEventProcessed;
+        eventResolver.OnImpact -= HandleImpact;
+        var gs = GameStateManager.Instance;
+        if (gs != null) gs.OnLifeLost.RemoveListener(HandleLifeLost);
         Disconnect();
     }
 
@@ -182,26 +191,42 @@ public class NetworkClient : MonoBehaviour
         });
     }
 
+    private static readonly string[] ContinuousActions = { "stand", "walk", "stomp" };
+
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
+        if (result.StateOnly || result.LaunchedProjectile) return; // projectile haptic comes on impact
+
+        if (result.Resolved)
+            SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "success");
+        else if (result.NotPermitted && Array.IndexOf(ContinuousActions, evt.actionLabel) < 0)
+            SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "denied");
+        // Gates 1-2 (not registered): no haptic.
+    }
+
+    private void HandleImpact(GameEvent evt, Component target) =>
+        SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "success");
+
+    private void HandleLifeLost(int livesLeft) => SendHaptic("", "", "both", "damage");
+
+    private void SendHaptic(string sessionId, string eventId, string limb, string pattern)
+    {
         if (!sendHaptics || !IsConnected) return;
-
-        string pattern = result.Resolved ? "success" : result.NotPermitted ? "denied" : null;
-        if (pattern == null) return; // Gates 1-2: not registered — no haptic
-
         Send(new GatewayMessages.HapticMsg
         {
-            session_id = evt.sessionId,
-            event_id = evt.eventId,
-            target = evt.actionLabel switch
-            {
-                "fireball" => "wrist",
-                "stomp" => "ankle",
-                _ => "both",
-            },
+            session_id = sessionId,
+            event_id = eventId,
+            target = limb,
             pattern = pattern,
         });
     }
+
+    private static string LimbFor(string action) => action switch
+    {
+        "fireball" => "wrist",
+        "stomp" => "ankle",
+        _ => "both",
+    };
 
     private void Send(object message)
     {

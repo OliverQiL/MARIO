@@ -57,7 +57,7 @@ The phone decides on and **sends** haptics. The gateway forwards them to the wea
 | field | values |
 |---|---|
 | `target` | `wrist`, `ankle`, `both`. Fireball → wrist, stomp → ankle, everything else → both. |
-| `pattern` | `success` (resolved), `denied` (rejected at gates 3–5: recognised but not permitted). No haptic is sent for gates 1–2. |
+| `pattern` | `success` (a hit, or a fireball impact), `denied` (rejected at gates 3–5 for a *discrete* action: jump, squat or fireball), `damage` (the player lost a life; `target` is `both`, and `session_id`/`event_id` are empty because no single event caused it). None for gates 1–2, for state-only actions (stand, walk, squat, a jump that hit nothing), or for "denied" on continuous actions (stand, walk, stomp are re-sent every window). See `GAME_DESIGN.md`. |
 
 How each pattern maps to motor pulses is up to the wearable firmware (Neo/John).
 

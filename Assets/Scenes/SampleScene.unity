@@ -440,11 +440,16 @@ MonoBehaviour:
   arCamera: {fileID: 93323756}
   minConfidence: 0.6
   dedupHistorySize: 1024
-  interactionRadius: 1.5
-  facingAngleThreshold: 45
-  interactableLayerMask:
-    serializedVersion: 2
-    m_Bits: 4294967295
+  stompRange: 0.7
+  stompHalfAngle: 70
+  strikeRange: 0.8
+  strikeHalfAngle: 35
+  jumpBlockRadius: 0.5
+  airborneSeconds: 1
+  duckSeconds: 1
+  fireballPrefab: {fileID: 7228211895968795838, guid: 698b8502f545e40d9853f7203ef22850, type: 3}
+  maxFireballsInFlight: 2
+  restartGraceSeconds: 2
 --- !u!114 &104318748
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -462,8 +467,45 @@ MonoBehaviour:
   stageIndex: 1
   hasFireFlower: 0
   stageClearBonus: 500
+  startingLives: 3
+  invulnerableSeconds: 2
+  OnLifeLost:
+    m_PersistentCalls:
+      m_Calls: []
+  OnGameOver:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 2027910260}
+        m_TargetAssemblyTypeName: LevelGenerator, Assembly-CSharp
+        m_MethodName: EndGame
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+  OnGameRestarted:
+    m_PersistentCalls:
+      m_Calls:
+      - m_Target: {fileID: 2027910260}
+        m_TargetAssemblyTypeName: LevelGenerator, Assembly-CSharp
+        m_MethodName: RestartLoop
+        m_Mode: 1
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
   isTracking: 1
   isStageActive: 0
+  isGameOver: 0
+  movementState: stand
 --- !u!114 &104318749
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1809,7 +1851,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ARSessionManager
   planeManager: {fileID: 2027910253}
-  requiredFloorArea: 3
+  requiredFloorArea: 4
   floorHeightTolerance: 0.15
   minFloorReferenceArea: 0.25
   OnScanComplete:
@@ -1909,7 +1951,8 @@ MonoBehaviour:
   meshManager: {fileID: 1762489574}
   debugMarkerPrefab: {fileID: 4033994286809146426, guid: 4d1917926770c4e4e81d2e94770db489, type: 3}
   stageTemplates:
-  - {fileID: 1687454466507924500, guid: 3764776f37ad74d83a9d6e8459f69b5c, type: 3}
+  - {fileID: 2081108271071540747, guid: 665fd64318712453ba275670e0f78c73, type: 3}
+  - {fileID: 2520298490378312281, guid: 6ee46ee67aa6f48978d7f5da3497e0d3, type: 3}
   searchDistances:
   - 0.5
   - 1
@@ -1925,6 +1968,7 @@ MonoBehaviour:
   - 270
   playerClearance: 0.3
   minGoalWalkDistance: 0.5
+  floorCoverageInset: 0.1
   obstructionLayerMask:
     serializedVersion: 2
     m_Bits: 64

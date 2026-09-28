@@ -36,6 +36,10 @@ using UnityEngine.XR.ARSubsystems;
 /// player's current floor position/heading, and Step 3 runs again. Re-anchoring
 /// every stage bounds both memory and accumulated tracking drift.
 /// OnStageStarted fires each time a stage is placed and playable.
+///
+/// Game over: EndGame (wired from GameStateManager.OnGameOver) tears down
+/// the stage and halts the loop; RestartLoop (OnGameRestarted) re-anchors at
+/// the player and starts again from Step 3.
 /// </summary>
 [RequireComponent(typeof(ARSessionManager), typeof(ARAnchorManager), typeof(ARRaycastManager))]
 public class LevelGenerator : MonoBehaviour
@@ -69,6 +73,8 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private float playerClearance = 0.3f;
     [Tooltip("The goal must be at least this far (metres) beyond its reach radius from the player when the stage appears, so it takes deliberate walking.")]
     [SerializeField] private float minGoalWalkDistance = 0.5f;
+    [Tooltip("Footprint corners are checked this far (metres) inside the edge when requiring detected floor under the whole stage.")]
+    [SerializeField] private float floorCoverageInset = 0.1f;
     [Tooltip("Layers that count as obstructions. Should be the ARMesh layer only, so debug markers and stage colliders don't block placement.")]
     [SerializeField] private LayerMask obstructionLayerMask = ~0;
     [Tooltip("Placement candidates must land on a plane within this height (metres) of the checkpoint's floor, so stages never go on beds/tables.")]
@@ -124,6 +130,8 @@ public class LevelGenerator : MonoBehaviour
     private int _searchObstructed;
     private int _searchNoFloor;
     private int _searchTooClose;
+    private int _searchOffFloor;
+    private bool _halted;
     private static readonly List<ARRaycastHit> s_Hits = new();
     private static readonly Collider[] s_Overlap = new Collider[1];
 
@@ -155,7 +163,7 @@ public class LevelGenerator : MonoBehaviour
 
     private async void CreateCheckpointAnchorAsync()
     {
-        if (CheckpointAnchor != null || _creatingAnchor) return;
+        if (_halted || CheckpointAnchor != null || _creatingAnchor) return;
 
         if (!TryGetFloorProjectedPose(arCamera.transform.position, out var pose))
         {
@@ -194,7 +202,7 @@ public class LevelGenerator : MonoBehaviour
 
     public void TryPlaceStage()
     {
-        if (CheckpointAnchor == null || _stagePlaced) return;
+        if (_halted || CheckpointAnchor == null || _stagePlaced) return;
 
         if (ShouldWaitForMesh())
         {
@@ -207,6 +215,7 @@ public class LevelGenerator : MonoBehaviour
         _searchObstructed = 0;
         _searchNoFloor = 0;
         _searchTooClose = 0;
+        _searchOffFloor = 0;
 
         if (FindAndInstantiateStage())
         {
@@ -242,7 +251,7 @@ public class LevelGenerator : MonoBehaviour
     }
 
     private string SearchSummary() =>
-        $"{_searchNoFloor} no-floor, {_searchTooClose} too-close-to-player, {_searchObstructed} obstructed";
+        $"{_searchNoFloor} no-floor, {_searchTooClose} too-close-to-player, {_searchOffFloor} partly-off-floor, {_searchObstructed} obstructed";
 
     private bool TryFindValidPlacement(StageFootprint footprint, out Pose pose)
     {
@@ -283,6 +292,11 @@ public class LevelGenerator : MonoBehaviour
                     if (!KeepsClearOfPlayer(footprint, floorPose.position, candidateRotation))
                     {
                         _searchTooClose++;
+                        continue;
+                    }
+                    if (!IsFullyOnFloor(footprint, floorPose.position, candidateRotation, anchorTransform.position.y))
+                    {
+                        _searchOffFloor++;
                         continue;
                     }
                     if (IsPlacementClear(footprint, floorPose.position, candidateRotation))
@@ -332,6 +346,13 @@ public class LevelGenerator : MonoBehaviour
     {
         yield return new WaitForSeconds(transitionDelaySeconds);
 
+        TearDownStage();
+        IsTransitioning = false;
+        CreateCheckpointAnchorAsync(); // re-anchor at the player's current pose, then Step 3 again
+    }
+
+    private void TearDownStage()
+    {
         if (CurrentStage != null) Destroy(CurrentStage);
         CurrentStage = null;
         CurrentGoal = null;
@@ -342,8 +363,28 @@ public class LevelGenerator : MonoBehaviour
             Destroy(oldAnchor.gameObject);
 
         _stagePlaced = false;
+    }
+
+    /// <summary>Wired to GameStateManager.OnGameOver: removes the stage and halts the loop.</summary>
+    public void EndGame()
+    {
+        _halted = true;
+        StopAllCoroutines();
+        CancelInvoke();
         IsTransitioning = false;
-        CreateCheckpointAnchorAsync(); // re-anchor at the player's current pose, then Step 3 again
+        IsWaitingForMesh = false;
+        TearDownStage();
+        Debug.Log("[LevelGenerator] Game over — loop halted.");
+    }
+
+    /// <summary>Wired to GameStateManager.OnGameRestarted: re-anchors at the player and places a fresh stage.</summary>
+    public void RestartLoop()
+    {
+        _halted = false;
+        StagesCompleted = 0;
+        TearDownStage();
+        Debug.Log("[LevelGenerator] New game — placing first stage.");
+        CreateCheckpointAnchorAsync();
     }
 
     /// <summary>
@@ -391,6 +432,29 @@ public class LevelGenerator : MonoBehaviour
         var toGoal = goalWorld - player;
         toGoal.y = 0f;
         return toGoal.magnitude >= goal.ReachRadius + minGoalWalkDistance;
+    }
+
+    /// <summary>
+    /// Requires detected floor under all four footprint corners (inset slightly)
+    /// and under the goal. Only the centre used to be checked, so on devices
+    /// without LiDAR the flag could end up over a cabinet or sofa. Floor planes
+    /// stop at furniture edges, so this works without the room mesh.
+    /// </summary>
+    private bool IsFullyOnFloor(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation, float floorHeight)
+    {
+        float hx = Mathf.Max(0f, footprint.width * 0.5f - floorCoverageInset);
+        float hz = Mathf.Max(0f, footprint.depth * 0.5f - floorCoverageInset);
+        for (int sx = -1; sx <= 1; sx += 2)
+        for (int sz = -1; sz <= 1; sz += 2)
+        {
+            if (!TryGetFloorProjectedPose(floorPosition + rotation * new Vector3(sx * hx, 0f, sz * hz), out _, floorHeight))
+                return false;
+        }
+
+        var goal = footprint.GetComponentInChildren<StageGoal>(true);
+        if (goal == null) return true;
+        var goalOffset = footprint.transform.InverseTransformPoint(goal.transform.position);
+        return TryGetFloorProjectedPose(floorPosition + rotation * goalOffset, out _, floorHeight);
     }
 
     private bool IsPlacementClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation)

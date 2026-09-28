@@ -37,34 +37,52 @@ public readonly struct ResolutionResult
     public readonly int Gate;
     public readonly string Reason;
     public readonly Component Target;
+    /// <summary>Resolved as a player-state change only (stand/walk/squat, a jump that hit nothing): no target, no feedback, no haptic.</summary>
+    public readonly bool StateOnly;
 
     public bool Resolved => Gate == 6;
     /// <summary>Gates 1-2: the action was never registered (wrong phase, low confidence, duplicate).</summary>
     public bool NotRegistered => Gate <= 2;
     /// <summary>Gates 3-5: the action was recognised but isn't permitted right now.</summary>
     public bool NotPermitted => Gate >= 3 && Gate <= 5;
+    /// <summary>A fireball projectile was launched; its impact (if any) arrives later via OnImpact.</summary>
+    public bool LaunchedProjectile => Resolved && Reason == EventResolver.ProjectileReason;
 
-    public ResolutionResult(int gate, string reason, Component target = null)
+    public ResolutionResult(int gate, string reason, Component target = null, bool stateOnly = false)
     {
         Gate = gate;
         Reason = reason;
         Target = target;
+        StateOnly = stateOnly;
     }
+
+    public static ResolutionResult State(string reason) => new(6, reason, null, true);
 }
 
 /// <summary>
 /// Design report Step 5: resolves an incoming classified action through an
-/// ordered six-gate chain. Rejection at any gate stops processing there and
-/// logs which gate rejected it, so "not registered" (Gates 1-2) is
-/// distinguishable from "not permitted" (Gates 3-5).
+/// ordered six-gate chain. Rejection at any gate stops processing there, so
+/// "not registered" (Gates 1-2) is distinguishable from "not permitted" (3-5).
 ///
-/// Resolve() returns the outcome and also raises OnEventProcessed, which
-/// NetworkClient (EVENT_ACK / HAPTIC_CMD), the HUD and AudioManager listen to.
-/// EventResolver itself stays dependent only on GameStateManager.
+/// Per-action outcomes and targeting follow Docs/GAME_DESIGN.md:
+/// - stand/walk/squat: player-state changes (no target)
+/// - jump: airborne window; hits an overhead block if there is one
+/// - fireball: with a fire flower, launches a projectile (Gate 3 caps how many
+///   are in flight); without, a bare-handed "strike" on a brick in reach
+/// - stomp: attack on an enemy at the player's feet
+/// During game over everything is dropped at Gate 1, except a jump (after a
+/// short grace period), which restarts the game.
+///
+/// Targets come from InteractableBase's registry (no physics). Resolve()
+/// returns the outcome and raises OnEventProcessed; projectile hits land
+/// later and raise OnImpact. NetworkClient (ACK/haptics) and the HUD listen.
+/// EventResolver itself depends only on GameStateManager.
 /// </summary>
 [RequireComponent(typeof(GameStateManager))]
 public class EventResolver : MonoBehaviour
 {
+    public const string ProjectileReason = "projectile";
+
     [Header("References")]
     [SerializeField] private GameStateManager gameState;
     [SerializeField] private Camera arCamera;
@@ -76,13 +94,31 @@ public class EventResolver : MonoBehaviour
     private readonly HashSet<string> _seenEventIds = new();
     private readonly Queue<string> _seenOrder = new();
 
-    [Header("Gate 4 - Spatial gating")]
-    [SerializeField] private float interactionRadius = 1.5f;
-    [SerializeField] private float facingAngleThreshold = 45f;
-    [SerializeField] private LayerMask interactableLayerMask = ~0;
+    [Header("Gate 4 - Targeting (metres / degrees, horizontal)")]
+    [SerializeField] private float stompRange = 0.7f;
+    [SerializeField] private float stompHalfAngle = 70f;
+    [SerializeField] private float strikeRange = 0.8f;
+    [SerializeField] private float strikeHalfAngle = 35f;
+    [Tooltip("Max horizontal offset of an overhead block for a jump to hit it.")]
+    [SerializeField] private float jumpBlockRadius = 0.5f;
+
+    [Header("Player State Windows (seconds after the event arrives)")]
+    [SerializeField] private float airborneSeconds = 1f;
+    [SerializeField] private float duckSeconds = 1f;
+
+    [Header("Fireball")]
+    [SerializeField] private Fireball fireballPrefab;
+    [Tooltip("Gate 3: fireballs allowed in flight at once.")]
+    [SerializeField] private int maxFireballsInFlight = 2;
+
+    [Header("Game Over")]
+    [Tooltip("Seconds after game over before a jump can restart, so the jump that was in progress doesn't.")]
+    [SerializeField] private float restartGraceSeconds = 2f;
 
     /// <summary>Raised after every Resolve(), whatever the outcome.</summary>
     public event Action<GameEvent, ResolutionResult> OnEventProcessed;
+    /// <summary>Raised when a deferred effect (a fireball) hits its target.</summary>
+    public event Action<GameEvent, Component> OnImpact;
 
     private void Awake()
     {
@@ -95,7 +131,7 @@ public class EventResolver : MonoBehaviour
         var result = RunGates(evt);
 
         if (result.Resolved)
-            Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}' on {result.Target.name}");
+            Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}' ({(result.Target != null ? "on " + result.Target.name : result.Reason)})");
         else
             Debug.Log($"[EventResolver] REJECTED @ Gate {result.Gate} ({result.Reason}): '{evt.actionLabel}'");
 
@@ -105,6 +141,18 @@ public class EventResolver : MonoBehaviour
 
     private ResolutionResult RunGates(GameEvent evt)
     {
+        // Game over: only a (deliberate, later) jump does anything — it restarts.
+        if (gameState.IsGameOver)
+        {
+            if (evt.actionLabel == "jump" && evt.confidence >= minConfidence
+                && gameState.SecondsSinceGameOver >= restartGraceSeconds && MarkSeen(Key(evt)))
+            {
+                gameState.RestartGame();
+                return ResolutionResult.State("restart");
+            }
+            return new ResolutionResult(1, "game over");
+        }
+
         // Gate 1 — Session state
         if (!gameState.IsSessionReady)
             return new ResolutionResult(1, "session not ready");
@@ -112,25 +160,107 @@ public class EventResolver : MonoBehaviour
         // Gate 2 — Validity: confidence threshold + duplicate event_id
         if (evt.confidence < minConfidence)
             return new ResolutionResult(2, $"confidence {evt.confidence:F2} < {minConfidence:F2}");
-        if (!MarkSeen($"{evt.sessionId}/{evt.eventId}"))
+        if (!MarkSeen(Key(evt)))
             return new ResolutionResult(2, $"duplicate event_id '{evt.eventId}'");
 
-        // Gate 3 — Player capability
-        if (!HasCapabilityFor(evt.actionLabel))
-            return new ResolutionResult(3, "capability");
+        // Gates 3-6, per action.
+        switch (evt.actionLabel)
+        {
+            case "stand":
+            case "walk":
+                gameState.SetMovementState(evt.actionLabel);
+                return ResolutionResult.State(evt.actionLabel);
 
-        // Gate 4 — Spatial gating: a responsive target within radius and facing angle
-        if (!TryFindTargetInRange(evt.actionLabel, out var target))
-            return new ResolutionResult(4, "no target in range/facing");
+            case "squat":
+                gameState.Duck(duckSeconds);
+                return ResolutionResult.State("ducked");
 
-        // Gate 5 — Target state
-        if (!target.IsActionable)
-            return new ResolutionResult(5, "target not actionable");
+            case "jump":
+            {
+                gameState.Jump(airborneSeconds);
+                var block = FindTarget("jump", jumpBlockRadius, 180f, dy => dy > -0.1f);
+                if (block == null) return ResolutionResult.State("airborne"); // a jump needs no target
+                return Hit(block, "jump");
+            }
 
-        // Gate 6 — Resolution. Effects, audio and haptics hang off OnEventProcessed.
-        target.ResolveHit(evt.actionLabel, gameState);
-        return new ResolutionResult(6, "resolved", (Component)target);
+            case "fireball":
+                if (gameState.HasFireFlower)
+                {
+                    // Gate 3 — capability: fire flower, and not too many fireballs already out.
+                    if (Fireball.InFlight >= maxFireballsInFlight)
+                        return new ResolutionResult(3, "fireballs recharging");
+                    LaunchFireball(evt);
+                    return new ResolutionResult(6, ProjectileReason);
+                }
+                // No flower: a bare-handed strike on a brick in reach (design report §6.4).
+                return Hit(FindTarget("strike", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f), "strike");
+
+            case "stomp":
+                return Hit(FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f), "stomp");
+
+            default:
+                return new ResolutionResult(2, $"unknown action '{evt.actionLabel}'");
+        }
     }
+
+    /// <summary>Gates 4-6 for a targeted action.</summary>
+    private ResolutionResult Hit(InteractableBase target, string label)
+    {
+        // Gate 4 — Spatial gating
+        if (target == null) return new ResolutionResult(4, "no target in range/facing");
+        // Gate 5 — Target state
+        if (!target.IsActionable) return new ResolutionResult(5, "target not actionable");
+        // Gate 6 — Resolution
+        target.ResolveHit(label, gameState);
+        return new ResolutionResult(6, "resolved", target);
+    }
+
+    private void LaunchFireball(GameEvent evt)
+    {
+        if (fireballPrefab == null)
+        {
+            Debug.LogWarning("[EventResolver] No fireball prefab assigned.");
+            return;
+        }
+        var cam = arCamera.transform;
+        var origin = cam.position + cam.forward * 0.3f - Vector3.up * 0.2f;
+        var fireball = Instantiate(fireballPrefab, origin, Quaternion.identity);
+        fireball.Launch(cam.forward, target => OnImpact?.Invoke(evt, target));
+    }
+
+    /// <summary>
+    /// Nearest registered target responding to <paramref name="label"/> within
+    /// <paramref name="range"/> (horizontal) and <paramref name="halfAngle"/> of
+    /// facing, whose height relative to the eyes passes <paramref name="heightFilter"/>.
+    /// Actionable targets are preferred, so Gate 5 only fires when the only
+    /// candidate in reach is spent.
+    /// </summary>
+    private InteractableBase FindTarget(string label, float range, float halfAngle, Func<float, bool> heightFilter)
+    {
+        var eye = arCamera.transform.position;
+        var facing = Vector3.ProjectOnPlane(arCamera.transform.forward, Vector3.up);
+
+        InteractableBase best = null;
+        float bestScore = float.PositiveInfinity;
+        foreach (var t in InteractableBase.All)
+        {
+            if (t == null || !t.RespondsTo(label)) continue;
+
+            var offset = t.HitPoint - eye;
+            if (!heightFilter(offset.y)) continue;
+            offset.y = 0f;
+            float distance = offset.magnitude;
+            if (distance > range) continue;
+            if (halfAngle < 180f && distance > 0.05f && facing.sqrMagnitude > 1e-4f
+                && Vector3.Angle(facing, offset) > halfAngle) continue;
+
+            float score = distance + (t.IsActionable ? 0f : 1000f);
+            if (score < bestScore) { bestScore = score; best = t; }
+        }
+        return best;
+    }
+
+    private static string Key(GameEvent evt) => $"{evt.sessionId}/{evt.eventId}";
 
     /// <summary>Records an event key; false if it was already seen. Bounded FIFO history.</summary>
     private bool MarkSeen(string key)
@@ -140,42 +270,5 @@ public class EventResolver : MonoBehaviour
         while (_seenOrder.Count > dedupHistorySize)
             _seenEventIds.Remove(_seenOrder.Dequeue());
         return true;
-    }
-
-    private bool HasCapabilityFor(string actionLabel)
-    {
-        switch (actionLabel)
-        {
-            case "fireball":
-                return gameState.HasFireFlower;
-            default:
-                return true;
-        }
-    }
-
-    private bool TryFindTargetInRange(string actionLabel, out IInteractable target)
-    {
-        var colliders = Physics.OverlapSphere(arCamera.transform.position, interactionRadius, interactableLayerMask);
-
-        IInteractable best = null;
-        float bestAngle = facingAngleThreshold;
-
-        foreach (var col in colliders)
-        {
-            var candidate = col.GetComponent<IInteractable>();
-            if (candidate == null) continue;
-            if (!candidate.RespondsTo(actionLabel)) continue;
-
-            var toTarget = (col.transform.position - arCamera.transform.position).normalized;
-            var angle = Vector3.Angle(arCamera.transform.forward, toTarget);
-            if (angle <= bestAngle)
-            {
-                bestAngle = angle;
-                best = candidate;
-            }
-        }
-
-        target = best;
-        return best != null;
     }
 }

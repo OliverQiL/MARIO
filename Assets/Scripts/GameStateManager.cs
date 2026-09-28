@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Events;
 
 /// <summary>
 /// Authoritative game state: score, lives, stage progress, power-ups.
@@ -10,6 +11,12 @@ using UnityEngine;
 /// so neither source can accidentally reopen the gate the other closed:
 /// - tracking OK      — ARSessionManager.OnTrackingLost/Restored
 /// - a stage is live  — false while scanning, placing, and between stages
+/// plus "not game over".
+///
+/// Also holds the player's short-lived action states (Docs/GAME_DESIGN.md):
+/// airborne after a jump, ducked after a squat, invulnerable after damage.
+/// These are grace windows measured from when the event *arrives*, because
+/// events land up to ~275 ms after the physical action finished.
 /// </summary>
 public class GameStateManager : MonoBehaviour
 {
@@ -22,11 +29,36 @@ public class GameStateManager : MonoBehaviour
     [Header("Scoring")]
     [SerializeField] private int stageClearBonus = 500;
 
+    [Header("Lives")]
+    [SerializeField] private int startingLives = 3;
+    [Tooltip("Seconds of invulnerability after taking damage.")]
+    [SerializeField] private float invulnerableSeconds = 2f;
+
+    [Header("Events")]
+    [Tooltip("Fired after a life is lost (argument: lives remaining).")]
+    public UnityEvent<int> OnLifeLost = new();
+    [Tooltip("Fired when the last life is lost. Wire to LevelGenerator.EndGame.")]
+    public UnityEvent OnGameOver = new();
+    [Tooltip("Fired when a new game starts after a game over. Wire to LevelGenerator.RestartLoop.")]
+    public UnityEvent OnGameRestarted = new();
+
     [Header("Session (read-only at runtime)")]
     [Tooltip("Driven by ARSessionManager tracking events.")]
     [SerializeField] private bool isTracking = true;
     [Tooltip("Driven by LevelGenerator: true only while a placed stage is being played.")]
     [SerializeField] private bool isStageActive;
+
+    private static GameStateManager s_Instance;
+    /// <summary>The scene's GameStateManager, for stage elements spawned at runtime (blocks, enemies, pickups).</summary>
+    public static GameStateManager Instance => s_Instance != null ? s_Instance : (s_Instance = FindAnyObjectByType<GameStateManager>());
+
+    [Header("Player (read-only at runtime)")]
+    [SerializeField] private bool isGameOver;
+    [SerializeField] private string movementState = "stand";
+    private float _airborneUntil = float.NegativeInfinity;
+    private float _duckedUntil = float.NegativeInfinity;
+    private float _invulnerableUntil = float.NegativeInfinity;
+    private float _gameOverAt = float.NegativeInfinity;
 
     public int Score => score;
     public int Lives => lives;
@@ -34,8 +66,62 @@ public class GameStateManager : MonoBehaviour
     public bool HasFireFlower => hasFireFlower;
     public bool IsTracking => isTracking;
     public bool IsStageActive => isStageActive;
-    /// <summary>EventResolver's Gate 1: tracking is good and a stage is live.</summary>
-    public bool IsSessionReady => isTracking && isStageActive;
+    /// <summary>EventResolver's Gate 1: tracking is good, a stage is live, and the game isn't over.</summary>
+    public bool IsSessionReady => isTracking && isStageActive && !isGameOver;
+    public bool IsGameOver => isGameOver;
+    public float SecondsSinceGameOver => Time.time - _gameOverAt;
+    public string MovementState => movementState;
+    public bool IsAirborne => Time.time < _airborneUntil;
+    public bool IsDucked => Time.time < _duckedUntil;
+    public bool IsInvulnerable => Time.time < _invulnerableUntil;
+
+    private void Awake() => s_Instance = this;
+
+    // ---- player action states ----
+
+    public void SetMovementState(string state) => movementState = state;
+    public void Jump(float seconds) => _airborneUntil = Time.time + seconds;
+    public void Duck(float seconds) => _duckedUntil = Time.time + seconds;
+
+    /// <summary>
+    /// Damage from an enemy or hazard. Ignored while invulnerable. Costs a
+    /// life and the fire flower; the last life ends the game.
+    /// Returns true if the hit landed.
+    /// </summary>
+    public bool TakeHit(string source)
+    {
+        if (isGameOver || IsInvulnerable) return false;
+
+        lives = Mathf.Max(0, lives - 1);
+        hasFireFlower = false;
+        _invulnerableUntil = Time.time + invulnerableSeconds;
+        Debug.Log($"[GameStateManager] Hit by {source} — {lives} lives left.");
+        OnLifeLost?.Invoke(lives);
+
+        if (lives == 0)
+        {
+            isGameOver = true;
+            isStageActive = false;
+            _gameOverAt = Time.time;
+            Debug.Log($"[GameStateManager] GAME OVER — score {score}, stage {stageIndex}.");
+            OnGameOver?.Invoke();
+        }
+        return true;
+    }
+
+    /// <summary>Starts a fresh game after a game over (EventResolver calls this on a jump).</summary>
+    public void RestartGame()
+    {
+        score = 0;
+        lives = startingLives;
+        stageIndex = 1;
+        hasFireFlower = false;
+        isGameOver = false;
+        isStageActive = false;
+        _airborneUntil = _duckedUntil = _invulnerableUntil = float.NegativeInfinity;
+        Debug.Log("[GameStateManager] New game.");
+        OnGameRestarted?.Invoke();
+    }
 
     public void AddScore(int amount)
     {
@@ -43,10 +129,10 @@ public class GameStateManager : MonoBehaviour
         Debug.Log($"[GameStateManager] Score +{amount} -> {score}");
     }
 
-    public void LoseLife()
+    public void AddLife()
     {
-        lives = Mathf.Max(0, lives - 1);
-        Debug.Log($"[GameStateManager] Life lost -> {lives} remaining");
+        lives++;
+        Debug.Log($"[GameStateManager] Extra life -> {lives}");
     }
 
     public void SetFireFlower(bool value)

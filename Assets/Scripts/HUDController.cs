@@ -19,7 +19,9 @@ using TMPro;
 /// Feedback keeps the report's distinction: Gates 3-5 ("recognised but not
 /// permitted") are shown prominently with the reason; Gate 2 low confidence
 /// ("not registered") is a quiet hint; duplicates and Gate 1 are silent (the
-/// banner already explains why nothing is being accepted).
+/// banner already explains why nothing is being accepted). State-only actions
+/// (stand/walk/squat, a jump that hit nothing) are silent too. Damage and
+/// fireball impacts come from GameStateManager.OnLifeLost / EventResolver.OnImpact.
 /// </summary>
 public class HUDController : MonoBehaviour
 {
@@ -66,7 +68,12 @@ public class HUDController : MonoBehaviour
 
     private void OnEnable()
     {
-        if (eventResolver != null) eventResolver.OnEventProcessed += HandleEventProcessed;
+        if (eventResolver != null)
+        {
+            eventResolver.OnEventProcessed += HandleEventProcessed;
+            eventResolver.OnImpact += HandleImpact;
+        }
+        if (gameState != null) gameState.OnLifeLost.AddListener(HandleLifeLost);
         if (levelGenerator != null)
         {
             levelGenerator.OnPlacementFailed.AddListener(HandlePlacementFailed);
@@ -77,7 +84,12 @@ public class HUDController : MonoBehaviour
 
     private void OnDisable()
     {
-        if (eventResolver != null) eventResolver.OnEventProcessed -= HandleEventProcessed;
+        if (eventResolver != null)
+        {
+            eventResolver.OnEventProcessed -= HandleEventProcessed;
+            eventResolver.OnImpact -= HandleImpact;
+        }
+        if (gameState != null) gameState.OnLifeLost.RemoveListener(HandleLifeLost);
         if (levelGenerator != null)
         {
             levelGenerator.OnPlacementFailed.RemoveListener(HandlePlacementFailed);
@@ -104,7 +116,8 @@ public class HUDController : MonoBehaviour
         _lastScore = gameState.Score;
         if (delta > 0) ShowFeedback(FeedbackPrefix() + $"+{delta}", goodColor);
 
-        statsText.text = $"Stage {gameState.StageIndex}   Score {gameState.Score}   {Hearts(gameState.Lives)}";
+        string flower = gameState.HasFireFlower ? "   <color=#FF8A1F>FIRE</color>" : "";
+        statsText.text = $"Stage {gameState.StageIndex}   Score {gameState.Score}   {Hearts(gameState.Lives)}{flower}";
     }
 
     private void UpdateConnection()
@@ -133,7 +146,12 @@ public class HUDController : MonoBehaviour
         string message = null;
         Color color = Color.white;
 
-        if (sessionManager != null && !sessionManager.IsTracking)
+        if (gameState != null && gameState.IsGameOver)
+        {
+            message = gameState.SecondsSinceGameOver >= 2f ? "GAME OVER — jump to play again" : "GAME OVER";
+            color = warningColor;
+        }
+        else if (sessionManager != null && !sessionManager.IsTracking)
         {
             message = "Tracking lost — look around slowly";
             color = warningColor;
@@ -184,6 +202,14 @@ public class HUDController : MonoBehaviour
     {
         string action = Capitalise(evt.actionLabel);
 
+        if (result.StateOnly) return;
+
+        if (result.LaunchedProjectile)
+        {
+            ShowFeedback("Fireball!", deniedColor);
+            return;
+        }
+
         if (result.Resolved)
         {
             // The score change is picked up in UpdateStats; prefix it with the action.
@@ -196,7 +222,7 @@ public class HUDController : MonoBehaviour
         switch (result.Gate)
         {
             case 3:
-                ShowFeedback(evt.actionLabel == "fireball" ? "Need a fire flower to throw fireballs" : $"Can't {evt.actionLabel} right now", deniedColor);
+                ShowFeedback(evt.actionLabel == "fireball" ? "Fireballs recharging" : $"Can't {evt.actionLabel} right now", deniedColor);
                 break;
             case 4:
                 ShowFeedback($"{action}: nothing in range", deniedColor);
@@ -210,6 +236,16 @@ public class HUDController : MonoBehaviour
             // Gate 1 (session not ready) and duplicates: silent.
         }
     }
+
+    private void HandleImpact(GameEvent evt, Component target)
+    {
+        _pendingPrefix = "Fireball hit!  ";
+        _pendingPrefixFrame = Time.frameCount;
+        ShowFeedback("Fireball hit!", goodColor);
+    }
+
+    private void HandleLifeLost(int livesLeft) =>
+        ShowFeedback(livesLeft > 0 ? "Ouch! −1 life" : "Out of lives!", warningColor);
 
     private void HandlePlacementFailed() => _placementFailedAt = Time.time;
 

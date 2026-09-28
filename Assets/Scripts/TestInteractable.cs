@@ -1,30 +1,25 @@
 using UnityEngine;
 
 /// <summary>
-/// Placeholder target for testing EventResolver — stands in for a real
-/// question-mark block or enemy until those exist. Attach to any GameObject
-/// with a Collider.
+/// Generic test target (NetworkSmokeTest). Responds to a configurable list of
+/// actions, awards a configurable score, and is permanently spent after one
+/// hit — enough to exercise Gates 4-6 without real game content.
 /// </summary>
-public class TestInteractable : MonoBehaviour, IInteractable
+public class TestInteractable : InteractableBase
 {
     [SerializeField] private string[] respondsToActions = { "stomp" };
     [SerializeField] private int scoreValue = 100;
 
     private bool _spent;
 
-    public bool IsActionable => !_spent;
+    public override bool IsActionable => !_spent;
 
-    public bool RespondsTo(string actionLabel)
-    {
-        return System.Array.IndexOf(respondsToActions, actionLabel) >= 0;
-    }
+    public override bool RespondsTo(string actionLabel) => System.Array.IndexOf(respondsToActions, actionLabel) >= 0;
 
-    public void ResolveHit(string actionLabel, GameStateManager gameState)
+    public override void ResolveHit(string actionLabel, GameStateManager gameState)
     {
         _spent = true;
         gameState.AddScore(scoreValue);
         Debug.Log($"[TestInteractable] '{name}' resolved by '{actionLabel}' — now spent.");
-        // Real spawn effects / destroy timing come later; spent state alone
-        // is enough to prove Gate 5 correctly rejects a second hit.
     }
 }

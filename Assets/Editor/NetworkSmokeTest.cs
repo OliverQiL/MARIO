@@ -8,13 +8,15 @@ using UnityEngine;
 /// <summary>
 /// Headless end-to-end check of NetworkClient + EventResolver against
 /// tools/mock_gateway.py, without Play Mode or a device. Builds a throwaway
-/// scene (resolver, camera, a stomp-able TestInteractable cube 1 m ahead),
+/// scene (resolver, eye-height camera, a stomp-able TestInteractable at its feet 0.5 m ahead),
 /// drives the real components' lifecycle methods from the editor loop, and
 /// exits with 0 once the expected ACK outcomes arrive (1 on timeout/mismatch).
 ///
 /// Run the mock gateway first, then (Unity closed):
 ///   Unity -batchmode -projectPath . -executeMethod NetworkSmokeTest.Run \
-///         -gatewayUrl wss://127.0.0.1:8765/ -pin <sha256> [-expect 6,5,2,3,2,4]
+///         -gatewayUrl wss://127.0.0.1:8765/ -pin <sha256> [-expect 6,5,2,4,2,6]
+/// Default script "stomp,stomp,dup,fireball,low:jump,walk" → hit, spent, duplicate,
+/// bare-handed strike with no brick in reach, low confidence, state-only walk.
 /// Note: no -quit — the editor loop has to keep running to pump async work.
 /// </summary>
 public static class NetworkSmokeTest
@@ -31,17 +33,16 @@ public static class NetworkSmokeTest
     {
         var url = Arg("-gatewayUrl", "wss://127.0.0.1:8765/");
         var pin = Arg("-pin", "");
-        s_Expected = Array.ConvertAll(Arg("-expect", "6,5,2,3,2,4").Split(','), int.Parse);
+        s_Expected = Array.ConvertAll(Arg("-expect", "6,5,2,4,2,6").Split(','), int.Parse);
 
         EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
         var cameraGO = new GameObject("Camera", typeof(Camera));
-        var target = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        target.name = "StompTarget";
-        target.transform.position = new Vector3(0f, 0f, 1f);
-        target.transform.localScale = Vector3.one * 0.3f;
-        target.AddComponent<TestInteractable>(); // responds to "stomp" by default
-        Physics.SyncTransforms();
+        cameraGO.transform.position = new Vector3(0f, 1.5f, 0f); // eye height, facing +Z
+        var target = new GameObject("StompTarget");
+        target.transform.position = new Vector3(0f, 0.15f, 0.5f); // at the player's feet, within stomp range
+        var interactable = target.AddComponent<TestInteractable>(); // responds to "stomp" by default
+        Invoke(interactable, "OnEnable"); // register (OnEnable doesn't run in edit mode)
 
         var manager = new GameObject("GameManager");
         var state = manager.AddComponent<GameStateManager>();

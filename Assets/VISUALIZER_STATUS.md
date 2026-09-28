@@ -190,8 +190,8 @@ Other details:
 - **Confirmed** in Editor Play Mode earlier. On 2026-09-25 it was confirmed again end to end through NetworkClient (see below).
 - Still TODO at Gate 6: spawning effects and the AudioManager cue. Haptics are handled by NetworkClient.
 
-### `TestInteractable.cs` — 🟡 (test-only placeholder, not real game content)
-Implements `IInteractable`. Responds to `"stomp"` by default (the list of actions is configurable), awards a configurable score (default 100), and is permanently spent after one hit. Since 2026-09-28 it sits on each TestStage's 30 cm **Block**, so stomps have a target inside the stage the player walks through. The old separate 1 m scene cube sat at a fixed world position near the session origin and showed up as a "big cube at the start"; `StageLoopSetup` removed it.
+### `TestInteractable.cs` — test-only
+Now derives from `InteractableBase`. It's used only by `NetworkSmokeTest`. Real stage content replaced it on 2026-09-29; see "Gameplay (pass 1)".
 
 ### `DebugActionInput.cs` — 🗑️ deleted (2026-09-25)
 Replaced by NetworkClient + `tools/mock_gateway.py` (interactive mode = type action names). Active Input Handling is still "Both"; it could go back to the new Input System only.
@@ -226,6 +226,51 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
   xcrun devicectl device install app --device <id> <dd>/Build/Products/Debug-iphoneos/MARIO.app
   xcrun devicectl device process launch --device <id> --console com.cg4002.mario
   ```
+
+### Gameplay (pass 1) — 🟡 built; headless tests pass; on-device check pending (2026-09-29)
+**Spec:** `Docs/GAME_DESIGN.md`, agreed with the team, extending report §6.4. Scripts are in `Assets/Scripts/Gameplay/`. Content is built from primitives by `GameContentSetup.cs` (**Tools ▸ MARIO ▸ Build Game Content**).
+
+**Elements and scripts:**
+- **`InteractableBase`:** the registry of targets. Targeting is a geometric query over this registry, not a physics query, so stage elements have no colliders. `IInteractable` and `TestInteractable` now go through it.
+- **`QuestionBlock`:** sits at eye height + 0.3 m and is hit by a jump. It drops a fire flower if the player has none, otherwise gives a coin (+100), then it's spent.
+- **`BrickBlock`:** sits at chest height and is broken by a bare-handed strike or a fireball (+50).
+- **`Pickup`:** the fire flower. It's collected by walking to it.
+- **`Goomba`:** walks towards the player at 0.25 m/s. Stomp or fireball defeats it (+100). Contact costs a life, unless the player is airborne, in which case it passes by. It's frozen while the session isn't ready.
+- **`EnemySpawner`:** spawns 2 Goombas, one at a time.
+- **`Fireball`:** a projectile aimed along the camera; at most 2 are in flight (Gate 3).
+- **`CoinPop`** (visual only) and **`EyeHeightPlacement`**, which sets block heights relative to the player's eyes.
+
+**`EventResolver`** now has a rule per action:
+- stand, walk and squat, and a jump that hits nothing, are state-only (`ResolutionResult.StateOnly`)
+- jump hits an overhead block
+- fireball launches a projectile if the player has a flower, otherwise it's a bare-handed strike
+- stomp hits an enemy at the player's feet
+- during game over, only a jump (after a 2 s grace period) does anything: it restarts
+- a new `OnImpact` event reports deferred fireball hits
+
+**`GameStateManager`** has:
+- windows for airborne (1 s), ducked (1 s) and invulnerable (2 s)
+- `TakeHit`, which costs a life and the flower
+- game over, and `RestartGame`
+- the events `OnLifeLost`, `OnGameOver` and `OnGameRestarted`
+- a lazy `Instance`, used by elements spawned at runtime
+
+**`LevelGenerator`:**
+- **Templates:** `Assets/Stages/StandardStage` (1.2 × 2.0 m: ? block, brick, spawner, flag) and `CompactStage` (0.6 × 1.0 m: ? block, flag). TestStage was deleted.
+- **Placement validity:** the footprint needs **detected floor under all 4 corners and under the flag**. This fixes flags over furniture on phones without LiDAR.
+- **Game over and restart:** `EndGame`/`RestartLoop` are wired from `OnGameOver`/`OnGameRestarted`.
+- **Scan target:** raised to 4 m², which is more than the largest footprint (2.4 m²).
+
+**Other changes:**
+- **Haptics:** there's a new `damage` pattern. "Denied" is no longer sent for continuous actions, and nothing is sent for state-only actions.
+- **HUD:**
+  - banner: "GAME OVER — jump to play again"
+  - feedback: "Ouch! −1 life", "Fireball!", "Fireball hit!"
+  - stats: a FIRE indicator while the player has the flower
+
+**Tests:**
+- `GameplaySmokeTest.cs` checks the rules above against the real prefabs: **29/29 pass.** Run it with `-executeMethod GameplaySmokeTest.Run` (no `-quit`).
+- `NetworkSmokeTest` now expects gates `6,5,2,4,2,6` and passes.
 
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
@@ -379,8 +424,8 @@ These cost real debugging time once already — don't rediscover them:
 2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
 3. ~~Build Step 6 (stage completion loop)~~: done and tested on the device on 2026-09-28. Re-check the furniture-plane fix on the next device session.
 4. ~~Expand `HUDController`~~: built on 2026-09-28; the on-device check is pending.
-5. **Add a second, smaller stage template** with `StageFootprint` — needed to actually exercise `LevelGenerator`'s compact-template fallback tier, which has never fired.
-6. **Build `AudioManager`** — currently entirely unstarted.
+5. ~~Add a second, smaller stage template~~: `CompactStage` added 2026-09-29. Next: check the fallback fires on the device in a cramped spot. After that comes gameplay pass 2 (Koopa, Bullet Bill + squat, 1-Up), per `Docs/GAME_DESIGN.md`.
+6. **Build `AudioManager`**: deferred to a later enhancement (decided 2026-09-29).
 7. Once `NetworkClient` exists and Xavier's classifier is producing real events, revisit `minConfidence` and Gate 2's dedup strategy against real traffic characteristics.
 
 ---
