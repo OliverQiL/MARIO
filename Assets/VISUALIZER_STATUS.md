@@ -272,6 +272,34 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
 - `GameplaySmokeTest.cs` checks the rules above against the real prefabs: **29/29 pass.** Run it with `-executeMethod GameplaySmokeTest.Run` (no `-quit`).
 - `NetworkSmokeTest` now expects gates `6,5,2,4,2,6` and passes.
 
+### Editor playtesting with XR Simulation — ✅ set up (2026-09-29)
+Day-to-day gameplay testing happens in the Editor: open `SampleScene` and press Play. AR Foundation's XR Simulation, which is the Editor/Standalone XR loader, supplies a virtual room in place of the camera.
+- **Moving:** hold right-click and drag to look; WASD to move. Planes are only discovered while the camera moves, so look around and walk to scan.
+- **Actions:** keys **1 stand, 2 walk, 3 jump, 4 squat, 5 fireball, 6 stomp** (`EditorActionInput`, on GameManager). They go straight into `EventResolver`.
+  - Held continuous actions (stand, walk, stomp) repeat every 0.1 s, like classifier windows.
+  - Discrete actions (jump, squat, fireball) fire once per press.
+  - The component disables itself outside the Editor and uses the Input System package.
+- **Simulated room:** `LivingRoom_20ftx18.5ft`, from Unity's official XR Simulation sample environments.
+  - **Each machine runs `tools/fetch_sim_environments.sh` once, with Unity closed.** It downloads the environments into `ContentPackages/`, imports them into `Assets/UnityXRContent/` (both gitignored, ~40 MB), and runs `SimulationSetup`.
+  - To switch rooms: **Tools ▸ MARIO ▸ List Simulation Environments**, then `SimulationSetup.Run -environment NAME`.
+- **Floor rule:** simulation doesn't classify planes (`supportsClassification` is false), so `IsFloorPlane` uses the height fallback there. ARKit's Floor labels are used on devices.
+- **Network in the Editor:** `NetworkClient` also connects from the Editor if the mock gateway is running. It was seen connecting over 127.0.0.1.
+- **Play Mode setting:** this project has **Enter Play Mode Options** on, so there's no domain reload. Static state (the `InteractableBase` registry, `Fireball` in-flight list, `GameStateManager.Instance`) survives between Play sessions, and it's pruned using Unity's null check.
+- **`SimulationSmokeTest.cs`:** a headless Play Mode check (no `-quit`). It verifies the room loads, the session tracks and nothing errors. It does **not** scan, because the camera doesn't move.
+
+**Testing layers:**
+- headless rule tests (`GameplaySmokeTest`, `NetworkSmokeTest`) after every change
+- Editor + simulation for gameplay feel
+- a device at milestones, for real tracking, rooms, LiDAR, Wi-Fi and performance
+
+**Also on 2026-09-29, both from the pass-1 device test:**
+- `EnemySpawner` waits while the player is within 1.2 m of its spawn point. On the device, a Goomba had hit the player about 1 s after spawning.
+- `GatewayConnection` tries routable IPv4 first, then link-local 169.254.x.x (a USB/peer-to-peer link that comes and goes, and caused a ~30 s reconnect), then IPv6.
+
+**Pass-1 device test (iPhone 17, 2026-09-29):**
+- Confirmed: the floor-only scan, the compact fallback (the first time it has fired), the standard stage and spawner, Goomba damage with the `damage` haptic, game over, and jump-to-restart.
+- Not yet exercised on the device: the ? block and flower, fireballs, stomping and the brick strike. Relaying actions through chat was too slow for enemy encounters, which is why Editor simulation testing was set up.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.

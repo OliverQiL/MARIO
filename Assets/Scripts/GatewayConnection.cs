@@ -133,8 +133,9 @@ public sealed class GatewayConnection : IDisposable
     /// <summary>
     /// Resolves the host (an IP, or a name such as the gateway laptop's
     /// "*.local" mDNS hostname, which survives DHCP address changes) and tries
-    /// each address, IPv4 first — ".local" names also resolve to IPv6
-    /// link-local addresses, which a server may not be listening on.
+    /// each address in preference order: routable IPv4 (the Wi-Fi LAN), then
+    /// link-local IPv4 (169.254.x.x — a USB/peer-to-peer link that comes and
+    /// goes; preferring it caused a ~30 s reconnect on-device), then IPv6.
     /// </summary>
     private async Task ConnectTcpAsync(int port)
     {
@@ -143,7 +144,7 @@ public sealed class GatewayConnection : IDisposable
             : await Dns.GetHostAddressesAsync(_uri.Host).ConfigureAwait(false);
 
         Exception last = null;
-        foreach (var address in addresses.OrderBy(a => a.AddressFamily == AddressFamily.InterNetwork ? 0 : 1))
+        foreach (var address in addresses.OrderBy(AddressPreference))
         {
             var tcp = new TcpClient(address.AddressFamily) { NoDelay = true }; // small, latency-sensitive frames
             try
@@ -159,6 +160,13 @@ public sealed class GatewayConnection : IDisposable
             }
         }
         throw last ?? new SocketException((int)SocketError.HostNotFound);
+    }
+
+    private static int AddressPreference(IPAddress address)
+    {
+        if (address.AddressFamily != AddressFamily.InterNetwork) return 2;
+        var b = address.GetAddressBytes();
+        return b[0] == 169 && b[1] == 254 ? 1 : 0;
     }
 
     // ---- TLS pinning ----

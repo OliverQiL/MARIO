@@ -154,12 +154,16 @@ public static class GameplaySmokeTest
         s_State.BeginStage();
         var spawnerGO = new GameObject("Spawner");
         spawnerGO.transform.SetParent(s_Stage, false);
+        spawnerGO.transform.position = new Vector3(0f, 0f, 2f);
         var spawner = spawnerGO.AddComponent<EnemySpawner>();
         SetField(spawner, "enemyPrefab", Load<Goomba>(GameContentSetup.GoombaPath));
-        Check(spawner.Tick(1f) == null, "spawner waits for its initial delay");
-        var spawned = spawner.Tick(1.1f);
-        Check(spawned != null, "spawner spawns after the initial delay");
-        Check(spawner.Tick(5f) == null, "spawner waits while its enemy is alive");
+        var far = s_Cam.transform.position;
+        var near = new Vector3(0f, 1.5f, 1.5f); // 0.5 m from the spawn point
+        Check(spawner.Tick(1f, far) == null, "spawner waits for its initial delay");
+        Check(spawner.Tick(1.1f, near) == null, "spawner holds off while the player is near the spawn point");
+        var spawned = spawner.Tick(0.1f, far);
+        Check(spawned != null, "spawner spawns once the player is clear");
+        Check(spawner.Tick(5f, far) == null, "spawner waits while its enemy is alive");
 
         // -- stage templates are complete
         var standard = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath);

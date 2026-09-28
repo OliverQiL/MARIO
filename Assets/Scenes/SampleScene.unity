@@ -402,6 +402,7 @@ GameObject:
   - component: {fileID: 104318748}
   - component: {fileID: 104318747}
   - component: {fileID: 104318749}
+  - component: {fileID: 104318750}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -526,6 +527,22 @@ MonoBehaviour:
   maxBackoffSeconds: 8
   backoffJitter: 0.2
   sendHaptics: 1
+--- !u!114 &104318750
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104318744}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 323f037b3ad8b454fb42e9df20ba3fe2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::EditorActionInput
+  eventResolver: {fileID: 104318747}
+  confidence: 0.95
+  continuousInterval: 0.1
+  showKeyLegend: 1
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
