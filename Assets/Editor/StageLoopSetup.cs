@@ -13,6 +13,8 @@ using UnityEngine.Events;
 ///   GameStateManager.BeginStage/CompleteStage (persistent listeners, same
 ///   pattern as ARSessionManager's tracking events).
 /// - Points ScanHUD at LevelGenerator + GameStateManager.
+/// - Removes the old scene-only 1 m test cube (TestInteractable); the stage
+///   Block carries TestInteractable instead, so stomps have a real target.
 ///
 /// Menu:     Tools ▸ MARIO ▸ Configure Stage Loop
 /// Headless: Unity -batchmode -quit -projectPath . -executeMethod StageLoopSetup.Run
@@ -45,6 +47,13 @@ public static class StageLoopSetup
         var sessionSo = new SerializedObject(sessionManager);
         sessionSo.FindProperty("requiredFloorArea").floatValue = 3f;
         sessionSo.ApplyModifiedPropertiesWithoutUndo();
+
+        // The early EventResolver test cube sat at a fixed world position near the session origin.
+        foreach (var interactable in Object.FindObjectsByType<TestInteractable>(FindObjectsInactive.Include))
+        {
+            if (interactable.gameObject.scene == scene)
+                Object.DestroyImmediate(interactable.gameObject);
+        }
 
         var scanHud = Object.FindAnyObjectByType<ScanHUD>();
         if (scanHud != null)
@@ -99,6 +108,7 @@ public static class StageLoopSetup
         block.transform.SetParent(root.transform, false);
         block.transform.localPosition = new Vector3(0f, 0.15f, -0.15f);
         block.transform.localScale = Vector3.one * 0.3f;
+        block.AddComponent<TestInteractable>(); // stomp target (was a separate scene cube)
 
         // Goal 40 cm beyond the block's far face: with a 0.35 m reach it can't be triggered from the near side.
         var goal = new GameObject("Goal");

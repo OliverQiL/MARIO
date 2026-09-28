@@ -192,7 +192,7 @@ Other details:
 - Still TODO at Gate 6: spawning effects and the AudioManager cue. Haptics are handled by NetworkClient.
 
 ### `TestInteractable.cs` — 🟡 (test-only placeholder, not real game content)
-Implements `IInteractable`. Responds to `"stomp"` by default (configurable string array), awards a configurable score (default 100), becomes permanently spent after one hit. Attached to a plain Scene cube, separate from the `TestStage` prefab — used purely to validate `EventResolver`.
+Implements `IInteractable`. Responds to `"stomp"` by default (the list of actions is configurable), awards a configurable score (default 100), and is permanently spent after one hit. Since 2026-09-28 it sits on each TestStage's 30 cm **Block**, so stomps have a target inside the stage the player walks through. The old separate 1 m scene cube sat at a fixed world position near the session origin and showed up as a "big cube at the start"; `StageLoopSetup` removed it.
 
 ### `DebugActionInput.cs` — 🗑️ deleted (2026-09-25)
 Replaced by NetworkClient + `tools/mock_gateway.py` (interactive mode = type action names). Active Input Handling is still "Both"; it could go back to the new Input System only.
@@ -299,10 +299,18 @@ No audio code exists at all.
   - **Cause:** the downward floor ray took the *first* plane hit, which is the highest one.
   - **Fix:** `TryGetFloorProjectedPose` now considers only HorizontalUp planes. The checkpoint takes the lowest plane; placement candidates must be within `floorHeightTolerance` (0.15 m) of the anchor's floor height. Built and installed; **not yet re-tested by walking.**
   - **Related, fixed 2026-09-28:** see "Floor-only scanning" below.
-- **Floor-only scanning** (2026-09-28, built; **not yet tested on a device**):
+- **Placement fix (2026-09-28): a stationary player was clearing stages.** On the device, stages 5–19 cleared back to back while the player stood still. Stages were placed 0.5 m away at fixed world yaws, which put the goal within reach.
+  - Candidates now face away from the player, so the goal is on the far side.
+  - They must keep `playerClearance` (0.3 m) between the player and the footprint.
+  - The goal must be at least `reachRadius + minGoalWalkDistance` (0.5 m) from the player.
+  - `StageGoal` only arms after the player has been outside its reach.
+  - Placement logs now give skip reasons: no-floor, too close to the player, obstructed.
+  - Confirmed on the device: 10 stages cleared (stage 11, score 5000 in the screenshots), with flags appearing 2–4 m away.
+- **Floor-only scanning** (2026-09-28, ✅ confirmed on the device; 1.57 m² of desk/bed excluded):
   - `ARSessionManager.IsFloorPlane(ARPlane)` decides what counts as floor. The scan area uses it, and so does `LevelGenerator`'s floor projection, so the two always agree.
     - ARKit's semantic plane classification wins when present: `Floor` counts, and any other label (Table, Seat, …) never does. It needs an A12 or newer chip, not LiDAR; the iPhone 17 qualifies.
-    - Planes ARKit hasn't classified yet count only within `floorHeightTolerance` (0.15 m) of `FloorHeight`.
+    - On devices that support classification, **only** Floor-labelled planes count. Before this rule, a desk was counted as floor for the second or so before ARKit labelled it.
+    - Only on devices without classification do unlabelled planes count, and then only within `floorHeightTolerance` (0.15 m) of `FloorHeight`.
   - `FloorHeight` is the height of the largest Floor-classified plane. Without one, it's the lowest unclassified plane of at least 0.25 m².
   - `ExcludedArea` reports the area rejected as not-floor, and it's logged alongside scan progress.
   - `requiredFloorArea` in the scene was lowered from 10 m² to **3 m²**: with beds and tables no longer counted, 10 m² can be unreachable in a bedroom.
