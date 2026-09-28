@@ -10,6 +10,10 @@ Usage:
   python3 tools/mock_gateway.py --auto 1.0      # send a random action every 1.0 s
   python3 tools/mock_gateway.py --script "stomp,stomp,dup,fireball,low:jump" --exit-after-acks
   python3 tools/mock_gateway.py --plain         # ws:// instead of wss:// (debug only)
+  python3 tools/mock_gateway.py --command-file /tmp/gw.cmd
+                                                # also run commands appended to a file
+                                                # (echo jump >> /tmp/gw.cmd), for hands-free
+                                                # device testing while someone else plays
 
 Interactive commands:
   stand | walk | jump | squat | fireball | stomp   send a GAME_EVENT (confidence 0.95)
@@ -156,6 +160,23 @@ class Gateway:
                 return
             await self.command(line)
 
+    async def command_file_loop(self, path):
+        f = pathlib.Path(path)
+        f.touch()
+        offset = f.stat().st_size  # only commands appended after startup
+        while True:
+            await asyncio.sleep(0.1)
+            size = f.stat().st_size
+            if size < offset:
+                offset = 0  # truncated
+            if size > offset:
+                with f.open() as fh:
+                    fh.seek(offset)
+                    chunk = fh.read()
+                    offset = fh.tell()
+                for line in chunk.splitlines():
+                    await self.command(line)
+
     async def auto_loop(self, period):
         while True:
             await asyncio.sleep(period)
@@ -180,6 +201,9 @@ class Gateway:
             tasks = []
             if self.args.auto:
                 tasks.append(asyncio.create_task(self.auto_loop(self.args.auto)))
+            if self.args.command_file:
+                tasks.append(asyncio.create_task(self.command_file_loop(self.args.command_file)))
+                log(f"reading commands appended to {self.args.command_file}")
             if not self.args.script and not self.args.auto and sys.stdin.isatty():
                 tasks.append(asyncio.create_task(self.stdin_loop()))
             try:
@@ -200,6 +224,7 @@ if __name__ == "__main__":
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--plain", action="store_true", help="ws:// without TLS")
     p.add_argument("--auto", type=float, metavar="SECONDS", help="send a random action periodically")
+    p.add_argument("--command-file", help="poll this file for appended commands (one per line)")
     p.add_argument("--script", help="comma-separated commands to send after VISUALIZER_READY")
     p.add_argument("--exit-after-acks", action="store_true", help="with --script: exit once every scripted event is ACKed")
     p.add_argument("--timeout", type=float, help="exit with code 2 after this many seconds")
