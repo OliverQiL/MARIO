@@ -194,8 +194,9 @@ class Gateway:
         scheme = "ws" if self.args.plain else "wss"
         self.expected_acks = len(self.args.script.split(",")) if self.args.script else 0
 
-        async with websockets.serve(self.handler, "0.0.0.0", self.args.port, ssl=ssl_ctx):
-            log(f"mock gateway listening on {scheme}://{ip}:{self.args.port}/  (and {scheme}://127.0.0.1:{self.args.port}/)")
+        host_name = subprocess.run(["scutil", "--get", "LocalHostName"], capture_output=True, text=True).stdout.strip()
+        async with websockets.serve(self.handler, None, self.args.port, ssl=ssl_ctx):  # all interfaces, IPv4 + IPv6
+            log(f"mock gateway listening on {scheme}://{host_name}.local:{self.args.port}/  (= {scheme}://{ip}:{self.args.port}/)")
             if not self.args.plain:
                 log(f"certificate SHA-256 (paste into NetworkClient 'Pinned Cert Sha256'): {fingerprint}")
             tasks = []

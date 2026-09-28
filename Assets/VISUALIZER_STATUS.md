@@ -335,7 +335,10 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 - Phone-side processing took 0.7–3.8 ms.
 - **Round trip was about 100–185 ms, compared with 1–5 ms in the local headless test.** That is a large share of the 275 ms budget and needs investigating before integration. Likely causes are iPhone Wi-Fi power-save and the wait for the next frame's `Update` before the phone processes an event. To measure, have the gateway timestamp each event and compare with the ACK, and test on the team's router.
 
-**Scene values:** currently `wss://192.168.0.111:8765/` (the dev Mac) and the mock gateway's pin. **Change both for John's gateway.**
+**Scene values:** `wss://Olis-MacBook-Pro.local:8765/` and the mock gateway's pin.
+- The URL is the dev Mac's mDNS hostname, so it keeps working when DHCP changes the Mac's IP. That happened on 2026-09-29: .111 became .105.
+- `GatewayConnection` resolves the name itself and tries IPv4 addresses first, because `.local` names also return IPv6 link-local addresses.
+- **Change both the URL and the pin for John's gateway.** His laptop's `.local` name works the same way.
 
 ### `AudioManager` — ❌ not started
 No audio code exists at all.

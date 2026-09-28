@@ -519,7 +519,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::NetworkClient
   eventResolver: {fileID: 104318747}
-  gatewayUrl: wss://192.168.0.111:8765/
+  gatewayUrl: wss://Olis-MacBook-Pro.local:8765/
   pinnedCertSha256: 0FBB1549E2C7688DB21D9F74877693FEAAE4D9CF2B2E2275415C1767F607520C
   connectOnStart: 1
   initialBackoffSeconds: 0.5

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Net.Security;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -60,13 +62,12 @@ public sealed class GatewayConnection : IDisposable
     public async Task RunAsync(CancellationToken token)
     {
         SetState(ConnectionState.Connecting);
-        _tcp = new TcpClient { NoDelay = true }; // small, latency-sensitive frames
         using var abortOnCancel = token.Register(Dispose);
 
         try
         {
             int port = _uri.IsDefaultPort ? (_uri.Scheme == "wss" ? 443 : 80) : _uri.Port;
-            await _tcp.ConnectAsync(_uri.Host, port).ConfigureAwait(false);
+            await ConnectTcpAsync(port).ConfigureAwait(false);
             Stream stream = _tcp.GetStream();
 
             if (_uri.Scheme == "wss")
@@ -127,6 +128,37 @@ public sealed class GatewayConnection : IDisposable
         _socket = null;
         _tcp?.Close();
         _tcp = null;
+    }
+
+    /// <summary>
+    /// Resolves the host (an IP, or a name such as the gateway laptop's
+    /// "*.local" mDNS hostname, which survives DHCP address changes) and tries
+    /// each address, IPv4 first — ".local" names also resolve to IPv6
+    /// link-local addresses, which a server may not be listening on.
+    /// </summary>
+    private async Task ConnectTcpAsync(int port)
+    {
+        var addresses = IPAddress.TryParse(_uri.Host, out var literal)
+            ? new[] { literal }
+            : await Dns.GetHostAddressesAsync(_uri.Host).ConfigureAwait(false);
+
+        Exception last = null;
+        foreach (var address in addresses.OrderBy(a => a.AddressFamily == AddressFamily.InterNetwork ? 0 : 1))
+        {
+            var tcp = new TcpClient(address.AddressFamily) { NoDelay = true }; // small, latency-sensitive frames
+            try
+            {
+                await tcp.ConnectAsync(address, port).ConfigureAwait(false);
+                _tcp = tcp;
+                return;
+            }
+            catch (Exception e)
+            {
+                last = e;
+                tcp.Close();
+            }
+        }
+        throw last ?? new SocketException((int)SocketError.HostNotFound);
     }
 
     // ---- TLS pinning ----
