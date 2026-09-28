@@ -65,6 +65,8 @@ public class ARSessionManager : MonoBehaviour
     public float? FloorHeight { get; private set; }
     /// <summary>Upward-facing area rejected as not-floor (beds, tables, seats…), for diagnostics.</summary>
     public float ExcludedArea => _excludedArea;
+    /// <summary>Whether this device labels planes semantically (Floor, Table, Seat…).</summary>
+    public bool SupportsClassification => planeManager.descriptor?.supportsClassification ?? false;
 
     public bool IsTracking { get; private set; } = true;
     public NotTrackingReason LastNotTrackingReason { get; private set; } = NotTrackingReason.None;
@@ -123,9 +125,13 @@ public class ARSessionManager : MonoBehaviour
     // ---- Scan-phase orchestration (Step 1) ----
 
     /// <summary>
-    /// True if this plane is part of the floor. ARKit's classification wins
-    /// when it has one (it arrives a little after the plane itself, on A12+
-    /// devices, no LiDAR needed); otherwise fall back to height.
+    /// True if this plane is part of the floor.
+    /// On devices with semantic plane classification (every A12+ iPhone, no
+    /// LiDAR needed), only ARKit-labelled Floor planes count. Classification
+    /// arrives a second or so after a plane appears; a height heuristic here
+    /// counted a desk as floor during that window (seen on-device), so
+    /// unlabelled planes simply wait. Devices without classification fall
+    /// back to height relative to the floor level.
     /// </summary>
     public bool IsFloorPlane(ARPlane plane)
     {
@@ -133,7 +139,7 @@ public class ARSessionManager : MonoBehaviour
 
         var classes = plane.classifications;
         if ((classes & PlaneClassifications.Floor) != 0) return true;
-        if (classes != PlaneClassifications.None) return false; // Table, Seat, …
+        if (classes != PlaneClassifications.None || SupportsClassification) return false;
 
         return FloorHeight.HasValue && Mathf.Abs(plane.center.y - FloorHeight.Value) <= floorHeightTolerance;
     }

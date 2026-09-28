@@ -63,8 +63,12 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private float forwardArcHalfAngle = 60f;
     [Tooltip("Angular step (degrees) between search directions.")]
     [SerializeField] private float angleStep = 15f;
-    [Tooltip("Yaw rotations tried at each candidate position.")]
-    [SerializeField] private float[] rotationCandidates = { 0f, 90f, 180f, 270f };
+    [Tooltip("Yaw offsets tried at each candidate, relative to facing directly away from the player (0 = stage's +Z points away, so its goal is on the far side).")]
+    [SerializeField] private float[] rotationCandidates = { 0f, 90f, 270f, 180f };
+    [Tooltip("Minimum horizontal gap (metres) between the player and the nearest edge of a placed stage's footprint.")]
+    [SerializeField] private float playerClearance = 0.3f;
+    [Tooltip("The goal must be at least this far (metres) beyond its reach radius from the player when the stage appears, so it takes deliberate walking.")]
+    [SerializeField] private float minGoalWalkDistance = 0.5f;
     [Tooltip("Layers that count as obstructions. Should be the ARMesh layer only, so debug markers and stage colliders don't block placement.")]
     [SerializeField] private LayerMask obstructionLayerMask = ~0;
     [Tooltip("Placement candidates must land on a plane within this height (metres) of the checkpoint's floor, so stages never go on beds/tables.")]
@@ -119,6 +123,7 @@ public class LevelGenerator : MonoBehaviour
     private float _scanCompleteTime;
     private int _searchObstructed;
     private int _searchNoFloor;
+    private int _searchTooClose;
     private static readonly List<ARRaycastHit> s_Hits = new();
     private static readonly Collider[] s_Overlap = new Collider[1];
 
@@ -201,6 +206,7 @@ public class LevelGenerator : MonoBehaviour
 
         _searchObstructed = 0;
         _searchNoFloor = 0;
+        _searchTooClose = 0;
 
         if (FindAndInstantiateStage())
         {
@@ -208,7 +214,7 @@ public class LevelGenerator : MonoBehaviour
             return;
         }
 
-        Debug.LogWarning($"[LevelGenerator] No valid placement found for any template ({_searchObstructed} candidates obstructed, last by '{LastObstructionName}'; {_searchNoFloor} with no floor below) — prompting player to move and retrying shortly.");
+        Debug.LogWarning($"[LevelGenerator] No valid placement found for any template ({SearchSummary()}, last obstruction '{LastObstructionName}') — prompting player to move and retrying shortly.");
         OnPlacementFailed?.Invoke();
         Invoke(nameof(TryPlaceStage), retryDelaySeconds);
     }
@@ -226,7 +232,7 @@ public class LevelGenerator : MonoBehaviour
             if (TryFindValidPlacement(footprint, out var pose))
             {
                 CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
-                Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position} after {_searchObstructed} obstructed candidates ({MeshChunkCount} mesh chunks).");
+                Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}° — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
                 StartStage();
                 return true;
             }
@@ -234,6 +240,9 @@ public class LevelGenerator : MonoBehaviour
 
         return false;
     }
+
+    private string SearchSummary() =>
+        $"{_searchNoFloor} no-floor, {_searchTooClose} too-close-to-player, {_searchObstructed} obstructed";
 
     private bool TryFindValidPlacement(StageFootprint footprint, out Pose pose)
     {
@@ -266,9 +275,16 @@ public class LevelGenerator : MonoBehaviour
                     continue;
                 }
 
+                // Face the stage away from the player so its goal is on the far side.
+                var awayFromPlayer = Quaternion.LookRotation(direction, Vector3.up);
                 foreach (var rotationY in rotationCandidates)
                 {
-                    var candidateRotation = Quaternion.Euler(0f, rotationY, 0f);
+                    var candidateRotation = awayFromPlayer * Quaternion.Euler(0f, rotationY, 0f);
+                    if (!KeepsClearOfPlayer(footprint, floorPose.position, candidateRotation))
+                    {
+                        _searchTooClose++;
+                        continue;
+                    }
                     if (IsPlacementClear(footprint, floorPose.position, candidateRotation))
                     {
                         pose = new Pose(floorPose.position, candidateRotation);
@@ -351,6 +367,30 @@ public class LevelGenerator : MonoBehaviour
         if (!settled && !IsWaitingForMesh)
             Debug.Log($"[LevelGenerator] Waiting for room mesh to settle ({MeshChunkCount} chunks so far).");
         return !settled;
+    }
+
+    /// <summary>
+    /// Rejects candidates that would appear on top of the player or whose goal
+    /// would already be (nearly) within reach — otherwise a stationary player
+    /// clears stage after stage without moving (seen on-device).
+    /// </summary>
+    private bool KeepsClearOfPlayer(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation)
+    {
+        var player = arCamera.transform.position;
+
+        // Horizontal distance from the player to the footprint rectangle.
+        var local = Quaternion.Inverse(rotation) * (player - floorPosition);
+        float dx = Mathf.Max(0f, Mathf.Abs(local.x) - footprint.width * 0.5f);
+        float dz = Mathf.Max(0f, Mathf.Abs(local.z) - footprint.depth * 0.5f);
+        if (dx * dx + dz * dz < playerClearance * playerClearance) return false;
+
+        var goal = footprint.GetComponentInChildren<StageGoal>(true);
+        if (goal == null) return true;
+        var goalOffset = footprint.transform.InverseTransformPoint(goal.transform.position);
+        var goalWorld = floorPosition + rotation * goalOffset;
+        var toGoal = goalWorld - player;
+        toGoal.y = 0f;
+        return toGoal.magnitude >= goal.ReachRadius + minGoalWalkDistance;
     }
 
     private bool IsPlacementClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation)
