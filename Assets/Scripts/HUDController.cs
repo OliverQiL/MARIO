@@ -219,6 +219,10 @@ public class HUDController : MonoBehaviour
             return;
         }
 
+        // Held stomp/walk repeat every window: after a stomp lands, the next
+        // windows would flash "already used" then "nothing in range".
+        if (result.NotPermitted && EventResolver.IsContinuous(evt.actionLabel)) return;
+
         switch (result.Gate)
         {
             case 3:

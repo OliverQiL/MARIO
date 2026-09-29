@@ -83,6 +83,13 @@ public class EventResolver : MonoBehaviour
 {
     public const string ProjectileReason = "projectile";
 
+    /// <summary>
+    /// stand/walk/stomp are re-sent every classification window, so their
+    /// "not permitted" outcomes get no haptic or HUD feedback (it would repeat).
+    /// </summary>
+    public static bool IsContinuous(string actionLabel) =>
+        actionLabel == "stand" || actionLabel == "walk" || actionLabel == "stomp";
+
     [Header("References")]
     [SerializeField] private GameStateManager gameState;
     [SerializeField] private Camera arCamera;

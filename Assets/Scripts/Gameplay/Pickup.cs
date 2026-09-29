@@ -13,11 +13,34 @@ public class Pickup : MonoBehaviour
     [SerializeField] private float collectRadius = 0.45f;
     [SerializeField] private float spinDegreesPerSecond = 90f;
 
+    [SerializeField] private float dropSeconds = 0.5f;
+
     public Kind PickupKind => kind;
+
+    private Vector3 _dropStart, _dropEnd;
+    private float _dropElapsed = float.PositiveInfinity;
+
+    /// <summary>Animates from <paramref name="start"/> down to the current (landing) position.</summary>
+    public void DropFrom(Vector3 start)
+    {
+        _dropEnd = transform.position;
+        _dropStart = start;
+        _dropElapsed = 0f;
+        transform.position = start;
+    }
 
     private void Update()
     {
         transform.Rotate(Vector3.up, spinDegreesPerSecond * Time.deltaTime, Space.World);
+        if (_dropElapsed < dropSeconds)
+        {
+            _dropElapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(_dropElapsed / dropSeconds);
+            // Horizontal glide, vertical ease-in (falls faster as it goes).
+            var p = Vector3.Lerp(_dropStart, _dropEnd, t);
+            p.y = Mathf.Lerp(_dropStart.y, _dropEnd.y, t * t);
+            transform.position = p;
+        }
         var cam = Camera.main;
         if (cam != null) TryCollect(cam.transform.position);
     }
@@ -28,7 +51,8 @@ public class Pickup : MonoBehaviour
         var gs = GameStateManager.Instance;
         if (gs == null || !gs.IsSessionReady) return false;
 
-        var d = playerPosition - transform.position;
+        // Measured to the landing spot, so a falling flower isn't grabbed on its way past.
+        var d = playerPosition - (_dropElapsed < dropSeconds ? _dropEnd : transform.position);
         d.y = 0f;
         if (d.magnitude > collectRadius) return false;
 

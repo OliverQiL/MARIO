@@ -80,8 +80,12 @@ public static class GameplaySmokeTest
         r = Resolve("jump");
         Check(r.Gate == 5, "second jump on the spent block is Gate 5", r);
 
-        // -- fire flower pickup
-        Check(flower != null && flower.TryCollect(s_Cam.transform.position) && s_State.HasFireFlower, "walking to the flower collects it");
+        // -- fire flower lands past the block, away from the player; collected by walking to it
+        var away = block.transform.position - s_Cam.transform.position;
+        away.y = 0f;
+        var landing = block.transform.position + away.normalized * 0.5f;
+        Check(flower != null && !flower.TryCollect(s_Cam.transform.position) && !s_State.HasFireFlower, "the flower isn't collected where the player stands under the block");
+        Check(flower != null && flower.TryCollect(landing) && s_State.HasFireFlower, "walking to the flower's landing spot collects it");
 
         // -- fireball projectile hits a Goomba the player is looking at
         var g1 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(0f, 0f, 2f));

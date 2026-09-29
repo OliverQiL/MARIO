@@ -11,6 +11,8 @@ public class QuestionBlock : InteractableBase
     [SerializeField] private GameObject coinPopPrefab;
     [SerializeField] private Pickup fireFlowerPrefab;
     [SerializeField] private Material spentMaterial;
+    [Tooltip("Horizontal distance past the block (away from the player) where the flower lands. Must exceed the pickup's collect radius.")]
+    [SerializeField] private float flowerLandingOffset = 0.5f;
 
     private bool _spent;
 
@@ -25,10 +27,14 @@ public class QuestionBlock : InteractableBase
 
         if (!gameState.HasFireFlower && fireFlowerPrefab != null)
         {
-            // Drop onto the floor under the block (the stage root is on the floor).
+            // The player is under the block, so a flower dropped straight down
+            // would be collected before it's seen. Land it on the far side,
+            // at least flowerLandingOffset from the player, falling from the block.
             float floorY = transform.parent != null ? transform.parent.position.y : transform.position.y - 1.5f;
-            var at = new Vector3(transform.position.x, floorY, transform.position.z);
-            Instantiate(fireFlowerPrefab, at, Quaternion.identity, transform.parent);
+            var at = transform.position + AwayFromPlayer() * flowerLandingOffset;
+            at.y = floorY;
+            var flower = Instantiate(fireFlowerPrefab, at, Quaternion.identity, transform.parent);
+            flower.DropFrom(transform.position);
             Debug.Log("[QuestionBlock] Fire flower dropped.");
         }
         else
@@ -36,5 +42,20 @@ public class QuestionBlock : InteractableBase
             gameState.AddScore(coinValue);
             if (coinPopPrefab != null) Instantiate(coinPopPrefab, transform.position + Vector3.up * 0.15f, Quaternion.identity);
         }
+    }
+
+    /// <summary>Horizontal unit vector from the player to the block (the camera's facing if directly beneath).</summary>
+    private Vector3 AwayFromPlayer()
+    {
+        var cam = Camera.main;
+        if (cam == null) return Vector3.forward;
+        var d = transform.position - cam.transform.position;
+        d.y = 0f;
+        if (d.sqrMagnitude < 0.05f * 0.05f)
+        {
+            d = cam.transform.forward;
+            d.y = 0f;
+        }
+        return d.sqrMagnitude > 1e-6f ? d.normalized : Vector3.forward;
     }
 }

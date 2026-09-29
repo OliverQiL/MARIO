@@ -191,15 +191,13 @@ public class NetworkClient : MonoBehaviour
         });
     }
 
-    private static readonly string[] ContinuousActions = { "stand", "walk", "stomp" };
-
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
         if (result.StateOnly || result.LaunchedProjectile) return; // projectile haptic comes on impact
 
         if (result.Resolved)
             SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "success");
-        else if (result.NotPermitted && Array.IndexOf(ContinuousActions, evt.actionLabel) < 0)
+        else if (result.NotPermitted && !EventResolver.IsContinuous(evt.actionLabel))
             SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "denied");
         // Gates 1-2 (not registered): no haptic.
     }

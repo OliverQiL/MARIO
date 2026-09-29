@@ -269,7 +269,7 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
   - stats: a FIRE indicator while the player has the flower
 
 **Tests:**
-- `GameplaySmokeTest.cs` checks the rules above against the real prefabs: **29/29 pass.** Run it with `-executeMethod GameplaySmokeTest.Run` (no `-quit`).
+- `GameplaySmokeTest.cs` checks the rules above against the real prefabs: **31/31 pass** (2026-09-30). Run it with `-executeMethod GameplaySmokeTest.Run` (no `-quit`).
 - `NetworkSmokeTest` now expects gates `6,5,2,4,2,6` and passes.
 
 ### Editor playtesting with XR Simulation — ✅ set up (2026-09-29)
@@ -299,6 +299,18 @@ Day-to-day gameplay testing happens in the Editor: open `SampleScene` and press 
 **Pass-1 device test (iPhone 17, 2026-09-29):**
 - Confirmed: the floor-only scan, the compact fallback (the first time it has fired), the standard stage and spawner, Goomba damage with the `damage` haptic, game over, and jump-to-restart.
 - Not yet exercised on the device: the ? block and flower, fireballs, stomping and the brick strike. Relaying actions through chat was too slow for enemy encounters, which is why Editor simulation testing was set up.
+
+**Pass-1 Editor playtest (XR Simulation, 2026-09-30):** every pass-1 rule was exercised by hand and works: ? block, flower, fireballs, brick strike, stomp, damage, jump-over, game over and restart, stage clear, and the HUD. Two fixes came out of it:
+- **The flower was collected before it could be seen.** It dropped straight under the block, inside its 0.45 m pickup radius, where the player was already standing. It now falls from the block (`Pickup.DropFrom`, 0.5 s) and lands `flowerLandingOffset` (0.5 m) past the block, away from the player. `TryCollect` measures to the landing spot.
+- **Holding stomp spammed the HUD.** After a stomp landed, the repeats showed "already used", then "nothing in range". The HUD now shows nothing when stand, walk or stomp is refused. The haptics already worked this way, and both now use `EventResolver.IsContinuous`.
+
+Two things that looked like bugs aren't:
+- A spent ? block rejects further jumps ("already used"). A coin only comes from hitting a fresh block while already holding a flower.
+- CompactStage has no brick and no Goombas.
+
+Running the tests from the command line:
+- `Unity` on this Mac's PATH is a different CLI. Use `/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity`.
+- `NetworkSmokeTest` needs the gateway started with `--script "stomp,stomp,dup,fireball,low:jump,walk" --exit-after-acks`.
 
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
