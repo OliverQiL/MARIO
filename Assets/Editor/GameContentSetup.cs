@@ -88,10 +88,10 @@ public static class GameContentSetup
         StageLoopSetup.AddListenerOnce(gameState.OnGameRestarted, levelGenerator.RestartLoop);
         EditorUtility.SetDirty(gameState);
 
-        // Design: scan until floor area exceeds the largest template's footprint (6 m²), with margin;
+        // Design: scan a generous area (12 m², Oliver 2026-09-30) so larger layouts have room;
         // a smaller room is accepted once its floor stops growing (at least 3 m², enough for Standard).
         var ss = new SerializedObject(session);
-        ss.FindProperty("requiredFloorArea").floatValue = 7f;
+        ss.FindProperty("requiredFloorArea").floatValue = 12f;
         ss.FindProperty("minFloorArea").floatValue = 3f;
         ss.ApplyModifiedPropertiesWithoutUndo();
 

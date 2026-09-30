@@ -82,6 +82,28 @@ public static class HUDSetup
         var feedback = Styled(root, "Feedback (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(2000f, 80f), 40f, TextAlignmentOptions.Center, font, shadow);
         feedback.text = "";
 
+        // ---- scan panel: title, progress bar, rotating hint ----
+        var white = PixelArt.WhitePixel();
+        var scan = EnsureChild(root, "ScanPanel");
+        var scanRect = (RectTransform)scan.transform;
+        scanRect.anchorMin = scanRect.anchorMax = scanRect.pivot = new Vector2(0.5f, 0.5f);
+        scanRect.anchoredPosition = new Vector2(0f, -140f);
+        scanRect.sizeDelta = new Vector2(1600f, 320f);
+        var scanTitle = Styled(scan.transform, "ScanTitle (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 100f), new Vector2(1600f, 70f), 48f, TextAlignmentOptions.Center, font, shadow);
+        scanTitle.text = "SCAN THE FLOOR";
+        Bar(scan.transform, "BarBorder", white, new Vector2(0f, 10f), new Vector2(912f, 56f), new Color(1f, 0.95f, 0.8f));
+        Bar(scan.transform, "BarBack", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(0.08f, 0.06f, 0.05f, 0.85f));
+        var fill = Bar(scan.transform, "BarFill", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(1f, 0.78f, 0.12f));
+        fill.type = Image.Type.Filled;
+        fill.fillMethod = Image.FillMethod.Horizontal;
+        fill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        fill.fillAmount = 0.35f;
+        var percent = Styled(scan.transform, "ScanPercent (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(900f, 44f), 26f, TextAlignmentOptions.Center, font, shadow);
+        percent.text = "35%";
+        var hint = Styled(scan.transform, "ScanHint (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -70f), new Vector2(1600f, 50f), 24f, TextAlignmentOptions.Center, font, shadow);
+        hint.text = "SWEEP THE CAMERA SLOWLY OVER THE FLOOR";
+        hint.color = new Color(1f, 0.92f, 0.75f);
+
         // ---- damage flash: full screen, behind the text ----
         var flashGO = EnsureChild(root, "DamageFlash");
         var flashRect = (RectTransform)flashGO.transform;
@@ -133,6 +155,10 @@ public static class HUDSetup
         so.FindProperty("livesText").objectReferenceValue = lives;
         so.FindProperty("livesIcon").objectReferenceValue = livesIcon;
         so.FindProperty("damageFlash").objectReferenceValue = flash;
+        so.FindProperty("scanPanel").objectReferenceValue = scan;
+        so.FindProperty("scanFill").objectReferenceValue = fill;
+        so.FindProperty("scanPercentText").objectReferenceValue = percent;
+        so.FindProperty("scanHintText").objectReferenceValue = hint;
         so.FindProperty("powerIcon").objectReferenceValue = power;
         so.FindProperty("powerEmptyText").objectReferenceValue = powerEmpty;
         so.FindProperty("connectionText").objectReferenceValue = connection;
@@ -225,6 +251,21 @@ public static class HUDSetup
         if (image == null) image = go.AddComponent<Image>();
         image.sprite = sprite;
         image.preserveAspect = true;
+        image.raycastTarget = false;
+        return image;
+    }
+
+    private static Image Bar(Transform parent, string name, Sprite sprite, Vector2 position, Vector2 size, Color color)
+    {
+        var go = EnsureChild(parent, name);
+        var rect = (RectTransform)go.transform;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f, 0.5f);
+        rect.anchoredPosition = position;
+        rect.sizeDelta = size;
+        var image = go.GetComponent<Image>();
+        if (image == null) image = go.AddComponent<Image>();
+        image.sprite = sprite;
+        image.color = color;
         image.raycastTarget = false;
         return image;
     }

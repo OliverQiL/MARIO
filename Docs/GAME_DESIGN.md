@@ -100,7 +100,7 @@ These fill gaps in the agreed table above. They were chosen while implementing a
 Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
 - **Bigger layouts.**
   - A **Large** template (2.0 × 3.0 m = 6 m²) is tried before Standard and Compact.
-  - The scan target rose from 4 to **7 m²**, so a Large stage can fit.
+  - The scan target rose from 4 to **7 m²**, so a Large stage can fit, then to **12 m²** (2026-09-30) to leave room for larger maps.
   - **Small-room fallback:** once the scanned floor stops growing (less than 0.1 m² in 15 s), the scan accepts what it has, provided that's at least 3 m². Placement then falls back to Standard or Compact. Without this, a room smaller than the target would never finish scanning.
 - **Warp pipe.**
   - A green pipe on the floor of Large and Standard stages, present on about half of them (a 50 % roll when the stage appears).

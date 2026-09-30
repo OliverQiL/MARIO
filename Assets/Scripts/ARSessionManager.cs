@@ -66,6 +66,8 @@ public class ARSessionManager : MonoBehaviour
 
     public float TotalScannedArea => _totalScannedArea;
     public float RequiredFloorArea => requiredFloorArea;
+    /// <summary>The small-room fallback's minimum: at least this much floor finishes the scan once it stops growing.</summary>
+    public float MinFloorArea => minFloorArea;
     public bool IsScanComplete => _scanComplete;
     /// <summary>World-space height of the floor, once a floor plane has been found.</summary>
     public float? FloorHeight { get; private set; }

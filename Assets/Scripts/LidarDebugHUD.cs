@@ -2,10 +2,10 @@ using UnityEngine;
 using TMPro;
 
 /// <summary>
-/// Temporary on-device readout for validating the LiDAR pipeline: occlusion
-/// state (RenderManager), room-mesh chunk count and placement obstructions
-/// (LevelGenerator). Polls every Update(), like ScanHUD. Delete once the real
-/// HUDController exists.
+/// Development readout for validating the LiDAR pipeline: occlusion state
+/// (RenderManager), room-mesh chunk count and placement obstructions
+/// (LevelGenerator). Hidden unless Show is ticked (ScanSetup turns it off for
+/// play). Polls every Update().
 /// </summary>
 public class LidarDebugHUD : MonoBehaviour
 {
@@ -13,6 +13,8 @@ public class LidarDebugHUD : MonoBehaviour
     [SerializeField] private RenderManager renderManager;
     [SerializeField] private LevelGenerator levelGenerator;
     [SerializeField] private TMP_Text statusText;
+    [Tooltip("Show the readout (development only).")]
+    [SerializeField] private bool show;
 
     private void Reset()
     {
@@ -25,6 +27,8 @@ public class LidarDebugHUD : MonoBehaviour
     private void Update()
     {
         if (statusText == null) return;
+        statusText.enabled = show;
+        if (!show) return;
 
         string occlusion = renderManager == null ? "n/a"
             : !renderManager.IsResolved ? "resolving…"

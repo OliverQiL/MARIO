@@ -16,6 +16,9 @@ using TMPro;
 /// - banner (top-centre): the current *state* — scanning, tracking lost, no
 ///                       room to place a stage, placing, distance to the flag.
 ///                       Highest priority wins; polled every frame.
+/// - scan panel:         while scanning: "SCAN THE FLOOR", a progress bar with
+///                       the percentage of floor found, and rotating hints;
+///                       "READY!" pops in when the scan completes
 /// - title (centre):     big pop-in "STAGE N" when a stage starts, "STAGE CLEAR!"
 ///                       or "WARP!" when it ends
 /// - feedback (centre):  transient *events* — action results from
@@ -55,6 +58,13 @@ public class HUDController : MonoBehaviour
     [SerializeField] private TMP_Text bannerText;
     [SerializeField] private TMP_Text feedbackText;
     [SerializeField] private TMP_Text titleText;
+
+    [Header("Scan")]
+    [SerializeField] private GameObject scanPanel;
+    [SerializeField] private Image scanFill;
+    [SerializeField] private TMP_Text scanPercentText;
+    [SerializeField] private TMP_Text scanHintText;
+    [SerializeField] private float hintSeconds = 3.5f;
 
     [Header("Damage")]
     [SerializeField] private Image damageFlash;
@@ -115,6 +125,7 @@ public class HUDController : MonoBehaviour
             levelGenerator.OnStageStarted.AddListener(HandleStageStarted);
             levelGenerator.OnStageCompleted.AddListener(HandleStageCompleted);
         }
+        if (sessionManager != null) sessionManager.OnScanComplete.AddListener(HandleScanComplete);
         if (gameState != null) _lastScore = gameState.Score;
         BulletBillCannon.OnWarning += HandleBulletBillWarning;
     }
@@ -133,6 +144,7 @@ public class HUDController : MonoBehaviour
             levelGenerator.OnStageStarted.RemoveListener(HandleStageStarted);
             levelGenerator.OnStageCompleted.RemoveListener(HandleStageCompleted);
         }
+        if (sessionManager != null) sessionManager.OnScanComplete.RemoveListener(HandleScanComplete);
         BulletBillCannon.OnWarning -= HandleBulletBillWarning;
     }
 
@@ -145,6 +157,7 @@ public class HUDController : MonoBehaviour
         UpdateTitle();
         UpdateGameOver();
         UpdateDamage();
+        UpdateScan();
     }
 
     // ---- persistent state ----
@@ -202,7 +215,7 @@ public class HUDController : MonoBehaviour
         }
         else if (sessionManager != null && !sessionManager.IsScanComplete)
         {
-            message = $"SCAN THE FLOOR  {sessionManager.TotalScannedArea:F1}/{sessionManager.RequiredFloorArea:F1} M²";
+            message = null; // the scan panel shows progress
         }
         else if (levelGenerator != null && levelGenerator.IsTransitioning)
         {
@@ -323,6 +336,33 @@ public class HUDController : MonoBehaviour
     }
 
     private void HandleStageCompleted() => ShowTitle("STAGE CLEAR!", titleColor);
+
+    private void HandleScanComplete() => ShowTitle("READY!", goodColor);
+
+    // ---- scan panel ----
+
+    private void UpdateScan()
+    {
+        if (scanPanel == null || sessionManager == null) return;
+        bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsGameOver);
+        if (scanPanel.activeSelf != scanning) scanPanel.SetActive(scanning);
+        if (!scanning) return;
+
+        float area = sessionManager.TotalScannedArea;
+        float progress = Mathf.Clamp01(area / Mathf.Max(0.01f, sessionManager.RequiredFloorArea));
+        if (scanFill != null) scanFill.fillAmount = progress;
+        if (scanPercentText != null) scanPercentText.text = $"{Mathf.FloorToInt(progress * 100f)}%";
+        if (scanHintText != null)
+        {
+            // Rotate hints; mention the small-room fallback once it can apply.
+            bool enoughForSmallRoom = area >= sessionManager.MinFloorArea;
+            int count = enoughForSmallRoom ? 3 : 2;
+            int i = (int)(Time.time / hintSeconds) % count;
+            scanHintText.text = i == 0 ? "SWEEP THE CAMERA SLOWLY OVER THE FLOOR"
+                              : i == 1 ? "ONLY FLOOR COUNTS - NOT TABLES OR BEDS"
+                              : "SMALL ROOM? HOLD STILL - IT WILL FINISH";
+        }
+    }
 
     private void ShowFeedback(string message, Color color)
     {

@@ -146,6 +146,9 @@ public static class PixelArt
         "....KKKKKKKKKK..",
     };
 
+    /// <summary>A plain white sprite, for UI bars (a Filled Image needs a sprite).</summary>
+    public static Sprite WhitePixel() => SaveSprite("WhitePixel", new[] { "WWWW", "WWWW", "WWWW", "WWWW" }, new Dictionary<char, Color> { ['W'] = Color.white });
+
     public static Sprite HeartIcon() => SaveSprite("HeartIcon", HeartRows, new Dictionary<char, Color>
     {
         ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['R'] = Hex("F03C3C"), ['W'] = Hex("FFD0D0"),
@@ -156,6 +159,26 @@ public static class PixelArt
         ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['R'] = Hex("F0461E"), ['Y'] = Hex("FFC81E"),
         ['W'] = Hex("FFF7DC"), ['G'] = Hex("28A03C"),
     });
+
+    /// <summary>
+    /// Scan grid tile (white, tinted by the material): a one-pixel line along two
+    /// edges, so tiled it draws a grid, over a faint fill. Plane UVs are in metres.
+    /// </summary>
+    public static Texture2D ScanGrid()
+    {
+        var rows = new string[16];
+        for (int r = 0; r < 16; r++)
+        {
+            var chars = new char[16];
+            for (int c = 0; c < 16; c++)
+                chars[c] = r == 0 && c == 0 ? 'C' : r == 0 || c == 0 ? 'E' : 'F';
+            rows[r] = new string(chars);
+        }
+        return Save("ScanGrid", rows, new Dictionary<char, Color>
+        {
+            ['C'] = new Color(1f, 1f, 1f, 1f), ['E'] = new Color(1f, 1f, 1f, 0.8f), ['F'] = new Color(1f, 1f, 1f, 0.12f),
+        });
+    }
 
     /// <summary>Koopa shell scutes: rounded plates on an offset grid, with dark seams.</summary>
     public static Texture2D KoopaShell()

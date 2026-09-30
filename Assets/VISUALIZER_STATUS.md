@@ -421,6 +421,25 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 - **Damage (HUD):** a full-screen red flash fades over 0.5 s when a life is lost, and the LIVES heart blinks during the 2 s of invulnerability.
 - **Tests:** gameplay 62/62; the simulation and network smoke tests pass. These effects are motion-only, so they're checked by playtesting rather than by the headless tests.
 
+### Scanning phase — ✅ Editor-playtested (2026-09-30)
+- **Scan target** raised from 7 to **12 m²** (`requiredFloorArea`, set by `GameContentSetup`), leaving room for the map and layout work. The small-room fallback (3 m² once growth stops for 15 s) still applies.
+- **`AR Scan Plane`** (`Assets/Prefabs`, built by `ScanSetup`, Tools ▸ MARIO ▸ Configure Scan) is now ARPlaneManager's plane prefab, in place of ARFoundation's yellow `AR Default Plane`.
+  - `ScanPlaneVisual` shows **only floor planes**, using `ARSessionManager.IsFloorPlane`: a transparent gold pixel grid in 25 cm squares, with a gentle pulse and a thin edge line.
+  - Tables, beds and walls stay invisible.
+  - Everything fades out once the scan completes, so stages stand on the real floor.
+  - It fades through the colour's alpha, because ARPlaneMeshVisualizer switches the renderers on and off itself.
+  - Plane UVs are plane-space metres, so the material tiling of 4 gives 25 cm squares.
+- **HUD scan panel:** "SCAN THE FLOOR", a pixel progress bar showing the percentage of `requiredFloorArea` found, and rotating hints:
+  - "sweep the camera slowly over the floor"
+  - "only floor counts"
+  - "small room? hold still", once the 3 m² minimum is reached
+  - "READY!" pops in when the scan completes.
+- **Development visuals are off by default:**
+  - the cyan LiDAR debug mesh (back to `AR Mesh`; Tools ▸ MARIO ▸ Mesh Debug View ▸ On restores it)
+  - the checkpoint debug sphere (`LevelGenerator.debugMarkerPrefab` cleared)
+  - the LiDAR readout (`LidarDebugHUD.show` = false)
+- **Tests:** gameplay 62/62; the simulation and network smoke tests pass. `SimulationSmokeTest` doesn't move the camera, so it finds no planes and doesn't exercise `ScanPlaneVisual`; the playtest covers that.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.

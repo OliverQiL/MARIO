@@ -88,7 +88,7 @@ public static class ArtPreview
         Object.DestroyImmediate(close.gameObject);
 
         RenderHud(outDir);
-        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
+        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, hud_scan.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
     }
 
     /// <summary>
@@ -110,6 +110,20 @@ public static class ArtPreview
         canvas.renderMode = RenderMode.ScreenSpaceCamera;
         canvas.worldCamera = cam;
         canvas.planeDistance = 1f;
+
+        // Scanning.
+        var scanPanel = (GameObject)so.FindProperty("scanPanel").objectReferenceValue;
+        var gameOver = (GameObject)so.FindProperty("gameOverPanel").objectReferenceValue;
+        gameOver.SetActive(false);
+        scanPanel.SetActive(true);
+        ((Image)so.FindProperty("scanFill").objectReferenceValue).fillAmount = 0.45f;
+        T("scanPercentText").text = "45%";
+        T("scoreText").text = "000000";
+        T("bannerText").text = "";
+        T("titleText").text = "";
+        T("feedbackText").text = "";
+        ShootCanvas(cam, Path.Combine(outDir, "hud_scan.png"));
+        scanPanel.SetActive(false);
 
         T("scoreText").text = "002150";
         T("stageText").text = "4";
