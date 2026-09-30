@@ -1,6 +1,6 @@
 # Game Design — Actions, Stage Elements, Enemies
 
-Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver); pass 3 is planned. All numbers are tunable in the Inspector. The values below are the defaults.
+Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". The warp pipe is a placeholder until real maps exist (see "Later passes"). All numbers are tunable in the Inspector. The values below are the defaults.
 
 ## Constraints that shape the design
 - **Everything is physical.** The player can't really leap onto things or duck quickly, so all interaction happens around them at human scale.
@@ -15,7 +15,7 @@ Every action still passes the six-gate chain (session → validity → capabilit
 |---|---|---|
 | `stand` / `walk` | Updates the player's movement state. No target, and no HUD feedback. | — |
 | `jump` | The player is **airborne** for 1.0 s: a Goomba reaching them does no damage and passes by. If a "?" block is overhead, the jump hits it. | Optional: a block **above eye level** within **0.5 m** horizontally |
-| `squat` | The player is **ducked** for 1.0 s: projectiles at head height miss (pass 2). Later: enter a warp pipe (pass 3). | — |
+| `squat` | The player is **ducked** for 1.0 s: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
 | `fireball` **with** a fire flower | Throws a fireball in the direction the camera faces (aim by looking). It hits the first enemy or brick along its path. **Gate 3:** at most 2 fireballs can be in flight. | — (the projectile finds its own target) |
 | `fireball` **without** a flower | A **bare-handed strike**, per the report: it breaks a brick block. | A brick at chest height, within **0.8 m** and **±35°** of facing |
 | `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two *separate* stomps (see Pass 2 details). | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
@@ -58,7 +58,8 @@ Each template's +Z axis points away from the player.
 
 | Template | Footprint | Contents |
 |---|---|---|
-| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), enemy spawner (far side: a Goomba, then a Koopa, one at a time), Bullet Bill cannon (far corner), flag (far end) |
+| **Large** (pass 3) | 2.0 × 3.0 m | 2 "?" blocks, 2 bricks, enemy spawner (3 enemies: Goomba, Koopa, Goomba), Bullet Bill cannon, warp pipe (near half), flag (far end) |
+| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), enemy spawner (far side: a Goomba, then a Koopa, one at a time), Bullet Bill cannon (far corner), warp pipe, flag (far end) |
 | **Compact** | 0.6 × 1.0 m | "?" block, flag. This is the fallback for cramped spaces. |
 
 ## Feedback
@@ -95,5 +96,38 @@ These fill gaps in the agreed table above. They were chosen while implementing a
   - **Compact stages** have no cannon and no enemies.
 - **Power-ups:** see "Stage elements": a random flower or 1-Up, with a life cap of 8. This replaced an earlier rule where a 1-Up only came when the player held a flower and was below 3 lives.
 
+## Pass 3 details
+Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
+- **Bigger layouts.**
+  - A **Large** template (2.0 × 3.0 m = 6 m²) is tried before Standard and Compact.
+  - The scan target rose from 4 to **7 m²**, so a Large stage can fit.
+  - **Small-room fallback:** once the scanned floor stops growing (less than 0.1 m² in 15 s), the scan accepts what it has, provided that's at least 3 m². Placement then falls back to Standard or Compact. Without this, a room smaller than the target would never finish scanning.
+- **Warp pipe.**
+  - A green pipe on the floor of Large and Standard stages, present on about half of them (a 50 % roll when the stage appears).
+  - **Squatting** while standing within 0.35 m of it enters it: the stage clears at once (+500, the normal clear bonus), the stage counter **skips one stage**, and the HUD shows "Warp!".
+  - It's a shortcut: fewer enemies faced now, but a harder stage next.
+  - **Placeholder:** this will be redesigned (see "Later passes").
+- **Difficulty by stage number** (stage 1 is the baseline; `Difficulty` on GameManager):
+
+  | | Per stage | Cap |
+  |---|---|---|
+  | Extra enemies per spawner | +1 every 2 stages | +3 |
+  | Enemy walking speed | +10 % | ×1.8 |
+  | Extra cannon shots | +1 every 3 stages | +2 |
+  | Time between cannon shots | −8 % | ×0.5 |
+  | Bullet Bill speed | +5 % | ×1.5 |
+- **Audio** (`AudioManager` on GameManager).
+  - Chiptune-style sound effects are synthesised in code at startup, so there are no audio files to license:
+    - jump, coin, power-up appears, power-up, 1-Up, stomp, kick (a fireball hitting an enemy), brick break, fireball
+    - damage, the Bullet Bill warning, cannon fire, stage clear, warp, game over
+    - a soft "bonk" when a discrete action is refused (never for continuous actions)
+  - There's no background music yet.
+- **Art:** still primitives. It's deferred until after this playtest, so it can target what reads worst in the room (as the cannon restyle did).
+
 ## Later passes
-- **Pass 3:** warp pipes (squat while standing on one), difficulty that scales with stage number, audio (AudioManager), and art in place of primitives.
+- **Pass 3** (done, see above): warp pipes, difficulty scaling, audio, larger layouts. Art in place of primitives is still to come.
+- **Warp pipes, redesigned** (Oliver, 2026-09-30; to build when real maps and stages are made). A warp pipe should work like Mario's:
+  - it isn't a stage clear
+  - entering it **teleports the player to a separate, temporary area** (a bonus room, for example), which has its own **exit pipe**
+  - the exit pipe **returns the player to the main stage**, and play continues there
+  - This needs a second placed layout (or a swap of the current one) and a return point on the main stage. That's why it waits for the map work.

@@ -215,9 +215,10 @@ public class HUDController : MonoBehaviour
         if (result.Resolved)
         {
             // The score change is picked up in UpdateStats; prefix it with the action.
-            _pendingPrefix = $"{action}!  ";
+            string label = result.Target is WarpPipe ? "Warp" : action;
+            _pendingPrefix = $"{label}!  ";
             _pendingPrefixFrame = Time.frameCount;
-            ShowFeedback($"{action}!", goodColor);
+            ShowFeedback($"{label}!", goodColor);
             return;
         }
 

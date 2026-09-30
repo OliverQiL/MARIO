@@ -8,6 +8,7 @@ using UnityEngine;
 /// the HUD shows a warning via OnWarning), then fires a BulletBill along the
 /// barrel. The Bill flies straight from then on. It holds fire while the
 /// player is too close to have time to react. Paused while the session isn't ready.
+/// Difficulty adds shots, shortens the interval and speeds up Bills on later stages.
 ///
 /// Tick(dt) drives it so headless tests can too.
 /// </summary>
@@ -39,6 +40,7 @@ public class BulletBillCannon : MonoBehaviour
 
     public bool IsWarning => _warnLeft > 0f;
     public int Fired => _fired;
+    public int MaxShots => maxShots + Difficulty.ExtraShots;
 
     private BulletBill _current;
     private int _fired;
@@ -90,9 +92,9 @@ public class BulletBillCannon : MonoBehaviour
             return _warnLeft > 0f ? null : Fire();
         }
 
-        if (bulletBillPrefab == null || _current != null || _fired >= maxShots) return null;
+        if (bulletBillPrefab == null || _current != null || _fired >= MaxShots) return null;
         _timer += dt;
-        if (_timer < (_fired == 0 ? initialDelay : interval)) return null;
+        if (_timer < (_fired == 0 ? initialDelay : interval * Difficulty.ShotIntervalMultiplier)) return null;
 
         var toPlayer = playerEyes - head.position;
         toPlayer.y = 0f;
@@ -101,8 +103,9 @@ public class BulletBillCannon : MonoBehaviour
         _timer = 0f;
         _warnLeft = warnSeconds;
         if (warningGlow != null) warningGlow.SetActive(true);
-        Debug.Log($"[BulletBillCannon] Warning ({_fired + 1}/{maxShots}).");
+        Debug.Log($"[BulletBillCannon] Warning ({_fired + 1}/{MaxShots}).");
         OnWarning?.Invoke();
+        AudioManager.Play(Sfx.Warning);
         return null;
     }
 
@@ -122,8 +125,9 @@ public class BulletBillCannon : MonoBehaviour
         _fired++;
         var from = muzzle != null ? muzzle : head;
         _current = Instantiate(bulletBillPrefab, from.position, head.rotation, transform.parent);
-        _current.Launch(head.forward);
-        Debug.Log($"[BulletBillCannon] Fired ({_fired}/{maxShots}).");
+        _current.Launch(head.forward, Difficulty.BillSpeedMultiplier);
+        AudioManager.Play(Sfx.CannonFire);
+        Debug.Log($"[BulletBillCannon] Fired ({_fired}/{MaxShots}).");
         return _current;
     }
 }

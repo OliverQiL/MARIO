@@ -45,11 +45,13 @@ public class QuestionBlock : InteractableBase
             at.y = floorY;
             var pickup = Instantiate(drop, at, Quaternion.identity, transform.parent);
             pickup.DropFrom(transform.position);
+            AudioManager.Play(Sfx.PowerUpAppear);
             Debug.Log($"[QuestionBlock] Dropped {drop.PickupKind}.");
         }
         else
         {
             gameState.AddScore(coinValue);
+            AudioManager.Play(Sfx.Coin);
             if (coinPopPrefab != null) Instantiate(coinPopPrefab, transform.position + Vector3.up * 0.15f, Quaternion.identity);
         }
     }

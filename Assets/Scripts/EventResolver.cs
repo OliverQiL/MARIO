@@ -65,7 +65,8 @@ public readonly struct ResolutionResult
 /// "not registered" (Gates 1-2) is distinguishable from "not permitted" (3-5).
 ///
 /// Per-action outcomes and targeting follow Docs/GAME_DESIGN.md:
-/// - stand/walk/squat: player-state changes (no target)
+/// - stand/walk: player-state changes (no target)
+/// - squat: ducked window; enters a warp pipe if the player is standing on one
 /// - jump: airborne window; hits an overhead block if there is one
 /// - fireball: with a fire flower, launches a projectile (Gate 3 caps how many
 ///   are in flight); without, a bare-handed "strike" on a brick in reach
@@ -109,6 +110,8 @@ public class EventResolver : MonoBehaviour
     [SerializeField] private float strikeHalfAngle = 35f;
     [Tooltip("Max horizontal offset of an overhead block for a jump to hit it.")]
     [SerializeField] private float jumpBlockRadius = 0.5f;
+    [Tooltip("Max horizontal distance from a warp pipe's centre for a squat to enter it.")]
+    [SerializeField] private float warpPipeRadius = 0.35f;
 
     [Header("Player State Windows (seconds after the event arrives)")]
     [SerializeField] private float airborneSeconds = 1f;
@@ -180,8 +183,13 @@ public class EventResolver : MonoBehaviour
                 return ResolutionResult.State(evt.actionLabel);
 
             case "squat":
+            {
                 gameState.Duck(duckSeconds);
-                return ResolutionResult.State("ducked");
+                // Standing on a warp pipe? Squatting enters it. Otherwise just a duck.
+                var pipe = FindTarget("squat", warpPipeRadius, 180f, dy => dy < -0.5f);
+                if (pipe == null || !pipe.IsActionableFor("squat")) return ResolutionResult.State("ducked");
+                return Hit(pipe, "squat");
+            }
 
             case "jump":
             {

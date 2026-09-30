@@ -27,8 +27,9 @@ public class BulletBill : MonoBehaviour
     private float _travelledPast;
 
     /// <summary>Sets off along <paramref name="direction"/> (made horizontal); it never turns after this.</summary>
-    public void Launch(Vector3 direction)
+    public void Launch(Vector3 direction, float speedMultiplier = 1f)
     {
+        speed *= speedMultiplier;
         direction.y = 0f;
         _direction = direction.sqrMagnitude > 1e-6f ? direction.normalized : transform.forward;
         transform.rotation = Quaternion.LookRotation(_direction, Vector3.up);

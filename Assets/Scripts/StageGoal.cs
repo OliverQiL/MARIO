@@ -59,6 +59,13 @@ public class StageGoal : MonoBehaviour
         _dwellTimer = PlayerDistance <= reachRadius ? _dwellTimer + Time.deltaTime : 0f;
         if (_dwellTimer < dwellSeconds) return;
 
+        Reach();
+    }
+
+    /// <summary>Completes the stage now (the flag, or a warp pipe). Fires OnReached once.</summary>
+    public void Reach()
+    {
+        if (IsReached) return;
         IsReached = true;
         Debug.Log($"[StageGoal] '{name}' reached.");
         OnReached?.Invoke(this);

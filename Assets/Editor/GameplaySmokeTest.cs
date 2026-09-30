@@ -236,6 +236,78 @@ public static class GameplaySmokeTest
         Check(cannon.Tick(11f, nearCannon) == null && !cannon.IsWarning, "cannon holds fire while the player is within 1.2 m");
         UnityEngine.Object.DestroyImmediate(cannon.gameObject);
 
+        // ==== pass 3 ====
+
+        // -- warp pipe: a squat off the pipe is just a duck; on it, it clears the stage and skips one
+        var goalGO = new GameObject("Goal");
+        goalGO.transform.SetParent(s_Stage, false);
+        goalGO.transform.position = new Vector3(0f, 0f, 3f);
+        var goal = goalGO.AddComponent<StageGoal>();
+        var pipe = Spawn<WarpPipe>(GameContentSetup.StandardStagePath, "WarpPipe", new Vector3(0f, 0f, 1f));
+        r = Resolve("squat");
+        Check(r.Resolved && r.StateOnly && s_State.IsDucked && !goal.IsReached, "a squat away from a warp pipe just ducks", r);
+        pipe.transform.position = new Vector3(0.1f, 0f, 0.15f);
+        int stageBefore = s_State.StageIndex;
+        r = Resolve("squat");
+        Check(r.Resolved && r.Target == pipe && goal.IsReached && s_State.IsDucked, "a squat on a warp pipe enters it and clears the stage", r);
+        s_State.CompleteStage(); // LevelGenerator's OnStageCompleted does this in the scene
+        Check(s_State.StageIndex == stageBefore + 2, "a warp skips a stage");
+        s_State.CompleteStage();
+        Check(s_State.StageIndex == stageBefore + 3, "the skip applies to the warped stage only");
+        s_State.BeginStage();
+        SetField(s_State, "_duckedUntil", float.NegativeInfinity);
+        UnityEngine.Object.DestroyImmediate(pipe.gameObject);
+        UnityEngine.Object.DestroyImmediate(goalGO);
+
+        // -- difficulty grows with the stage number, up to caps
+        var difficulty = manager.AddComponent<Difficulty>();
+        SetField(s_State, "stageIndex", 1);
+        Check(Difficulty.ExtraEnemies == 0 && Difficulty.EnemySpeedMultiplier == 1f && Difficulty.ExtraShots == 0
+              && Difficulty.ShotIntervalMultiplier == 1f && Difficulty.BillSpeedMultiplier == 1f, "stage 1 is the authored baseline");
+        SetField(s_State, "stageIndex", 5);
+        Check(Difficulty.ExtraEnemies == 2 && Mathf.Approximately(Difficulty.EnemySpeedMultiplier, 1.4f) && Difficulty.ExtraShots == 1
+              && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.68f) && Mathf.Approximately(Difficulty.BillSpeedMultiplier, 1.2f), "stage 5 adds enemies, speed and shots");
+        SetField(s_State, "stageIndex", 40);
+        Check(Difficulty.ExtraEnemies == 3 && Mathf.Approximately(Difficulty.EnemySpeedMultiplier, 1.8f) && Difficulty.ExtraShots == 2
+              && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.5f) && Mathf.Approximately(Difficulty.BillSpeedMultiplier, 1.5f), "difficulty is capped");
+
+        SetField(s_State, "stageIndex", 5);
+        var dSpawnerGO = new GameObject("DifficultySpawner");
+        dSpawnerGO.transform.SetParent(s_Stage, false);
+        dSpawnerGO.transform.position = new Vector3(0f, 0f, 2f);
+        var dSpawner = dSpawnerGO.AddComponent<EnemySpawner>();
+        SetField(dSpawner, "enemyPrefabs", new[] { Load<Goomba>(GameContentSetup.GoombaPath) });
+        SetField(dSpawner, "totalCount", 1);
+        int spawnedCount = 0;
+        float firstSpeed = 0f;
+        for (int i = 0; i < 6; i++)
+        {
+            var e = dSpawner.Tick(i == 0 ? 2.1f : 3.1f, s_Cam.transform.position);
+            if (e == null) continue;
+            if (spawnedCount++ == 0) firstSpeed = e.SpeedMultiplier;
+            UnityEngine.Object.DestroyImmediate(e.gameObject);
+        }
+        Check(spawnedCount == 3 && Mathf.Approximately(firstSpeed, 1.4f), "on stage 5 a 1-enemy spawner spawns 3, walking 1.4× faster");
+        UnityEngine.Object.DestroyImmediate(dSpawnerGO);
+        UnityEngine.Object.DestroyImmediate(difficulty);
+        SetField(s_State, "stageIndex", 1);
+
+        // -- audio: every sound effect is synthesised and audible
+        var audioGO = new GameObject("Audio", typeof(AudioManager));
+        var audioManager = audioGO.GetComponent<AudioManager>();
+        audioManager.GetType().GetMethod("Awake", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(audioManager, null);
+        bool allAudible = true;
+        foreach (Sfx sfx in Enum.GetValues(typeof(Sfx)))
+        {
+            if (!audioManager.Clips.TryGetValue(sfx, out var clip) || clip.samples == 0) { allAudible = false; continue; }
+            var data = new float[clip.samples];
+            clip.GetData(data, 0);
+            if (data.Max(Mathf.Abs) < 0.05f) allAudible = false;
+        }
+        Check(allAudible, "every sound effect is synthesised and audible");
+        AudioManager.Play(Sfx.Coin); // must not throw
+        UnityEngine.Object.DestroyImmediate(audioGO);
+
         // -- game over and restart
         SetField(s_State, "lives", 1);
         SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
@@ -267,6 +339,7 @@ public static class GameplaySmokeTest
         Check(spawner.Tick(3.1f, far) is Koopa, "spawner's second enemy is a Koopa");
 
         // -- stage templates are complete
+        var large = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.LargeStagePath);
         var standard = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath);
         var compact = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CompactStagePath);
         Check(standard.GetComponent<StageFootprint>() != null && standard.GetComponentInChildren<StageGoal>() != null
@@ -275,7 +348,13 @@ public static class GameplaySmokeTest
               "StandardStage has footprint, goal, ? block, brick, spawner, Bullet Bill cannon");
         Check(compact.GetComponent<StageFootprint>() != null && compact.GetComponentInChildren<StageGoal>() != null
               && compact.GetComponentInChildren<QuestionBlock>() != null, "CompactStage has footprint, goal, ? block");
-        Check(standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "Standard is tried before Compact");
+        Check(large.GetComponent<StageFootprint>() is { } lf && Mathf.Approximately(lf.FootprintArea, 6f) && large.GetComponentInChildren<StageGoal>() != null
+              && large.GetComponentsInChildren<QuestionBlock>().Length == 2 && large.GetComponentsInChildren<BrickBlock>().Length == 2
+              && large.GetComponentInChildren<EnemySpawner>() != null && large.GetComponentInChildren<BulletBillCannon>() != null
+              && large.GetComponentInChildren<WarpPipe>(true) != null, "LargeStage (6 m²) has goal, 2 ? blocks, 2 bricks, spawner, cannon, warp pipe");
+        Check(standard.GetComponentInChildren<WarpPipe>(true) != null, "StandardStage has a warp pipe");
+        Check(large.GetComponent<StageFootprint>().FootprintArea > standard.GetComponent<StageFootprint>().FootprintArea
+              && standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "templates are tried Large, Standard, Compact");
     }
 
     // ---- helpers ----

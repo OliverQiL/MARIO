@@ -403,6 +403,9 @@ GameObject:
   - component: {fileID: 104318747}
   - component: {fileID: 104318749}
   - component: {fileID: 104318750}
+  - component: {fileID: 104318753}
+  - component: {fileID: 104318752}
+  - component: {fileID: 104318751}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -446,6 +449,7 @@ MonoBehaviour:
   strikeRange: 0.8
   strikeHalfAngle: 35
   jumpBlockRadius: 0.5
+  warpPipeRadius: 0.35
   airborneSeconds: 1
   duckSeconds: 1
   fireballPrefab: {fileID: 7228211895968795838, guid: 698b8502f545e40d9853f7203ef22850, type: 3}
@@ -545,6 +549,142 @@ MonoBehaviour:
   confidence: 0.95
   continuousInterval: 0.1
   showKeyLegend: 1
+--- !u!114 &104318751
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104318744}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8dc7f80be5d744691844531c05d80734, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AudioManager
+  eventResolver: {fileID: 104318747}
+  gameState: {fileID: 104318748}
+  levelGenerator: {fileID: 2027910260}
+  volume: 0.6
+  muted: 0
+--- !u!82 &104318752
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104318744}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 0}
+  m_PlayOnAwake: 1
+  m_Volume: 1
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+--- !u!114 &104318753
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 104318744}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8923050f29e06414e8e750781e8a5078, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Difficulty
+  stagesPerExtraEnemy: 2
+  maxExtraEnemies: 3
+  enemySpeedPerStage: 0.1
+  maxEnemySpeedMultiplier: 1.8
+  stagesPerExtraShot: 3
+  maxExtraShots: 2
+  intervalShrinkPerStage: 0.08
+  minIntervalMultiplier: 0.5
+  billSpeedPerStage: 0.05
+  maxBillSpeedMultiplier: 1.5
 --- !u!1 &410087039
 GameObject:
   m_ObjectHideFlags: 0
@@ -1870,7 +2010,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ARSessionManager
   planeManager: {fileID: 2027910253}
-  requiredFloorArea: 4
+  requiredFloorArea: 7
+  minFloorArea: 3
+  plateauSeconds: 15
   floorHeightTolerance: 0.15
   minFloorReferenceArea: 0.25
   OnScanComplete:
@@ -1970,6 +2112,7 @@ MonoBehaviour:
   meshManager: {fileID: 1762489574}
   debugMarkerPrefab: {fileID: 4033994286809146426, guid: 4d1917926770c4e4e81d2e94770db489, type: 3}
   stageTemplates:
+  - {fileID: 808010553169468013, guid: 8cbcda10942854075ae3fb8311bfcd2d, type: 3}
   - {fileID: 2081108271071540747, guid: 665fd64318712453ba275670e0f78c73, type: 3}
   - {fileID: 2520298490378312281, guid: 6ee46ee67aa6f48978d7f5da3497e0d3, type: 3}
   searchDistances:

@@ -33,6 +33,10 @@ public class ARSessionManager : MonoBehaviour
     [Header("Scan Settings")]
     [Tooltip("Total horizontal floor area (in square metres) required before scanning is considered complete.")]
     [SerializeField] private float requiredFloorArea = 4.0f;
+    [Tooltip("Small-room fallback: accept at least this much floor (m²) once it has stopped growing for plateauSeconds.")]
+    [SerializeField] private float minFloorArea = 3.0f;
+    [Tooltip("Seconds without meaningful growth (0.1 m²) before the small-room fallback applies.")]
+    [SerializeField] private float plateauSeconds = 15f;
 
     [Header("Floor Detection")]
     [Tooltip("Unclassified planes count as floor only within this height (metres) of the detected floor level.")]
@@ -57,6 +61,8 @@ public class ARSessionManager : MonoBehaviour
     private float _excludedArea;
     private float _lastLoggedArea;
     private bool _scanComplete;
+    private float _plateauArea;
+    private float _lastGrowthAt;
 
     public float TotalScannedArea => _totalScannedArea;
     public float RequiredFloorArea => requiredFloorArea;
@@ -92,6 +98,28 @@ public class ARSessionManager : MonoBehaviour
     private void Update()
     {
         PollTrackingState();
+        CheckScanPlateau();
+    }
+
+    /// <summary>
+    /// A room smaller than requiredFloorArea would otherwise scan forever: once
+    /// the floor found stops growing and is at least minFloorArea, accept it
+    /// (LevelGenerator then falls back to a template that fits).
+    /// </summary>
+    private void CheckScanPlateau()
+    {
+        if (_scanComplete) return;
+        if (_totalScannedArea - _plateauArea >= 0.1f)
+        {
+            _plateauArea = _totalScannedArea;
+            _lastGrowthAt = Time.time;
+            return;
+        }
+        if (_totalScannedArea < minFloorArea || Time.time - _lastGrowthAt < plateauSeconds) return;
+
+        _scanComplete = true;
+        Debug.Log($"[ARSessionManager] Scan complete — floor stopped growing at {_totalScannedArea:F2} m² (target {requiredFloorArea:F2}); using what's there.");
+        OnScanComplete?.Invoke();
     }
 
     // ---- Tracking-state monitoring & relocalisation (Step 4, second half) ----

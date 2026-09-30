@@ -343,6 +343,33 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 2 details".
 - **Bill:** squat (key 4) as it arrives and it misses. Stand still and you lose a life. Step aside after it's fired and it misses, because it doesn't turn. Walk within 1.2 m of the cannon and it shouldn't start a shot.
 - **? blocks:** over several stages you should see both flowers and green 1-Up mushrooms. Hearts go up to 8 at most.
 
+### Gameplay (pass 3) — ✅ done and Editor-playtested (2026-09-30); warp pipe to be redesigned with the real maps
+The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defaults.
+- **Bigger layouts:** a `LargeStage` template (2.0 × 3.0 m) is tried first.
+  - The scan target is 7 m² (`requiredFloorArea`).
+  - `ARSessionManager.CheckScanPlateau` accepts at least 3 m² (`minFloorArea`) once the floor stops growing for 15 s, so small rooms still finish scanning.
+- **`WarpPipe`:** on Large and Standard stages, with a 50 % chance per stage. `EventResolver`'s squat looks for a pipe within 0.35 m; entering one calls `StageGoal.Reach()` and `GameStateManager.QueueWarp(1)`, which makes `CompleteStage` advance 2 stages.
+- **`Difficulty`** (on GameManager) is a pure function of the stage number, with caps. It's read by:
+  - `EnemySpawner`: the enemy count, and `Goomba.SpeedMultiplier`
+  - `BulletBillCannon`: the number of shots and the interval between them
+  - `BulletBill`: `Launch(dir, speedMultiplier)`
+- **`AudioManager`** (on GameManager, with an AudioSource) synthesises its clips at `Awake`.
+  - It listens to `EventResolver`, `GameStateManager` and `LevelGenerator`.
+  - The ? block, pickups, warp pipe and cannon call the static `AudioManager.Play(Sfx)` directly. It does nothing when there's no AudioManager.
+  - There's no background music yet.
+- **Content:** `GameContentSetup` builds `LargeStage` and the warp pipes, and adds Difficulty and AudioManager to GameManager.
+- **Tests:** `GameplaySmokeTest` passes 62/62, including 11 pass-3 checks. The simulation and network smoke tests also pass.
+- **Deferred:** art in place of primitives, until after the playtest.
+
+**Editor playtest (2026-09-30):** everything worked as intended, and Oliver was especially pleased with the sound effects.
+- **Follow-up:** the warp pipe shouldn't clear the stage. It should teleport the player to a temporary side area that has an exit pipe back to the main stage, as in Mario. It waits for the real map and stage work; see `Docs/GAME_DESIGN.md`, "Later passes". The current `WarpPipe` stage-clear-and-skip behaviour is a placeholder.
+
+**Playtest checklist for pass 3:**
+- **Layout:** scanning now needs 7 m². In the LivingRoom simulation you should get a **Large** stage, with 2 ? blocks, 2 bricks, a cannon and 3 enemies.
+- **Warp pipe:** look for a short green pipe; it's only on some stages. Walk onto it, squat (key 4), and check for "Warp!", the warp sound, a stage clear, and a stage number that jumps by 2.
+- **Difficulty:** by stage 5 or so there should be more enemies, faster walkers and an extra cannon shot.
+- **Audio:** check the Game view isn't muted. Listen for jump, coin, power-ups, stomp, brick, fireball, damage, the cannon warning and fire, stage clear and game over. A refused jump, squat or fireball gives a soft bonk; a held stomp or walk gives nothing.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.
@@ -411,8 +438,8 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 - `GatewayConnection` resolves the name itself and tries IPv4 addresses first, because `.local` names also return IPv6 link-local addresses.
 - **Change both the URL and the pin for John's gateway.** His laptop's `.local` name works the same way.
 
-### `AudioManager` — ❌ not started
-No audio code exists at all.
+### `AudioManager` — 🟡 built 2026-09-30 (pass 3)
+Synthesised sound effects, no music yet. See "Gameplay (pass 3)" above.
 
 ### Step 6 (stage completion loop) — ✅ tested on the iPhone 17 (2026-09-28)
 - **`StageGoal.cs`** goes on a child of a stage prefab. It counts as reached when the player (the AR camera) stays within `reachRadius` (0.6 m, measured horizontally) for `dwellSeconds` (0.5 s). It fires `OnReached` once and exposes `PlayerDistance`. `TestStage` now has a "Goal" child at its far (+Z) edge, with a pole and a yellow flag (visual only, no colliders), added by `StageLoopSetup`.
@@ -499,7 +526,7 @@ These cost real debugging time once already — don't rediscover them:
 3. ~~Build Step 6 (stage completion loop)~~: done and tested on the device on 2026-09-28. Re-check the furniture-plane fix on the next device session.
 4. ~~Expand `HUDController`~~: built on 2026-09-28; the on-device check is pending.
 5. ~~Add a second, smaller stage template~~: `CompactStage` added 2026-09-29. Next: check the fallback fires on the device in a cramped spot. Gameplay pass 2 (Koopa, Bullet Bill cannon + squat, random power-ups) was built on 2026-09-30 and revised after an Editor playtest. On-device testing is deferred to the very end (Oliver's call). Next is pass 3 (warp pipes, difficulty scaling, audio, art).
-6. **Build `AudioManager`**: deferred to a later enhancement (decided 2026-09-29).
+6. ~~Build `AudioManager`~~: sound effects built in pass 3 (2026-09-30); background music is still open.
 7. Once `NetworkClient` exists and Xavier's classifier is producing real events, revisit `minConfidence` and Gate 2's dedup strategy against real traffic characteristics.
 
 ---

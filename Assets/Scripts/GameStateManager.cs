@@ -62,6 +62,7 @@ public class GameStateManager : MonoBehaviour
     private float _invulnerableUntil = float.NegativeInfinity;
     private float _gameOverAt = float.NegativeInfinity;
     private float _lastStompAt = float.NegativeInfinity;
+    private int _pendingWarpSkip;
 
     [Tooltip("Stomp is re-sent every classification window; a pause this long between stomp events starts a new stomp.")]
     [SerializeField] private float newStompGapSeconds = 0.3f;
@@ -137,6 +138,7 @@ public class GameStateManager : MonoBehaviour
         isStageActive = false;
         _airborneUntil = _duckedUntil = _invulnerableUntil = _lastStompAt = float.NegativeInfinity;
         StompStartedAt = float.NegativeInfinity;
+        _pendingWarpSkip = 0;
         Debug.Log("[GameStateManager] New game.");
         OnGameRestarted?.Invoke();
     }
@@ -172,12 +174,16 @@ public class GameStateManager : MonoBehaviour
         Debug.Log($"[GameStateManager] Stage {stageIndex} started.");
     }
 
-    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter.</summary>
+    /// <summary>A warp pipe: the coming CompleteStage also skips this many stages.</summary>
+    public void QueueWarp(int skipStages) => _pendingWarpSkip = Mathf.Max(0, skipStages);
+
+    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter (further after a warp).</summary>
     public void CompleteStage()
     {
         isStageActive = false;
-        Debug.Log($"[GameStateManager] Stage {stageIndex} cleared.");
+        Debug.Log($"[GameStateManager] Stage {stageIndex} cleared{(_pendingWarpSkip > 0 ? $" by warp (skipping {_pendingWarpSkip})" : "")}.");
         AddScore(stageClearBonus);
-        stageIndex++;
+        stageIndex += 1 + _pendingWarpSkip;
+        _pendingWarpSkip = 0;
     }
 }

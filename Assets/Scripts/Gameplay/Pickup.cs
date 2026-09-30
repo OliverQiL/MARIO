@@ -58,6 +58,7 @@ public class Pickup : MonoBehaviour
 
         if (kind == Kind.FireFlower) gs.SetFireFlower(true);
         else gs.AddLife();
+        AudioManager.Play(kind == Kind.OneUp ? Sfx.OneUp : Sfx.PowerUp);
         Debug.Log($"[Pickup] Collected {kind}.");
         InteractableBase.SafeDestroy(gameObject);
         return true;

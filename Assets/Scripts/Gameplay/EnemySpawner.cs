@@ -8,6 +8,7 @@ using UnityEngine;
 /// with it. Paused while the session isn't ready, and holds off while the
 /// player is standing near the spawn point, so an enemy never appears on top
 /// of them (seen on-device: a Goomba hit the player ~1 s after spawning).
+/// Difficulty adds enemies and walking speed on later stages.
 /// </summary>
 public class EnemySpawner : MonoBehaviour
 {
@@ -33,7 +34,7 @@ public class EnemySpawner : MonoBehaviour
     {
         var gs = GameStateManager.Instance;
         if (gs == null || !gs.IsSessionReady || enemyPrefabs == null || enemyPrefabs.Length == 0) return null;
-        if (_current != null || _spawned >= totalCount) return null;
+        if (_current != null || _spawned >= totalCount + Difficulty.ExtraEnemies) return null;
 
         _timer += dt;
         if (_timer < (_spawned == 0 ? initialDelay : respawnDelay)) return null;
@@ -47,7 +48,8 @@ public class EnemySpawner : MonoBehaviour
         _timer = 0f;
         _spawned++;
         _current = Instantiate(prefab, transform.position, transform.rotation, transform.parent);
-        Debug.Log($"[EnemySpawner] Spawned {prefab.name} ({_spawned}/{totalCount}).");
+        _current.SpeedMultiplier = Difficulty.EnemySpeedMultiplier;
+        Debug.Log($"[EnemySpawner] Spawned {prefab.name} ({_spawned}/{totalCount + Difficulty.ExtraEnemies}, speed ×{_current.SpeedMultiplier:F2}).");
         return _current;
     }
 }
