@@ -1,7 +1,9 @@
 using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
+using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// Renders the game's prefabs side by side to PNGs, for checking art without
@@ -85,7 +87,72 @@ public static class ArtPreview
         Shoot(Path.Combine(outDir, "closeup.png"), new Vector3(0f, 0.2f, -0.6f), new Vector3(0f, 0.12f, 0f), 1400, 700);
         Object.DestroyImmediate(close.gameObject);
 
-        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png to {Path.GetFullPath(outDir)}");
+        RenderHud(outDir);
+        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
+    }
+
+    /// <summary>
+    /// The HUD at iPhone 17 landscape resolution, filled with sample values: in
+    /// play, and on the game-over screen. Opens the scene without saving it.
+    /// </summary>
+    private static void RenderHud(string outDir)
+    {
+        EditorSceneManager.OpenScene("Assets/Scenes/SampleScene.unity", OpenSceneMode.Single);
+        var canvas = Object.FindAnyObjectByType<Canvas>();
+        var hud = canvas.GetComponent<HUDController>();
+        var so = new SerializedObject(hud);
+        TMP_Text T(string field) => (TMP_Text)so.FindProperty(field).objectReferenceValue;
+
+        var camGO = new GameObject("HudCamera", typeof(Camera));
+        var cam = camGO.GetComponent<Camera>();
+        cam.clearFlags = CameraClearFlags.SolidColor;
+        cam.backgroundColor = new Color(0.55f, 0.5f, 0.45f); // a stand-in for the camera feed
+        canvas.renderMode = RenderMode.ScreenSpaceCamera;
+        canvas.worldCamera = cam;
+        canvas.planeDistance = 1f;
+
+        T("scoreText").text = "002150";
+        T("stageText").text = "4";
+        T("livesText").text = "x3";
+        ((Image)so.FindProperty("powerIcon").objectReferenceValue).enabled = true;
+        T("powerEmptyText").enabled = false;
+        T("connectionText").text = "<color=#FF5A4D>●</color> OFFLINE";
+        T("bannerText").text = "FLAG 2.6 M";
+        T("bannerText").color = new Color(0.8f, 0.8f, 0.8f);
+        T("titleText").text = "STAGE 4";
+        T("titleText").color = Color.white;
+        T("feedbackText").text = "STOMP!  +100";
+        T("feedbackText").color = new Color(0.3f, 1f, 0.4f);
+        ShootCanvas(cam, Path.Combine(outDir, "hud.png"));
+
+        var panel = (GameObject)so.FindProperty("gameOverPanel").objectReferenceValue;
+        panel.SetActive(true);
+        T("gameOverStatsText").text = "SCORE 002150   STAGE 4";
+        T("gameOverPromptText").enabled = true;
+        T("titleText").text = "";
+        T("feedbackText").text = "";
+        T("bannerText").text = "";
+        ShootCanvas(cam, Path.Combine(outDir, "hud_gameover.png"));
+    }
+
+    private static void ShootCanvas(Camera cam, string path)
+    {
+        const int width = 2622, height = 1206; // iPhone 17, landscape
+        var rt = new RenderTexture(width, height, 24);
+        cam.targetTexture = rt;
+        Canvas.ForceUpdateCanvases();
+        foreach (var t in Object.FindObjectsByType<TMP_Text>(FindObjectsSortMode.None)) t.ForceMeshUpdate();
+        Canvas.ForceUpdateCanvases();
+        cam.Render();
+        RenderTexture.active = rt;
+        var tex = new Texture2D(width, height, TextureFormat.RGB24, false);
+        tex.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+        tex.Apply();
+        RenderTexture.active = null;
+        File.WriteAllBytes(path, tex.EncodeToPNG());
+        cam.targetTexture = null;
+        Object.DestroyImmediate(rt);
+        Object.DestroyImmediate(tex);
     }
 
     private static GameObject Load(string path) => AssetDatabase.LoadAssetAtPath<GameObject>(path);

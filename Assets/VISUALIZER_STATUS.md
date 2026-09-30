@@ -394,6 +394,21 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 - **`ArtPreview`** now also renders `items.png`.
 - **Background music:** Oliver added `Assets/Audio/Super Mario Bros. Theme Song.mp3` and assigned it to AudioManager's Music slot. **It's copyrighted.** It's committed because the repo is private (Oliver's decision, 2026-09-30). Remove it before the repo, a demo video or a build goes public.
 
+### HUD styling — ✅ Editor-playtested (2026-09-30)
+- **Font:** Press Start 2P, a pixel font under the SIL OFL (`Assets/Fonts`, license included).
+  - `HUDSetup` makes a TMP font asset from it with ASCII baked in and the **atlas frozen (Static)**. With a dynamic atlas, Play Mode hit Unity's "External Gfx Allocation has already been registered" assert (`SimulationSmokeTest` failed consistently); freezing it fixed that.
+  - Symbols the font lacks (●) fall back to LiberationSans.
+  - A material preset (`PressStart2P Shadow.mat`) adds a hard drop shadow and a thin outline, so text reads over any camera image.
+- **Top bar:**
+  - labels: SCORE (6 digits), STAGE, LIVES (pixel heart ×N) and POWER (a pixel fire-flower icon while held, otherwise "-")
+  - connection status small at the top right (ONLINE / CONNECTING / OFFLINE)
+  - the icons are sprites from `PixelArt.HeartIcon` and `PixelArt.FlowerIcon`
+- **Centre title:** a big pop-in "STAGE N" when a stage starts; "STAGE CLEAR!" (gold) or "WARP!" when it ends.
+- **Game-over screen:** a dimmed overlay with a red GAME OVER, the final score and stage, and "JUMP TO PLAY AGAIN", which blinks once the 2 s restart grace has passed.
+- **Messages:** banner and feedback text are ASCII uppercase ("SCAN THE FLOOR 2.3/7.0 M²", "FLAG 2.6 M").
+- **`ArtPreview`** now also renders `hud.png` and `hud_gameover.png` at iPhone 17 landscape resolution (2622×1206).
+- **Tests:** gameplay 62/62; the simulation and network smoke tests pass.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.

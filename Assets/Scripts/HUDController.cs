@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using UnityEngine.UI;
 using TMPro;
 
 /// <summary>
@@ -7,14 +8,19 @@ using TMPro;
 /// connection status, degraded-mode messaging, and per-action feedback.
 /// Replaces the scan-only ScanHUD.
 ///
-/// Four text elements:
-/// - stats (top-left):   Stage N · Score S · lives
-/// - connection (top-right)
-/// - banner (centre):    the current *state* — scanning, tracking lost, no
-///                       room to place a stage, placing, stage clear. Highest
-///                       priority wins; polled every frame.
-/// - feedback (below):   transient *events* — action results from
+/// Styled after the classic Mario HUD (pixel font, drop shadows), laid out
+/// by HUDSetup:
+/// - top bar:            SCORE (6 digits) · STAGE · LIVES (heart ×N) · POWER
+///                       (fire-flower icon while held)
+/// - connection (top-right, small)
+/// - banner (top-centre): the current *state* — scanning, tracking lost, no
+///                       room to place a stage, placing, distance to the flag.
+///                       Highest priority wins; polled every frame.
+/// - title (centre):     big pop-in "STAGE N" when a stage starts, "STAGE CLEAR!"
+///                       or "WARP!" when it ends
+/// - feedback (centre):  transient *events* — action results from
 ///                       EventResolver.OnEventProcessed and score gains. Fades.
+/// - game-over screen:   dimmed overlay with the final score and the restart prompt
 ///
 /// Feedback keeps the report's distinction: Gates 3-5 ("recognised but not
 /// permitted") are shown prominently with the reason; Gate 2 low confidence
@@ -33,11 +39,27 @@ public class HUDController : MonoBehaviour
     [Tooltip("Optional — connection status is hidden without it.")]
     [SerializeField] private NetworkClient networkClient;
 
-    [Header("Text Elements")]
-    [SerializeField] private TMP_Text statsText;
+    [Header("Top bar")]
+    [SerializeField] private TMP_Text scoreText;
+    [SerializeField] private TMP_Text stageText;
+    [SerializeField] private TMP_Text livesText;
+    [SerializeField] private Image powerIcon;
+    [SerializeField] private TMP_Text powerEmptyText;
     [SerializeField] private TMP_Text connectionText;
+
+    [Header("Centre")]
     [SerializeField] private TMP_Text bannerText;
     [SerializeField] private TMP_Text feedbackText;
+    [SerializeField] private TMP_Text titleText;
+
+    [Header("Game over")]
+    [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private TMP_Text gameOverStatsText;
+    [SerializeField] private TMP_Text gameOverPromptText;
+
+    [Header("Title")]
+    [SerializeField] private float titleSeconds = 1.8f;
+    [SerializeField] private float titlePopSeconds = 0.18f;
 
     [Header("Feedback")]
     [SerializeField] private float feedbackSeconds = 1.5f;
@@ -50,11 +72,14 @@ public class HUDController : MonoBehaviour
     [SerializeField] private Color deniedColor = new(1f, 0.6f, 0.15f);
     [SerializeField] private Color quietColor = new(0.8f, 0.8f, 0.8f);
     [SerializeField] private Color warningColor = new(1f, 0.35f, 0.3f);
+    [SerializeField] private Color titleColor = new(1f, 0.85f, 0.2f);
 
     private float _feedbackShownAt = float.NegativeInfinity;
     private Color _feedbackColor;
     private float _placementFailedAt = float.NegativeInfinity;
     private int _lastScore;
+    private float _titleShownAt = float.NegativeInfinity;
+    private Color _titleColor;
 
     private void Reset()
     {
@@ -78,6 +103,7 @@ public class HUDController : MonoBehaviour
         {
             levelGenerator.OnPlacementFailed.AddListener(HandlePlacementFailed);
             levelGenerator.OnStageStarted.AddListener(HandleStageStarted);
+            levelGenerator.OnStageCompleted.AddListener(HandleStageCompleted);
         }
         if (gameState != null) _lastScore = gameState.Score;
         BulletBillCannon.OnWarning += HandleBulletBillWarning;
@@ -95,6 +121,7 @@ public class HUDController : MonoBehaviour
         {
             levelGenerator.OnPlacementFailed.RemoveListener(HandlePlacementFailed);
             levelGenerator.OnStageStarted.RemoveListener(HandleStageStarted);
+            levelGenerator.OnStageCompleted.RemoveListener(HandleStageCompleted);
         }
         BulletBillCannon.OnWarning -= HandleBulletBillWarning;
     }
@@ -105,21 +132,26 @@ public class HUDController : MonoBehaviour
         UpdateConnection();
         UpdateBanner();
         UpdateFeedbackFade();
+        UpdateTitle();
+        UpdateGameOver();
     }
 
     // ---- persistent state ----
 
     private void UpdateStats()
     {
-        if (statsText == null || gameState == null) return;
+        if (gameState == null) return;
 
         // Score gains (hits, stage-clear bonus) flash as feedback.
         int delta = gameState.Score - _lastScore;
         _lastScore = gameState.Score;
         if (delta > 0) ShowFeedback(FeedbackPrefix() + $"+{delta}", goodColor);
 
-        string flower = gameState.HasFireFlower ? "   <color=#FF8A1F>FIRE</color>" : "";
-        statsText.text = $"Stage {gameState.StageIndex}   Score {gameState.Score}   {Hearts(gameState.Lives)}{flower}";
+        if (scoreText != null) scoreText.text = Mathf.Min(gameState.Score, 999999).ToString("D6");
+        if (stageText != null) stageText.text = gameState.StageIndex.ToString();
+        if (livesText != null) livesText.text = $"x{Mathf.Max(0, gameState.Lives)}";
+        if (powerIcon != null) powerIcon.enabled = gameState.HasFireFlower;
+        if (powerEmptyText != null) powerEmptyText.enabled = !gameState.HasFireFlower;
     }
 
     private void UpdateConnection()
@@ -130,13 +162,13 @@ public class HUDController : MonoBehaviour
         switch (networkClient.State)
         {
             case GatewayConnection.ConnectionState.Connected:
-                connectionText.text = "<color=#4CFF66>●</color> Gateway";
+                connectionText.text = "<size=160%><color=#4CFF66>●</color></size> ONLINE";
                 break;
             case GatewayConnection.ConnectionState.Connecting:
-                connectionText.text = "<color=#FFB020>●</color> Connecting…";
+                connectionText.text = "<size=160%><color=#FFB020>●</color></size> CONNECTING";
                 break;
             default:
-                connectionText.text = "<color=#FF5A4D>●</color> Gateway offline";
+                connectionText.text = "<size=160%><color=#FF5A4D>●</color></size> OFFLINE";
                 break;
         }
     }
@@ -150,35 +182,33 @@ public class HUDController : MonoBehaviour
 
         if (gameState != null && gameState.IsGameOver)
         {
-            message = gameState.SecondsSinceGameOver >= 2f ? "GAME OVER — jump to play again" : "GAME OVER";
-            color = warningColor;
+            message = null; // the game-over screen says it all
         }
         else if (sessionManager != null && !sessionManager.IsTracking)
         {
-            message = "Tracking lost — look around slowly";
+            message = "TRACKING LOST - LOOK AROUND SLOWLY";
             color = warningColor;
         }
         else if (sessionManager != null && !sessionManager.IsScanComplete)
         {
-            message = $"Scan the floor: {sessionManager.TotalScannedArea:F1} / {sessionManager.RequiredFloorArea:F1} m²";
+            message = $"SCAN THE FLOOR  {sessionManager.TotalScannedArea:F1}/{sessionManager.RequiredFloorArea:F1} M²";
         }
         else if (levelGenerator != null && levelGenerator.IsTransitioning)
         {
-            message = "Stage clear!";
-            color = goodColor;
+            message = null; // the centre title shows STAGE CLEAR!
         }
         else if (levelGenerator != null && levelGenerator.CurrentStage == null)
         {
             bool recentlyFailed = Time.time - _placementFailedAt < placementFailedHoldSeconds;
-            message = recentlyFailed ? "No room here — move to a clearer area"
-                    : levelGenerator.IsWaitingForMesh ? "Mapping the room…"
-                    : "Placing stage…";
+            message = recentlyFailed ? "NO ROOM HERE - MOVE TO A CLEARER AREA"
+                    : levelGenerator.IsWaitingForMesh ? "MAPPING THE ROOM..."
+                    : "PLACING STAGE...";
             color = recentlyFailed ? warningColor : Color.white;
         }
         else if (levelGenerator != null && levelGenerator.CurrentGoal != null
                  && !float.IsInfinity(levelGenerator.CurrentGoal.PlayerDistance))
         {
-            message = $"Walk to the flag ({levelGenerator.CurrentGoal.PlayerDistance:F1} m)";
+            message = $"FLAG {levelGenerator.CurrentGoal.PlayerDistance:F1} M";
             color = quietColor;
         }
 
@@ -219,6 +249,7 @@ public class HUDController : MonoBehaviour
             _pendingPrefix = $"{label}!  ";
             _pendingPrefixFrame = Time.frameCount;
             ShowFeedback($"{label}!", goodColor);
+            if (result.Target is WarpPipe) ShowTitle("WARP!", goodColor); // replaces STAGE CLEAR! raised a moment ago
             return;
         }
 
@@ -252,18 +283,24 @@ public class HUDController : MonoBehaviour
     }
 
     private void HandleLifeLost(int livesLeft) =>
-        ShowFeedback(livesLeft > 0 ? "Ouch! −1 life" : "Out of lives!", warningColor);
+        ShowFeedback(livesLeft > 0 ? "Ouch! -1 life" : "Out of lives!", warningColor);
 
     private void HandleBulletBillWarning() => ShowFeedback("Bullet Bill! Squat!", warningColor);
 
     private void HandlePlacementFailed() => _placementFailedAt = Time.time;
 
-    private void HandleStageStarted() => _placementFailedAt = float.NegativeInfinity;
+    private void HandleStageStarted()
+    {
+        _placementFailedAt = float.NegativeInfinity;
+        if (gameState != null) ShowTitle($"STAGE {gameState.StageIndex}", Color.white);
+    }
+
+    private void HandleStageCompleted() => ShowTitle("STAGE CLEAR!", titleColor);
 
     private void ShowFeedback(string message, Color color)
     {
         if (feedbackText == null) return;
-        feedbackText.text = message;
+        feedbackText.text = message.ToUpperInvariant();
         _feedbackColor = color;
         _feedbackShownAt = Time.time;
         UpdateFeedbackFade();
@@ -277,9 +314,48 @@ public class HUDController : MonoBehaviour
         feedbackText.color = new Color(_feedbackColor.r, _feedbackColor.g, _feedbackColor.b, alpha);
     }
 
-    // ---- helpers ----
+    // ---- centre title ----
 
-    private static string Hearts(int lives) => lives <= 0 ? "<color=#FF5A4D>no lives</color>" : $"<color=#FF5A4D>{new string('♥', lives)}</color>";
+    private void ShowTitle(string message, Color color)
+    {
+        if (titleText == null) return;
+        titleText.text = message;
+        _titleColor = color;
+        _titleShownAt = Time.time;
+        UpdateTitle();
+    }
+
+    /// <summary>Pops in (overshoot then settle), holds, fades.</summary>
+    private void UpdateTitle()
+    {
+        if (titleText == null) return;
+        float age = Time.time - _titleShownAt;
+        float alpha = age <= titleSeconds ? 1f : 1f - Mathf.Clamp01((age - titleSeconds) / feedbackFadeSeconds);
+        titleText.color = new Color(_titleColor.r, _titleColor.g, _titleColor.b, alpha);
+        float pop = Mathf.Clamp01(age / titlePopSeconds);
+        titleText.rectTransform.localScale = Vector3.one * Mathf.LerpUnclamped(1.6f, 1f, pop);
+    }
+
+    // ---- game over ----
+
+    private void UpdateGameOver()
+    {
+        if (gameOverPanel == null || gameState == null) return;
+        bool over = gameState.IsGameOver;
+        if (gameOverPanel.activeSelf != over) gameOverPanel.SetActive(over);
+        if (!over) return;
+
+        if (gameOverStatsText != null)
+            gameOverStatsText.text = $"SCORE {Mathf.Min(gameState.Score, 999999):D6}   STAGE {gameState.StageIndex}";
+        if (gameOverPromptText != null)
+        {
+            // The restart prompt appears once a jump can actually restart, then blinks.
+            bool ready = gameState.SecondsSinceGameOver >= 2f;
+            gameOverPromptText.enabled = ready && Mathf.Repeat(Time.time, 1f) < 0.7f;
+        }
+    }
+
+    // ---- helpers ----
 
     private static string Capitalise(string s) => string.IsNullOrEmpty(s) ? s : char.ToUpperInvariant(s[0]) + s.Substring(1);
 }

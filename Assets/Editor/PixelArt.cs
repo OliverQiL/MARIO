@@ -105,6 +105,58 @@ public static class PixelArt
         });
     }
 
+    // HUD icons. K outline, '.' transparent.
+    private static readonly string[] HeartRows =
+    {
+        "................",
+        "..KKKK....KKKK..",
+        ".KRRRRK..KRRRRK.",
+        "KRRWWRRKKRRRRRRK",
+        "KRWWRRRRRRRRRRRK",
+        "KRWRRRRRRRRRRRRK",
+        "KRRRRRRRRRRRRRRK",
+        ".KRRRRRRRRRRRRK.",
+        "..KRRRRRRRRRRK..",
+        "...KRRRRRRRRK...",
+        "....KRRRRRRK....",
+        ".....KRRRRK.....",
+        "......KRRK......",
+        ".......KK.......",
+        "................",
+        "................",
+    };
+
+    private static readonly string[] FlowerIconRows =
+    {
+        "....KKKKKKKK....",
+        "..KKRRRRRRRRKK..",
+        ".KRRRYYYYYYRRRK.",
+        "KRRYYWWWWWWYYRRK",
+        "KRYYWWKWWKWWYYRK",
+        "KRYYWWKWWKWWYYRK",
+        "KRRYYWWWWWWYYRRK",
+        ".KRRRYYYYYYRRRK.",
+        "..KKRRRRRRRRKK..",
+        "....KKKGGKKK....",
+        ".KKK...KGGK..KKK",
+        "KGGGK..KGGK.KGGG",
+        "KGGGGK.KGGKKGGGG",
+        ".KGGGGKKGGKGGGGK",
+        "..KKGGGGGGGGGKK.",
+        "....KKKKKKKKKK..",
+    };
+
+    public static Sprite HeartIcon() => SaveSprite("HeartIcon", HeartRows, new Dictionary<char, Color>
+    {
+        ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['R'] = Hex("F03C3C"), ['W'] = Hex("FFD0D0"),
+    });
+
+    public static Sprite FlowerIcon() => SaveSprite("FlowerIcon", FlowerIconRows, new Dictionary<char, Color>
+    {
+        ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['R'] = Hex("F0461E"), ['Y'] = Hex("FFC81E"),
+        ['W'] = Hex("FFF7DC"), ['G'] = Hex("28A03C"),
+    });
+
     /// <summary>Koopa shell scutes: rounded plates on an offset grid, with dark seams.</summary>
     public static Texture2D KoopaShell()
     {
@@ -128,6 +180,19 @@ public static class PixelArt
             rows[y] = new string(chars);
         }
         return Save("KoopaShell", rows, palette);
+    }
+
+    private static Sprite SaveSprite(string name, string[] rows, Dictionary<char, Color> palette)
+    {
+        var path = AssetDatabase.GetAssetPath(Save(name, rows, palette));
+        var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+        importer.textureType = TextureImporterType.Sprite;
+        importer.spriteImportMode = SpriteImportMode.Single;
+        importer.alphaIsTransparency = true;
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.filterMode = FilterMode.Point;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
     }
 
     private static Texture2D Save(string name, string[] rows, Dictionary<char, Color> palette)
