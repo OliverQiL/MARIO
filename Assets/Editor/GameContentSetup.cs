@@ -13,8 +13,10 @@ using UnityEngine;
 ///   StandardStage 1.2×2.0 m (? block, brick, Goomba-then-Koopa spawner,
 ///   Bullet Bill cannon, warp pipe, flag) and CompactStage 0.6×1.0 m (? block, flag)
 /// - GameManager: Difficulty and AudioManager components
-/// - Scene: LevelGenerator templates, EventResolver fireball prefab,
-///   GameStateManager.OnGameOver/OnGameRestarted → LevelGenerator.EndGame/RestartLoop,
+/// - Scene: LevelGenerator templates, EventResolver fireball prefab, the stage
+///   loop's events (LevelGenerator.OnStageStarted/OnStageCompleted →
+///   GameStateManager.BeginStage/CompleteStage; OnGameOver/OnGameRestarted →
+///   LevelGenerator.EndGame/RestartLoop),
 ///   scan target above the largest footprint.
 /// Each stage's +Z points away from the player (LevelGenerator orients it so).
 ///
@@ -104,8 +106,12 @@ public static class GameContentSetup
         er.FindProperty("fireballPrefab").objectReferenceValue = fireball.GetComponent<Fireball>();
         er.ApplyModifiedPropertiesWithoutUndo();
 
-        StageLoopSetup.AddListenerOnce(gameState.OnGameOver, levelGenerator.EndGame);
-        StageLoopSetup.AddListenerOnce(gameState.OnGameRestarted, levelGenerator.RestartLoop);
+        // The stage loop's events: LevelGenerator ⇄ GameStateManager (persistent listeners).
+        AddListenerOnce(levelGenerator.OnStageStarted ??= new UnityEngine.Events.UnityEvent(), gameState.BeginStage);
+        AddListenerOnce(levelGenerator.OnStageCompleted ??= new UnityEngine.Events.UnityEvent(), gameState.CompleteStage);
+        AddListenerOnce(gameState.OnGameOver, levelGenerator.EndGame);
+        AddListenerOnce(gameState.OnGameRestarted, levelGenerator.RestartLoop);
+        EditorUtility.SetDirty(levelGenerator);
         EditorUtility.SetDirty(gameState);
 
         // The player scans the room and confirms with a jump (Oliver 2026-09-30); 12 m² is the
@@ -702,6 +708,15 @@ public static class GameContentSetup
         var prefab = PrefabUtility.SaveAsPrefabAsset(root, path);
         Object.DestroyImmediate(root);
         return prefab;
+    }
+
+    /// <summary>Adds a persistent (scene-saved) listener unless it's already there.</summary>
+    public static void AddListenerOnce(UnityEngine.Events.UnityEvent evt, UnityEngine.Events.UnityAction action)
+    {
+        for (int i = 0; i < evt.GetPersistentEventCount(); i++)
+            if (evt.GetPersistentTarget(i) == (Object)action.Target && evt.GetPersistentMethodName(i) == action.Method.Name)
+                return;
+        UnityEditor.Events.UnityEventTools.AddVoidPersistentListener(evt, action);
     }
 
     private static void Set(Object target, string field, Object value)

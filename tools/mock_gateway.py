@@ -14,6 +14,8 @@ Usage:
                                                 # also run commands appended to a file
                                                 # (echo jump >> /tmp/gw.cmd), for hands-free
                                                 # device testing while someone else plays
+  python3 tools/mock_gateway.py --keys          # single keys, no Enter: play along on the device
+                                                # holding the Mac's keyboard (see "Keys" below)
 
 Interactive commands:
   stand | walk | jump | squat | fireball | stomp   send a GAME_EVENT (confidence 0.95)
@@ -22,6 +24,13 @@ Interactive commands:
   newsession                                       start a new session_id
   kick                                             close the connection (reconnect test)
   quit
+Keys (--keys):
+  1 stand  2 walk  3 jump  4 squat  5 fireball  6 stomp
+  Hold 1/2/6 to keep sending (every 0.1 s, like classifier windows); 3/4/5 send
+  once per press (a held key's auto-repeat is ignored).
+  l = next action at low confidence   d = duplicate   k = kick   q = quit
+  Headset tuning (DEV_TUNE, development only): = / - window bigger/smaller,
+  ] / [ gap between the eye images wider/narrower, 0 reset.
 Requires: pip install websockets
 """
 import argparse
@@ -29,6 +38,7 @@ import asyncio
 import datetime
 import hashlib
 import json
+import os
 import pathlib
 import random
 import ssl
@@ -39,6 +49,49 @@ import time
 import websockets
 
 ACTIONS = ["stand", "walk", "jump", "squat", "fireball", "stomp"]
+CONTINUOUS = {"stand", "walk", "stomp"}
+
+
+class KeyMapper:
+    """Turns single key presses (with the OS's auto-repeat while held) into gateway commands.
+
+    Continuous actions repeat while their key is held, at most every `hop` seconds
+    (the classifier's window hop). Discrete actions fire once per physical press:
+    auto-repeats arrive faster than `repeat_gap`, so a key seen again within it is
+    still being held and is ignored.
+    """
+    KEYS = {"1": "stand", "2": "walk", "3": "jump", "4": "squat", "5": "fireball", "6": "stomp",
+            "d": "dup", "k": "kick", "q": "quit",
+            # Headset tuning while wearing it (DEV_TUNE): window size, image separation, reset.
+            "=": "tune:eyeImageScale:0.05", "+": "tune:eyeImageScale:0.05", "-": "tune:eyeImageScale:-0.05",
+            "]": "tune:lensSeparation:0.01", "[": "tune:lensSeparation:-0.01", "0": "tune:reset:0"}
+
+    def __init__(self, hop=0.1, repeat_gap=0.3):
+        self.hop, self.repeat_gap = hop, repeat_gap
+        self.last_seen = {}   # key -> time of its last character (press or auto-repeat)
+        self.last_sent = {}   # key -> time a command was last produced for it
+        self.low_next = False
+
+    def press(self, ch, now):
+        ch = ch.lower()
+        if ch == "l":
+            self.low_next = True
+            return None
+        cmd = self.KEYS.get(ch)
+        if cmd is None:
+            return None
+        held = now - self.last_seen.get(ch, float("-inf")) < self.repeat_gap
+        self.last_seen[ch] = now
+        if cmd in CONTINUOUS:
+            if now - self.last_sent.get(ch, float("-inf")) < self.hop:
+                return None
+        elif held:
+            return None  # discrete: one event per press
+        self.last_sent[ch] = now
+        if cmd in ACTIONS and self.low_next:
+            self.low_next = False
+            return "low:" + cmd
+        return cmd
 CERT_DIR = pathlib.Path(__file__).parent / "certs"
 
 
@@ -108,6 +161,12 @@ class Gateway:
         elif line == "kick":
             for ws in list(self.clients):
                 await ws.close(1001, "kicked by mock gateway")
+        elif line.startswith("tune:"):
+            _, param, delta = line.split(":")
+            msg = {"type": "DEV_TUNE", "param": param, "delta": float(delta)}
+            for ws in list(self.clients):
+                await ws.send(json.dumps(msg))
+            log(f"→ DEV_TUNE {param} {float(delta):+.2f}" if param != "reset" else "→ DEV_TUNE reset")
         elif line.startswith("low:"):
             await self.send(self.make_event(line[4:], 0.3))
         elif line in ACTIONS:
@@ -160,6 +219,31 @@ class Gateway:
                 return
             await self.command(line)
 
+    async def keys_loop(self):
+        """Single-key control from a terminal in cbreak mode (no Enter, no echo)."""
+        import termios, tty
+        fd = sys.stdin.fileno()
+        saved = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+        mapper = KeyMapper()
+        loop = asyncio.get_running_loop()
+        queue = asyncio.Queue()
+        loop.add_reader(fd, lambda: queue.put_nowait(os.read(fd, 32).decode(errors="ignore")))
+        log("keys: 1 stand  2 walk  3 jump  4 squat  5 fireball  6 stomp  |  hold 1/2/6 to repeat  |  l low-conf  d dup  k kick  q quit")
+        log("headset: = / - window bigger/smaller   ] / [ image gap wider/narrower   0 reset")
+        try:
+            while True:
+                for ch in await queue.get():
+                    cmd = mapper.press(ch, time.monotonic())
+                    if cmd == "quit":
+                        self.done.set()
+                        return
+                    if cmd:
+                        await self.command(cmd)
+        finally:
+            loop.remove_reader(fd)
+            termios.tcsetattr(fd, termios.TCSADRAIN, saved)
+
     async def command_file_loop(self, path):
         f = pathlib.Path(path)
         f.touch()
@@ -205,7 +289,11 @@ class Gateway:
             if self.args.command_file:
                 tasks.append(asyncio.create_task(self.command_file_loop(self.args.command_file)))
                 log(f"reading commands appended to {self.args.command_file}")
-            if not self.args.script and not self.args.auto and sys.stdin.isatty():
+            if self.args.keys:
+                if not sys.stdin.isatty():
+                    sys.exit("--keys needs an interactive terminal")
+                tasks.append(asyncio.create_task(self.keys_loop()))
+            elif not self.args.script and not self.args.auto and sys.stdin.isatty():
                 tasks.append(asyncio.create_task(self.stdin_loop()))
             try:
                 if self.args.timeout:
@@ -229,6 +317,7 @@ if __name__ == "__main__":
     p.add_argument("--script", help="comma-separated commands to send after VISUALIZER_READY")
     p.add_argument("--exit-after-acks", action="store_true", help="with --script: exit once every scripted event is ACKed")
     p.add_argument("--timeout", type=float, help="exit with code 2 after this many seconds")
+    p.add_argument("--keys", action="store_true", help="single-key control: 1-6 send actions (hold 1/2/6 to repeat)")
     p.add_argument("--print-fingerprint", action="store_true", help="print the cert fingerprint and exit")
     args = p.parse_args()
     if args.print_fingerprint:

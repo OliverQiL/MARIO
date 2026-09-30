@@ -13,6 +13,8 @@ public static class GatewayMessages
     public const string GameEventType = "GAME_EVENT";
     public const string EventAck = "EVENT_ACK";
     public const string HapticCmd = "HAPTIC_CMD";
+    /// <summary>Development only (the mock gateway's --keys mode; the real gateway never sends it): live headset tuning.</summary>
+    public const string DevTune = "DEV_TUNE";
 
     /// <summary>Parsed first to find out which concrete message this is.</summary>
     [Serializable]
@@ -20,6 +22,15 @@ public static class GatewayMessages
     {
         public string type;
         public int protocol_version;
+    }
+
+    /// <summary>DEV_TUNE: nudge a HeadsetView setting ("eyeImageScale", "lensSeparation") by delta, or "reset" it.</summary>
+    [Serializable]
+    public class DevTuneMsg
+    {
+        public string type;
+        public string param;
+        public float delta;
     }
 
     [Serializable]

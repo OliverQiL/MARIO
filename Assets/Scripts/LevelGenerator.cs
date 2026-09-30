@@ -59,10 +59,6 @@ public class LevelGenerator : MonoBehaviour
     [Tooltip("Optional: the ARMeshManager (on the 'AR Meshes' child). Auto-found in children if left empty.")]
     [SerializeField] private ARMeshManager meshManager;
 
-    [Header("Debug")]
-    [Tooltip("Optional: a simple visible placeholder instantiated under the checkpoint anchor, so you can confirm placement before real stage prefabs exist.")]
-    [SerializeField] private GameObject debugMarkerPrefab;
-
     [Header("Stage Templates")]
     [Tooltip("The hand-designed campaign, in order: stage N plays entry (N-1) % count, and after the last it loops (harder, via Difficulty).")]
     [SerializeField] private List<GameObject> campaignStages = new();
@@ -237,11 +233,6 @@ public class LevelGenerator : MonoBehaviour
 
         CheckpointAnchor = result.value;
         Debug.Log($"[LevelGenerator] Checkpoint anchor created at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}°");
-
-        if (debugMarkerPrefab != null)
-        {
-            Instantiate(debugMarkerPrefab, CheckpointAnchor.transform);
-        }
 
         TryPlaceStage();
     }

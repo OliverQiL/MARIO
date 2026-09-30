@@ -64,3 +64,12 @@ How each pattern maps to motor pulses is up to the wearable firmware (Neo/John).
 ## Connection behaviour (phone)
 - The phone reconnects with exponential backoff: 0.5 s, doubling each time, capped at 8 s, with ±20 % random variation. Every successful reconnect is followed by a fresh `VISUALIZER_READY`.
 - Only one connection exists at a time. The phone never connects to the Ultra96 directly.
+
+## Development only: `DEV_TUNE` (mock gateway → phone)
+Not part of the protocol with the real gateway, which never sends it; the phone ignores it unless it arrives. The mock gateway's `--keys` mode sends it so headset settings can be tuned live while wearing the phone:
+
+```json
+{ "type": "DEV_TUNE", "param": "eyeImageScale", "delta": 0.05 }
+```
+
+`param` is `eyeImageScale` (the eye window's size), `lensSeparation` (the gap between the eye images) or `reset`. The phone applies it (`HeadsetView.Tune`), remembers it, and shows the new values on its HUD. There's no ACK.

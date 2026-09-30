@@ -11,10 +11,11 @@ using UnityEngine.XR.ARSubsystems;
 /// half).
 ///
 /// Scan-phase orchestration: tracks total scanned floor area from AR
-/// Foundation's plane detection. The player decides when the scan is done:
-/// they walk round scanning all the floor they want to play on, then confirm
-/// with a jump (touch-free, like restarting after game over), which completes
-/// the scan once at least minFloorArea has been found. fullSizeFloorArea is
+/// Foundation's plane detection. The player controls the scan with jumps
+/// (touch-free, like restarting after game over): one jump starts it, once
+/// they're set up and positioned (plane detection is off until then), and
+/// after walking round scanning all the floor they want to play on, another
+/// jump completes it, once at least minFloorArea has been found. fullSizeFloorArea is
 /// only guidance for the HUD (roughly what a full-size stage likes).
 /// Only real floor counts — see IsFloorPlane:
 /// ARKit's semantic classification is trusted when present (Floor counts;
@@ -69,16 +70,19 @@ public class ARSessionManager : MonoBehaviour
     private float _totalScannedArea;
     private float _excludedArea;
     private float _lastLoggedArea;
+    private bool _scanStarted;
     private bool _scanComplete;
 
     public float TotalScannedArea => _totalScannedArea;
     /// <summary>Guidance for the HUD: roughly the floor a full-size stage likes.</summary>
     public float FullSizeFloorArea => fullSizeFloorArea;
     /// <summary>Enough floor found for the player to confirm the scan.</summary>
-    public bool CanConfirmScan => !_scanComplete && _totalScannedArea >= minFloorArea;
+    public bool CanConfirmScan => _scanStarted && !_scanComplete && _totalScannedArea >= minFloorArea;
     /// <summary>The small-room fallback's minimum: at least this much floor finishes the scan once it stops growing.</summary>
     public float MinFloorArea => minFloorArea;
     public bool IsScanComplete => _scanComplete;
+    /// <summary>The player has jumped to start scanning (plane detection is on).</summary>
+    public bool IsScanStarted => _scanStarted;
     /// <summary>World-space height of the floor, once a floor plane has been found.</summary>
     public float? FloorHeight { get; private set; }
     /// <summary>Upward-facing area rejected as not-floor (beds, tables, seats…), for diagnostics.</summary>
@@ -96,10 +100,20 @@ public class ARSessionManager : MonoBehaviour
     private void Awake()
     {
         PlayerBody.Reset(); // statics survive between Play sessions (no domain reload)
+        // Unity on iOS runs at 30 fps unless told otherwise; the camera image arrives at 60.
+        // 30 fps lag behind head movement is a known cause of motion sickness in a headset.
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = 60;
         if (planeManager == null)
         {
             planeManager = GetComponent<ARPlaneManager>();
         }
+    }
+
+    private void Start()
+    {
+        // No scanning until the player jumps to start (they may still be putting the headset on).
+        if (!_scanStarted) planeManager.enabled = false;
     }
 
     private void OnEnable()
@@ -124,7 +138,7 @@ public class ARSessionManager : MonoBehaviour
     /// <summary>While scanning (and tracking, with the floor known), samples the camera's height above the floor 4× a second.</summary>
     private void SampleEyeHeight()
     {
-        if (_scanComplete || !IsTracking || FloorHeight == null || Time.time < _nextEyeSampleAt) return;
+        if (!_scanStarted || _scanComplete || !IsTracking || FloorHeight == null || Time.time < _nextEyeSampleAt) return;
         if (playerCamera == null) playerCamera = Camera.main;
         if (playerCamera == null) return;
         _nextEyeSampleAt = Time.time + 0.25f;
@@ -155,11 +169,21 @@ public class ARSessionManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>A jump while scanning confirms the scan (every action is otherwise dropped at Gate 1 until then).</summary>
+    /// <summary>Before and during the scan every action is dropped at Gate 1; a jump starts the scan, and a later one confirms it.</summary>
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
         if (_scanComplete || evt.actionLabel != "jump" || evt.confidence < confirmMinConfidence) return;
-        ConfirmScan();
+        if (!_scanStarted) StartScan();
+        else ConfirmScan();
+    }
+
+    /// <summary>Starts the scan: turns plane detection on. The player jumps once they're set up.</summary>
+    public void StartScan()
+    {
+        if (_scanStarted) return;
+        _scanStarted = true;
+        planeManager.enabled = true;
+        Debug.Log("[ARSessionManager] Scan started by the player.");
     }
 
     // ---- Tracking-state monitoring & relocalisation (Step 4, second half) ----

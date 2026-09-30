@@ -5,7 +5,7 @@ using UnityEngine;
 
 /// <summary>
 /// Wires NetworkClient into the scene (on GameManager, next to EventResolver)
-/// and removes the DebugActionInput keyboard harness it replaces.
+/// (in the Editor, EditorActionInput's keys 1-6 remain available alongside it).
 /// Idempotent.
 ///
 /// Menu:     Tools ▸ MARIO ▸ Configure Network   (keeps the current URL/pin)
@@ -24,11 +24,6 @@ public static class NetworkSetup
         var resolver = UnityEngine.Object.FindAnyObjectByType<EventResolver>();
         if (resolver == null) throw new Exception("[NetworkSetup] No EventResolver in scene.");
         var go = resolver.gameObject;
-
-        // Remove the keyboard harness, including a "missing script" left behind if its file is already gone.
-        GameObjectUtility.RemoveMonoBehavioursWithMissingScript(go);
-        var debugInput = go.GetComponent("DebugActionInput");
-        if (debugInput != null) UnityEngine.Object.DestroyImmediate(debugInput, true);
 
         var client = go.GetComponent<NetworkClient>(); // not ??: Unity overloads == for destroyed/missing objects
         if (client == null) client = go.AddComponent<NetworkClient>();

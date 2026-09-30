@@ -11,8 +11,7 @@ using UnityEngine.XR.ARFoundation;
 ///   by ScanPlaneVisual (floor only, fades out when the scan completes), and
 ///   makes it ARPlaneManager's plane prefab.
 /// - Turns the development visuals off: the cyan LiDAR debug mesh (back to
-///   the plain "AR Mesh" prefab), the checkpoint debug sphere, and the LiDAR
-///   readout text (LidarDebugHUD.show). Tools ▸ MARIO ▸ Mesh Debug View ▸ On,
+///   the plain "AR Mesh" prefab) and the LiDAR readout text (LidarDebugHUD.show). Tools ▸ MARIO ▸ Mesh Debug View ▸ On,
 ///   and the Inspector, switch them back on for debugging.
 ///
 /// Menu:     Tools ▸ MARIO ▸ Configure Scan
@@ -55,11 +54,6 @@ public static class ScanSetup
             mm.ApplyModifiedPropertiesWithoutUndo();
         }
 
-        var levelGenerator = Object.FindAnyObjectByType<LevelGenerator>();
-        var lg = new SerializedObject(levelGenerator);
-        lg.FindProperty("debugMarkerPrefab").objectReferenceValue = null;
-        lg.ApplyModifiedPropertiesWithoutUndo();
-
         var lidarHud = Object.FindAnyObjectByType<LidarDebugHUD>();
         if (lidarHud != null)
         {
@@ -71,7 +65,7 @@ public static class ScanSetup
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log("[ScanSetup] Done. Scan plane prefab set; debug mesh, marker and LiDAR readout off.");
+        Debug.Log("[ScanSetup] Done. Scan plane prefab set; debug mesh and LiDAR readout off.");
     }
 
     private static GameObject BuildPlanePrefab(Material grid, Material edge)

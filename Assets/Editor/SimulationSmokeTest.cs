@@ -14,8 +14,8 @@ using UnityEngine.XR.ARFoundation;
 /// Exits 0 on success, 1 otherwise.
 ///
 /// With -scan it also plays the opening: it steers the simulated camera
-/// (looking down at the floor, turning and walking a small circle), confirms
-/// the scan with a jump as a player would, waits for a stage, then checks
+/// (looking down at the floor, turning and walking a small circle) after
+/// jumping to start the scan, confirms it with another jump as a player would, waits for a stage, then checks
 /// that the campaign's first stage was placed (not a fallback) and reports
 /// the size it fitted at.
 ///
@@ -28,6 +28,7 @@ public static class SimulationSmokeTest
     private const string ActiveKey = "SimulationSmokeTest.Active";
     private const string ErrorsKey = "SimulationSmokeTest.Errors";
     private const string ScanKey = "SimulationSmokeTest.Scan";
+    private const string HeadsetKey = "SimulationSmokeTest.Headset";
     private const float RunSeconds = 30f;
     private const float ScanTimeoutSeconds = 150f;
     private const float ConfirmAfterSeconds = 25f; // two full turns of the sweep
@@ -48,6 +49,7 @@ public static class SimulationSmokeTest
         SessionState.SetBool(ActiveKey, true);
         SessionState.SetString(ErrorsKey, "");
         SessionState.SetBool(ScanKey, System.Environment.GetCommandLineArgs().Contains("-scan"));
+        SessionState.SetBool(HeadsetKey, System.Environment.GetCommandLineArgs().Contains("-headset"));
         Attach();
         EditorApplication.EnterPlaymode();
     }
@@ -67,6 +69,7 @@ public static class SimulationSmokeTest
     }
 
     private static Pose? s_StartPose;
+    private static double s_ScanStartedAt = double.MaxValue;
 
     private static void Tick()
     {
@@ -74,6 +77,8 @@ public static class SimulationSmokeTest
         if (s_PlayStartedAt < 0) s_PlayStartedAt = EditorApplication.timeSinceStartup;
         double elapsed = EditorApplication.timeSinceStartup - s_PlayStartedAt;
         bool scan = SessionState.GetBool(ScanKey, false);
+        var headset = Object.FindAnyObjectByType<HeadsetView>();
+        if (SessionState.GetBool(HeadsetKey, false) && headset != null && !headset.IsOn) headset.TurnOn();
         var level = Object.FindAnyObjectByType<LevelGenerator>();
 
         if (scan)
@@ -81,11 +86,17 @@ public static class SimulationSmokeTest
             bool placed = level != null && level.CurrentStage != null;
             if (!placed && elapsed < ScanTimeoutSeconds)
             {
-                SweepCamera((float)elapsed);
-                // The player confirms the scan with a jump once they've looked around: do the same after a full sweep.
+                // As a player would: jump to start scanning, look around, jump again to finish.
                 var scanSession = Object.FindAnyObjectByType<ARSessionManager>();
-                if (scanSession != null && !scanSession.IsScanComplete && elapsed > ConfirmAfterSeconds && scanSession.CanConfirmScan)
-                    Object.FindAnyObjectByType<EventResolver>()?.Resolve(new GameEvent("jump", 0.95f, $"scan-confirm-{elapsed:F0}", "smoketest"));
+                var resolver = Object.FindAnyObjectByType<EventResolver>();
+                if (scanSession != null && resolver != null && !scanSession.IsScanStarted && elapsed > 2)
+                {
+                    resolver.Resolve(new GameEvent("jump", 0.95f, "scan-start", "smoketest"));
+                    s_ScanStartedAt = elapsed;
+                }
+                if (scanSession != null && scanSession.IsScanStarted) SweepCamera((float)(elapsed - s_ScanStartedAt));
+                if (scanSession != null && resolver != null && !scanSession.IsScanComplete && elapsed - s_ScanStartedAt > ConfirmAfterSeconds && scanSession.CanConfirmScan)
+                    resolver.Resolve(new GameEvent("jump", 0.95f, $"scan-confirm-{elapsed:F0}", "smoketest"));
                 return;
             }
         }
@@ -119,10 +130,37 @@ public static class SimulationSmokeTest
                       $"? block {(stage != null && stage.GetComponentInChildren<QuestionBlock>() is { } qb ? (qb.transform.position.y - stage.transform.position.y).ToString("F2") : "-")} m above the stage floor");
             ok &= stage != null && stage.name.StartsWith("Stage 1-1");
         }
+        if (headset != null && headset.IsOn) SaveHeadsetFrame(headset);
         if (ok) Debug.Log("[SimulationSmokeTest] PASS");
         else Debug.LogError($"[SimulationSmokeTest] FAIL{(string.IsNullOrEmpty(errors) ? "" : " — errors:" + errors)}");
 
         EditorApplication.Exit(ok ? 0 : 1);
+    }
+
+    /// <summary>Saves what the phone's screen shows in headset mode (both eyes, through the lens shader) to Logs/headset_view.png.</summary>
+    private static void SaveHeadsetFrame(HeadsetView headset)
+    {
+        var view = (RenderTexture)typeof(HeadsetView).GetField("_view", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).GetValue(headset);
+        var eyes = Object.FindObjectsByType<UnityEngine.UI.RawImage>().Where(r => r.name.EndsWith("Eye")).OrderBy(r => r.name == "RightEye").ToArray();
+        if (view == null || eyes.Length != 2) { Debug.LogError("[SimulationSmokeTest] Headset view not found."); return; }
+        int w = view.width, h = view.height;
+        var output = new Texture2D(w, h, TextureFormat.RGB24, false);
+        output.SetPixels32(new Color32[w * h]); // black, like the screen around the eye images
+        foreach (var eye in eyes)
+        {
+            var rect = (RectTransform)eye.transform;
+            int ew = Mathf.RoundToInt(rect.sizeDelta.x), eh = Mathf.RoundToInt(rect.sizeDelta.y);
+            var eyeRT = RenderTexture.GetTemporary(ew, eh);
+            Graphics.Blit(view, eyeRT, eye.material);
+            RenderTexture.active = eyeRT;
+            int x = Mathf.RoundToInt(rect.anchorMin.x * w - ew / 2f), y = Mathf.RoundToInt(h / 2f - eh / 2f);
+            output.ReadPixels(new Rect(0, 0, ew, eh), x, y);
+            RenderTexture.active = null;
+            RenderTexture.ReleaseTemporary(eyeRT);
+        }
+        output.Apply();
+        System.IO.File.WriteAllBytes("Logs/headset_view.png", output.EncodeToPNG());
+        Debug.Log($"[SimulationSmokeTest] Headset view ({w}x{h}) saved to Logs/headset_view.png");
     }
 
     /// <summary>Looks down at the floor and turns, walking a slow circle round the start, so XR Simulation discovers the floor.</summary>

@@ -159,6 +159,13 @@ public class NetworkClient : MonoBehaviour
             return;
         }
 
+        if (envelope != null && envelope.type == GatewayMessages.DevTune)
+        {
+            var tune = JsonUtility.FromJson<GatewayMessages.DevTuneMsg>(json);
+            var headset = FindAnyObjectByType<HeadsetView>();
+            if (headset != null) headset.Tune(tune.param, tune.delta);
+            return;
+        }
         if (envelope == null || envelope.type != GatewayMessages.GameEventType)
         {
             Debug.LogWarning($"[NetworkClient] Ignoring message of type '{envelope?.type}'.");

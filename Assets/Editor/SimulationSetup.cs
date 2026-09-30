@@ -60,7 +60,7 @@ public static class SimulationSetup
         var unityPackage = Path.Combine(temp, "package/UnityPackage~/XRSimEnvironments.unitypackage");
         // Interactive import is asynchronous: select the room once it finishes.
         AssetDatabase.importPackageCompleted += _ => { SelectEnvironment(DefaultEnvironment); AddKeyboardInput(); };
-        AssetDatabase.ImportPackage(unityPackage, false);
+        UnityEditor.AssetPackage.Package.Import(unityPackage, false);
         throw new OperationCanceledException("[SimulationSetup] Importing environments — setup continues when the import finishes.");
     }
 

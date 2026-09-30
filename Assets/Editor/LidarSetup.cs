@@ -26,7 +26,6 @@ public static class LidarSetup
     {
         int meshLayer = EnsureLayer(MeshLayerName);
         ConfigureMeshPrefab(meshLayer);
-        var debugPrefab = EnsureDebugMeshPrefab();
 
         var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
 
@@ -38,7 +37,8 @@ public static class LidarSetup
 
         var meshManager = Object.FindAnyObjectByType<ARMeshManager>();
         if (meshManager == null) throw new System.Exception("[LidarSetup] No ARMeshManager in scene.");
-        SetMeshPrefab(meshManager, debugPrefab);
+        // The plain (invisible) room mesh; Tools ▸ MARIO ▸ Mesh Debug View ▸ On shows it for debugging.
+        SetMeshPrefab(meshManager, AssetDatabase.LoadAssetAtPath<GameObject>(MeshPrefabPath));
 
         var levelGenerator = Object.FindAnyObjectByType<LevelGenerator>();
         if (levelGenerator == null) throw new System.Exception("[LidarSetup] No LevelGenerator in scene.");

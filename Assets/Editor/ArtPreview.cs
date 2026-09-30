@@ -190,7 +190,7 @@ public static class ArtPreview
         var rt = new RenderTexture(width, height, 24);
         cam.targetTexture = rt;
         Canvas.ForceUpdateCanvases();
-        foreach (var t in Object.FindObjectsByType<TMP_Text>(FindObjectsSortMode.None)) t.ForceMeshUpdate();
+        foreach (var t in Object.FindObjectsByType<TMP_Text>()) t.ForceMeshUpdate();
         Canvas.ForceUpdateCanvases();
         cam.Render();
         RenderTexture.active = rt;

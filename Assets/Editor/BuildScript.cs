@@ -17,6 +17,14 @@ public static class BuildScript
     [MenuItem("Tools/MARIO/Build iOS")]
     public static void BuildIOS()
     {
+        // The game is landscape (the HUD is laid out for it; the phone sits sideways in the headset).
+        // Either landscape direction, never portrait.
+        PlayerSettings.defaultInterfaceOrientation = UIOrientation.AutoRotation;
+        PlayerSettings.allowedAutorotateToPortrait = false;
+        PlayerSettings.allowedAutorotateToPortraitUpsideDown = false;
+        PlayerSettings.allowedAutorotateToLandscapeLeft = true;
+        PlayerSettings.allowedAutorotateToLandscapeRight = true;
+
         var scenes = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToArray();
         var options = new BuildPlayerOptions
         {

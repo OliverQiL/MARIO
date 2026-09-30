@@ -36,13 +36,6 @@ public static class HUDSetup
         if (canvas == null) throw new System.Exception("[HUDSetup] No Canvas in scene.");
         var root = canvas.transform;
 
-        // Retire the pre-styling objects.
-        foreach (var old in new[] { "Stats (TMP)", "ScanHUD" })
-        {
-            var t = root.Find(old);
-            if (t != null) Object.DestroyImmediate(t.gameObject);
-        }
-
         var font = EnsureFont();
         var shadow = EnsureShadowMaterial(font);
         var heart = PixelArt.HeartIcon();
@@ -97,14 +90,25 @@ public static class HUDSetup
         scanRect.sizeDelta = new Vector2(1600f, 320f);
         var scanTitle = Styled(scan.transform, "ScanTitle (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 100f), new Vector2(1600f, 70f), 48f, TextAlignmentOptions.Center, font, shadow);
         scanTitle.text = "SCAN THE FLOOR";
-        Bar(scan.transform, "BarBorder", white, new Vector2(0f, 10f), new Vector2(912f, 56f), new Color(1f, 0.95f, 0.8f));
-        Bar(scan.transform, "BarBack", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(0.08f, 0.06f, 0.05f, 0.85f));
-        var fill = Bar(scan.transform, "BarFill", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(1f, 0.78f, 0.12f));
+        // The bar's parts share a parent, hidden until the scan starts.
+        var barGroup = EnsureChild(scan.transform, "ScanBar");
+        var barRect = (RectTransform)barGroup.transform;
+        barRect.anchorMin = barRect.anchorMax = barRect.pivot = new Vector2(0.5f, 0.5f);
+        barRect.anchoredPosition = Vector2.zero;
+        barRect.sizeDelta = new Vector2(1600f, 320f);
+        foreach (var old in new[] { "BarBorder", "BarBack", "BarFill", "ScanPercent (TMP)" })
+        {
+            var t = scan.transform.Find(old);
+            if (t != null) Object.DestroyImmediate(t.gameObject); // from before the group existed
+        }
+        Bar(barGroup.transform, "BarBorder", white, new Vector2(0f, 10f), new Vector2(912f, 56f), new Color(1f, 0.95f, 0.8f));
+        Bar(barGroup.transform, "BarBack", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(0.08f, 0.06f, 0.05f, 0.85f));
+        var fill = Bar(barGroup.transform, "BarFill", white, new Vector2(0f, 10f), new Vector2(900f, 44f), new Color(1f, 0.78f, 0.12f));
         fill.type = Image.Type.Filled;
         fill.fillMethod = Image.FillMethod.Horizontal;
         fill.fillOrigin = (int)Image.OriginHorizontal.Left;
         fill.fillAmount = 0.35f;
-        var percent = Styled(scan.transform, "ScanPercent (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(900f, 44f), 26f, TextAlignmentOptions.Center, font, shadow);
+        var percent = Styled(barGroup.transform, "ScanPercent (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 10f), new Vector2(900f, 44f), 26f, TextAlignmentOptions.Center, font, shadow);
         percent.text = "35%";
         var hint = Styled(scan.transform, "ScanHint (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -70f), new Vector2(1600f, 50f), 24f, TextAlignmentOptions.Center, font, shadow);
         hint.text = "SWEEP THE CAMERA SLOWLY OVER THE FLOOR";
@@ -164,6 +168,8 @@ public static class HUDSetup
         so.FindProperty("damageFlash").objectReferenceValue = flash;
         so.FindProperty("scanPanel").objectReferenceValue = scan;
         so.FindProperty("scanFill").objectReferenceValue = fill;
+        so.FindProperty("scanTitleText").objectReferenceValue = scanTitle;
+        so.FindProperty("scanBar").objectReferenceValue = barGroup;
         so.FindProperty("scanPercentText").objectReferenceValue = percent;
         so.FindProperty("scanHintText").objectReferenceValue = hint;
         so.FindProperty("powerIcon").objectReferenceValue = power;
@@ -176,6 +182,29 @@ public static class HUDSetup
         so.FindProperty("gameOverStatsText").objectReferenceValue = overStats;
         so.FindProperty("gameOverPromptText").objectReferenceValue = overPrompt;
         so.ApplyModifiedPropertiesWithoutUndo();
+
+        // Headset (phone VR viewer) mode: side-by-side eyes with lens pre-distortion; on by default on a device.
+        const string lensMaterialPath = "Assets/Materials/HeadsetLens.mat";
+        var lens = AssetDatabase.LoadAssetAtPath<Material>(lensMaterialPath);
+        if (lens == null)
+        {
+            lens = new Material(Shader.Find("MARIO/HeadsetLens"));
+            AssetDatabase.CreateAsset(lens, lensMaterialPath);
+        }
+        var headset = canvas.GetComponent<HeadsetView>();
+        if (headset == null) headset = canvas.gameObject.AddComponent<HeadsetView>();
+        var hs = new SerializedObject(headset);
+        hs.FindProperty("arCamera").objectReferenceValue = Camera.main;
+        hs.FindProperty("hudCanvas").objectReferenceValue = canvas;
+        hs.FindProperty("lensMaterial").objectReferenceValue = lens;
+        // Whole view at near-true scale in each eye (filling the lens magnified the world ~3x and disoriented).
+        hs.FindProperty("cropWidth").floatValue = 1f;
+        hs.FindProperty("eyeImageScale").floatValue = 0.85f; // 0.75 looked too far away through the VRG Pro (Oliver); tune live with = / -
+        hs.FindProperty("k1").floatValue = 0.15f;
+        hs.FindProperty("k2").floatValue = 0.05f;
+        hs.FindProperty("hudScale").floatValue = 0.9f;
+        hs.FindProperty("safeFrame").vector2Value = new Vector2(0.92f, 0.9f);
+        hs.ApplyModifiedPropertiesWithoutUndo();
 
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);

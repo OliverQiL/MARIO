@@ -96,7 +96,7 @@ public static class GameplaySmokeTest
         s_Resolver.OnImpact += (_, t) => impacted = t;
         r = Resolve("fireball");
         Check(r.LaunchedProjectile && Fireball.InFlight == 1, "fireball with flower launches a projectile", r);
-        var fb = UnityEngine.Object.FindObjectsByType<Fireball>(FindObjectsSortMode.None).FirstOrDefault();
+        var fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
         InteractableBase hit = null;
         for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
         Check(hit == g1 && !g1.IsActionable && s_State.Score == scoreBefore + 100 && impacted == g1, "fireball hits the Goomba (+100, OnImpact)");
@@ -108,7 +108,7 @@ public static class GameplaySmokeTest
         Resolve("fireball");
         r = Resolve("fireball");
         Check(r.Gate == 3, "third fireball in flight is Gate 3", r);
-        foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>(FindObjectsSortMode.None)) UnityEngine.Object.DestroyImmediate(f.gameObject);
+        foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>()) UnityEngine.Object.DestroyImmediate(f.gameObject);
 
         // -- Goomba walks toward the player; stomp defeats it once in range
         var g2 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(0f, 0f, 1.2f));
@@ -168,7 +168,7 @@ public static class GameplaySmokeTest
         s_Cam.transform.LookAt(k2.HitPoint);
         scoreBefore = s_State.Score;
         r = Resolve("fireball");
-        fb = UnityEngine.Object.FindObjectsByType<Fireball>(FindObjectsSortMode.None).FirstOrDefault();
+        fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
         hit = null;
         for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
         Check(r.LaunchedProjectile && hit == k2 && !k2.IsActionable && !k2.InShell && s_State.Score == scoreBefore + 200, "a fireball defeats a walking Koopa outright (+200)", r);
@@ -217,7 +217,7 @@ public static class GameplaySmokeTest
         FlyBill(bill, eye + new Vector3(0.6f, 0f, 0f)); // the player steps aside after it's fired
         Check(bill.State == BulletBill.Phase.Passed && !bill.HitPlayer && s_State.Lives == livesBefore && bill.Direction == aimed,
               "a Bullet Bill flies straight (no homing), so stepping aside dodges it");
-        foreach (var b in UnityEngine.Object.FindObjectsByType<BulletBill>(FindObjectsSortMode.None)) UnityEngine.Object.DestroyImmediate(b.gameObject);
+        foreach (var b in UnityEngine.Object.FindObjectsByType<BulletBill>()) UnityEngine.Object.DestroyImmediate(b.gameObject);
 
         // -- cannon: turns to face the player, holds fire when they're close, warns, then fires along its barrel
         var cannon = UnityEngine.Object.Instantiate(

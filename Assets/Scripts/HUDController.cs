@@ -6,7 +6,6 @@ using TMPro;
 /// <summary>
 /// Screen-space HUD (design report module table): stage/score/lives, gateway
 /// connection status, degraded-mode messaging, and per-action feedback.
-/// Replaces the scan-only ScanHUD.
 ///
 /// Styled after the classic Mario HUD (pixel font, drop shadows), laid out
 /// by HUDSetup:
@@ -16,7 +15,8 @@ using TMPro;
 /// - banner (top-centre): the current *state* — scanning, tracking lost, no
 ///                       room to place a stage, placing, distance to the flag.
 ///                       Highest priority wins; polled every frame.
-/// - scan panel:         while scanning: "SCAN THE FLOOR", the floor found so far
+/// - scan panel:         "GET READY … JUMP TO START SCANNING" until the player
+///                       jumps; then "SCAN THE FLOOR", the floor found so far
 ///                       (a meter against what a full-size stage likes), and
 ///                       "JUMP WHEN DONE" once enough is found — the player
 ///                       confirms the scan; "READY!" pops in when they do
@@ -63,6 +63,9 @@ public class HUDController : MonoBehaviour
 
     [Header("Scan")]
     [SerializeField] private GameObject scanPanel;
+    [SerializeField] private TMP_Text scanTitleText;
+    [Tooltip("The progress bar's parts (hidden until the scan starts).")]
+    [SerializeField] private GameObject scanBar;
     [SerializeField] private Image scanFill;
     [SerializeField] private TMP_Text scanPercentText;
     [SerializeField] private TMP_Text scanHintText;
@@ -130,6 +133,7 @@ public class HUDController : MonoBehaviour
         if (sessionManager != null) sessionManager.OnScanComplete.AddListener(HandleScanComplete);
         if (gameState != null) _lastScore = gameState.Score;
         BulletBillCannon.OnWarning += HandleBulletBillWarning;
+        HeadsetView.OnTuned += HandleHeadsetTuned;
     }
 
     private void OnDisable()
@@ -148,6 +152,7 @@ public class HUDController : MonoBehaviour
         }
         if (sessionManager != null) sessionManager.OnScanComplete.RemoveListener(HandleScanComplete);
         BulletBillCannon.OnWarning -= HandleBulletBillWarning;
+        HeadsetView.OnTuned -= HandleHeadsetTuned;
     }
 
     private void Update()
@@ -264,7 +269,10 @@ public class HUDController : MonoBehaviour
 
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
-        string action = Capitalise(evt.actionLabel);
+        // Without a fire flower, "fireball" is a bare-handed punch on a brick in reach
+        // (a projectile, or "recharging" at Gate 3, only happens with the flower).
+        bool punch = evt.actionLabel == "fireball" && !result.LaunchedProjectile && result.Gate != 3;
+        string action = punch ? "Punch" : Capitalise(evt.actionLabel);
 
         if (result.StateOnly) return;
 
@@ -333,6 +341,8 @@ public class HUDController : MonoBehaviour
             livesIcon.enabled = !gameState.IsInvulnerable || gameState.IsGameOver || Mathf.Repeat(Time.time, 0.25f) < 0.13f;
     }
 
+    private void HandleHeadsetTuned(string text) => ShowFeedback(text, quietColor);
+
     private void HandleBulletBillWarning() => ShowFeedback("Bullet Bill! Squat!", warningColor);
 
     private void HandlePlacementFailed() => _placementFailedAt = Time.time;
@@ -359,6 +369,20 @@ public class HUDController : MonoBehaviour
         bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsGameOver);
         if (scanPanel.activeSelf != scanning) scanPanel.SetActive(scanning);
         if (!scanning) return;
+
+        // Before the scan: the player gets set up, then jumps to start.
+        bool started = sessionManager.IsScanStarted;
+        if (scanTitleText != null) scanTitleText.text = started ? "SCAN THE FLOOR" : "GET READY";
+        if (scanBar != null && scanBar.activeSelf != started) scanBar.SetActive(started);
+        if (!started)
+        {
+            if (scanHintText != null)
+            {
+                scanHintText.text = Mathf.Repeat(Time.time, 1f) < 0.7f ? "FACE THE ROOM, THEN JUMP TO START SCANNING" : "";
+                scanHintText.color = titleColor;
+            }
+            return;
+        }
 
         float area = sessionManager.TotalScannedArea;
         float meter = Mathf.Clamp01(area / Mathf.Max(0.01f, sessionManager.FullSizeFloorArea));
