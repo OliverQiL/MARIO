@@ -211,9 +211,19 @@ public class LevelGenerator : MonoBehaviour
 
         if (!TryGetFloorProjectedPose(arCamera.transform.position, out var pose))
         {
-            Debug.LogWarning("[LevelGenerator] No detected floor directly below the player — retrying checkpoint shortly.");
-            Invoke(nameof(CreateCheckpointAnchorAsync), retryDelaySeconds);
-            return;
+            // The floor right under the player is the part they least often look at (more so
+            // with a head-mounted phone, looking ahead), so it's often not detected even after a
+            // big scan. The scan knows the floor's height: put the checkpoint there, under the
+            // player. Stage placement still checks for detected floor under the whole stage.
+            if (sessionManager.FloorHeight is not { } floorY)
+            {
+                Debug.LogWarning("[LevelGenerator] No floor level known yet — retrying checkpoint shortly.");
+                Invoke(nameof(CreateCheckpointAnchorAsync), retryDelaySeconds);
+                return;
+            }
+            var feet = arCamera.transform.position;
+            pose = new Pose(new Vector3(feet.x, floorY, feet.z), Quaternion.identity);
+            Debug.Log($"[LevelGenerator] No detected floor directly below the player — using the scanned floor level ({floorY:F2} m).");
         }
 
         // Keep only yaw: the stage should face the way the player is looking, level with the floor.

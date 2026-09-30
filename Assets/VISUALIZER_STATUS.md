@@ -165,6 +165,8 @@ Removed as redundant or deprecated:
 - **Deprecated Unity APIs:** `FindObjectsByType(FindObjectsSortMode)` → `FindObjectsByType<T>()`; `AssetDatabase.ImportPackage` → `AssetPackage.Package.Import`. Our code now compiles with no warnings.
 - **Build output:** `ios-build_BackUpThisFolder_ButDontShipItWithYourGame/` is now untracked and gitignored.
 
+Also fixed that day: the first stage could take a long time to appear. The checkpoint needed a detected plane directly under the player's feet, the patch least often looked at, especially with jump-to-start and a head-mounted phone looking ahead. The Editor log showed it failing every 2 s after a 97.7 m² scan. It now falls back to the scanned floor level under the player; placement still requires detected floor under the whole stage. `SimulationSmokeTest -scan` sees the floor under itself, so it doesn't exercise that fallback.
+
 Also fixed that day: without a fire flower, the HUD labelled the bare-handed strike on a brick "Fireball!" (and "Fireball: nothing in range"); it now says "Punch".
 
 Earlier removals: `ScanHUD.cs` (replaced by `HUDController`, 2026-09-28) and `DebugActionInput.cs` (2026-09-25).
