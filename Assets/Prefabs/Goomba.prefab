@@ -1009,6 +1009,7 @@ MonoBehaviour:
   passSeconds: 1.2
   scoreValue: 100
   bodyHeight: 0.12
+  stompEffect: {fileID: 8731186731248964418, guid: a6ea85c6a529a44c59b1d1bbd1d90fdf, type: 3}
 --- !u!1 &8213971230155041111
 GameObject:
   m_ObjectHideFlags: 0

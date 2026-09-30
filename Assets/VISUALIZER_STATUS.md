@@ -409,6 +409,18 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 - **`ArtPreview`** now also renders `hud.png` and `hud_gameover.png` at iPhone 17 landscape resolution (2622×1206).
 - **Tests:** gameplay 62/62; the simulation and network smoke tests pass.
 
+### Effects — ✅ Editor-playtested (2026-09-30)
+- **`Burst`:** a reusable one-shot particle burst made of child primitives, with a random spray, gravity, drag, spin and shrink. `GameContentSetup.BuildEffects` makes five variants in `Assets/Prefabs/Effects`:
+  - **Sparkle:** gold, when a power-up is collected (`Pickup.collectEffect`)
+  - **Poof:** white, when an enemy is stomped (`Goomba.stompEffect`)
+  - **FireBurst:** when a fireball hits (`Fireball.impactEffect`)
+  - **Smoke:** out of the barrel when the cannon fires (`BulletBillCannon.fireEffect`)
+  - **Confetti:** at the flag on stage clear (`StageGoal.celebrationEffect`)
+- **Defeats:** a stomp squashes the enemy flat with a puff. A fireball knocks it out as in the classic games: it flips upside down, pops up and falls (`Goomba` handles this; `Koopa` inherits it).
+- **Flag:** the pennant and its emblems are grouped as `Goal/Pennant`, which slides down the pole (smoothstep, 1 s) when the goal is reached, by walking or by warp.
+- **Damage (HUD):** a full-screen red flash fades over 0.5 s when a life is lost, and the LIVES heart blinks during the 2 s of invulnerability.
+- **Tests:** gameplay 62/62; the simulation and network smoke tests pass. These effects are motion-only, so they're checked by playtesting rather than by the headless tests.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.

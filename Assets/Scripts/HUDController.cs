@@ -21,6 +21,9 @@ using TMPro;
 /// - feedback (centre):  transient *events* — action results from
 ///                       EventResolver.OnEventProcessed and score gains. Fades.
 /// - game-over screen:   dimmed overlay with the final score and the restart prompt
+/// - damage:             a red screen flash when a life is lost, and the heart
+///                       blinks while the player is invulnerable (the player is
+///                       the camera, so there's no character to blink)
 ///
 /// Feedback keeps the report's distinction: Gates 3-5 ("recognised but not
 /// permitted") are shown prominently with the reason; Gate 2 low confidence
@@ -43,6 +46,7 @@ public class HUDController : MonoBehaviour
     [SerializeField] private TMP_Text scoreText;
     [SerializeField] private TMP_Text stageText;
     [SerializeField] private TMP_Text livesText;
+    [SerializeField] private Image livesIcon;
     [SerializeField] private Image powerIcon;
     [SerializeField] private TMP_Text powerEmptyText;
     [SerializeField] private TMP_Text connectionText;
@@ -51,6 +55,11 @@ public class HUDController : MonoBehaviour
     [SerializeField] private TMP_Text bannerText;
     [SerializeField] private TMP_Text feedbackText;
     [SerializeField] private TMP_Text titleText;
+
+    [Header("Damage")]
+    [SerializeField] private Image damageFlash;
+    [SerializeField] private float damageFlashSeconds = 0.5f;
+    [SerializeField] private float damageFlashAlpha = 0.45f;
 
     [Header("Game over")]
     [SerializeField] private GameObject gameOverPanel;
@@ -80,6 +89,7 @@ public class HUDController : MonoBehaviour
     private int _lastScore;
     private float _titleShownAt = float.NegativeInfinity;
     private Color _titleColor;
+    private float _damageAt = float.NegativeInfinity;
 
     private void Reset()
     {
@@ -134,6 +144,7 @@ public class HUDController : MonoBehaviour
         UpdateFeedbackFade();
         UpdateTitle();
         UpdateGameOver();
+        UpdateDamage();
     }
 
     // ---- persistent state ----
@@ -282,8 +293,24 @@ public class HUDController : MonoBehaviour
         ShowFeedback("Fireball hit!", goodColor);
     }
 
-    private void HandleLifeLost(int livesLeft) =>
+    private void HandleLifeLost(int livesLeft)
+    {
         ShowFeedback(livesLeft > 0 ? "Ouch! -1 life" : "Out of lives!", warningColor);
+        _damageAt = Time.time;
+    }
+
+    private void UpdateDamage()
+    {
+        if (damageFlash != null)
+        {
+            float t = Mathf.Clamp01((Time.time - _damageAt) / damageFlashSeconds);
+            var c = damageFlash.color;
+            damageFlash.color = new Color(c.r, c.g, c.b, damageFlashAlpha * (1f - t));
+            damageFlash.enabled = t < 1f;
+        }
+        if (livesIcon != null && gameState != null)
+            livesIcon.enabled = !gameState.IsInvulnerable || gameState.IsGameOver || Mathf.Repeat(Time.time, 0.25f) < 0.13f;
+    }
 
     private void HandleBulletBillWarning() => ShowFeedback("Bullet Bill! Squat!", warningColor);
 

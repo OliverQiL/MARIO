@@ -23,6 +23,8 @@ public class BulletBillCannon : MonoBehaviour
     [SerializeField] private Transform column;
     [Tooltip("Shown inside the bore during the warning, pulsing gently.")]
     [SerializeField] private GameObject warningGlow;
+    [Tooltip("Smoke puff out of the barrel when it fires.")]
+    [SerializeField] private GameObject fireEffect;
 
     [SerializeField] private int maxShots = 2;
     [SerializeField] private float initialDelay = 6f;
@@ -127,6 +129,7 @@ public class BulletBillCannon : MonoBehaviour
         _current = Instantiate(bulletBillPrefab, from.position, head.rotation, transform.parent);
         _current.Launch(head.forward, Difficulty.BillSpeedMultiplier);
         AudioManager.Play(Sfx.CannonFire);
+        if (fireEffect != null) Instantiate(fireEffect, from.position, head.rotation);
         Debug.Log($"[BulletBillCannon] Fired ({_fired}/{MaxShots}).");
         return _current;
     }

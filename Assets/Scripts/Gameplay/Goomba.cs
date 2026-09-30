@@ -18,11 +18,15 @@ public class Goomba : InteractableBase
     [SerializeField] private float passSeconds = 1.2f;
     [SerializeField] protected int scoreValue = 100;
     [SerializeField] protected float bodyHeight = 0.12f;
+    [Tooltip("Puff shown when stomped flat.")]
+    [SerializeField] private GameObject stompEffect;
 
     protected bool _dead;
     private float _clock;
     private float _passUntil = float.NegativeInfinity;
     private Vector3 _passDirection;
+    private bool _knockedOut;              // fireball: flipped, popped up, falling
+    private Vector3 _knockVelocity;
 
     /// <summary>Set by the spawner from Difficulty.</summary>
     public float SpeedMultiplier { get; set; } = 1f;
@@ -42,14 +46,35 @@ public class Goomba : InteractableBase
     {
         _dead = true;
         gameState.AddScore(scoreValue);
-        // Squash, then remove.
-        transform.localScale = new Vector3(transform.localScale.x * 1.2f, transform.localScale.y * 0.25f, transform.localScale.z * 1.2f);
-        SafeDestroy(gameObject, 0.4f);
+        if (actionLabel == "stomp")
+        {
+            // Squashed flat with a puff of dust, then gone.
+            transform.localScale = new Vector3(transform.localScale.x * 1.2f, transform.localScale.y * 0.25f, transform.localScale.z * 1.2f);
+            if (stompEffect != null) Instantiate(stompEffect, transform.position + Vector3.up * 0.05f, Quaternion.identity);
+            SafeDestroy(gameObject, 0.4f);
+        }
+        else
+        {
+            // Knocked out, as in the classic games: flips upside down, pops up and falls away.
+            _knockedOut = true;
+            _knockVelocity = Vector3.up * 1.4f;
+            SafeDestroy(gameObject, 1.1f);
+        }
         Debug.Log($"[{GetType().Name}] Defeated by {actionLabel}.");
     }
 
     private void Update()
     {
+        if (_knockedOut)
+        {
+            float dt = Time.deltaTime;
+            _knockVelocity += Vector3.down * (5f * dt);
+            transform.position += _knockVelocity * dt;
+            // Flip over the first ~0.25 s.
+            var upsideDown = Quaternion.Euler(0f, transform.eulerAngles.y, 180f);
+            transform.rotation = Quaternion.RotateTowards(transform.rotation, upsideDown, 720f * dt);
+            return;
+        }
         var cam = Camera.main;
         if (cam != null) Tick(Time.deltaTime, cam.transform.position);
     }

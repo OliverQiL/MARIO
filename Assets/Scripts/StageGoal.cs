@@ -23,6 +23,14 @@ public class StageGoal : MonoBehaviour
     [Tooltip("Seconds the player must stay within reach before the goal triggers.")]
     [SerializeField] private float dwellSeconds = 0.5f;
 
+    [Header("Celebration (visual)")]
+    [Tooltip("The flag, which slides down the pole when the goal is reached.")]
+    [SerializeField] private Transform pennant;
+    [Tooltip("Local height the flag slides down to.")]
+    [SerializeField] private float pennantBottom = 0.25f;
+    [SerializeField] private float slideSeconds = 1f;
+    [SerializeField] private GameObject celebrationEffect;
+
     public event Action<StageGoal> OnReached;
 
     public float ReachRadius => reachRadius;
@@ -33,6 +41,8 @@ public class StageGoal : MonoBehaviour
     private Transform _player;
     private float _dwellTimer;
     private bool _armed;
+    private float _slideAge = float.PositiveInfinity;
+    private float _pennantTop;
 
     public void Initialise(Transform player)
     {
@@ -44,6 +54,13 @@ public class StageGoal : MonoBehaviour
 
     private void Update()
     {
+        if (pennant != null && _slideAge < slideSeconds)
+        {
+            _slideAge += Time.deltaTime;
+            float t = Mathf.Clamp01(_slideAge / slideSeconds);
+            var p = pennant.localPosition;
+            pennant.localPosition = new Vector3(p.x, Mathf.Lerp(_pennantTop, pennantBottom, t * t * (3f - 2f * t)), p.z);
+        }
         if (IsReached || _player == null) return;
 
         var offset = _player.position - transform.position;
@@ -67,6 +84,12 @@ public class StageGoal : MonoBehaviour
     {
         if (IsReached) return;
         IsReached = true;
+        if (pennant != null)
+        {
+            _pennantTop = pennant.localPosition.y;
+            _slideAge = 0f;
+            if (celebrationEffect != null) Instantiate(celebrationEffect, pennant.position, Quaternion.identity);
+        }
         Debug.Log($"[StageGoal] '{name}' reached.");
         OnReached?.Invoke(this);
     }

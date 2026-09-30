@@ -63,7 +63,7 @@ public static class HUDSetup
 
         x += 260f;
         Label(root, "LivesLabel", "LIVES", x, top, font, shadow);
-        Icon(root, "LivesIcon", heart, x, valueTop + 2f, 48f);
+        var livesIcon = Icon(root, "LivesIcon", heart, x, valueTop + 2f, 48f);
         var lives = Styled(root, "Lives (TMP)", new Vector2(0f, 1f), new Vector2(x + 56f, valueTop), new Vector2(200f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
         lives.text = "x3";
 
@@ -81,6 +81,19 @@ public static class HUDSetup
         title.text = "";
         var feedback = Styled(root, "Feedback (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(2000f, 80f), 40f, TextAlignmentOptions.Center, font, shadow);
         feedback.text = "";
+
+        // ---- damage flash: full screen, behind the text ----
+        var flashGO = EnsureChild(root, "DamageFlash");
+        var flashRect = (RectTransform)flashGO.transform;
+        flashRect.anchorMin = Vector2.zero;
+        flashRect.anchorMax = Vector2.one;
+        flashRect.offsetMin = flashRect.offsetMax = Vector2.zero;
+        var flash = flashGO.GetComponent<Image>();
+        if (flash == null) flash = flashGO.AddComponent<Image>();
+        flash.color = new Color(1f, 0.1f, 0.05f, 0f);
+        flash.raycastTarget = false;
+        flash.enabled = false;
+        flashGO.transform.SetAsFirstSibling();
 
         // ---- game over ----
         var panel = EnsureChild(root, "GameOver");
@@ -118,6 +131,8 @@ public static class HUDSetup
         so.FindProperty("scoreText").objectReferenceValue = score;
         so.FindProperty("stageText").objectReferenceValue = stage;
         so.FindProperty("livesText").objectReferenceValue = lives;
+        so.FindProperty("livesIcon").objectReferenceValue = livesIcon;
+        so.FindProperty("damageFlash").objectReferenceValue = flash;
         so.FindProperty("powerIcon").objectReferenceValue = power;
         so.FindProperty("powerEmptyText").objectReferenceValue = powerEmpty;
         so.FindProperty("connectionText").objectReferenceValue = connection;

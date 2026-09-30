@@ -14,6 +14,8 @@ public class Pickup : MonoBehaviour
     [SerializeField] private float spinDegreesPerSecond = 90f;
 
     [SerializeField] private float dropSeconds = 0.5f;
+    [Tooltip("Sparkle shown when collected.")]
+    [SerializeField] private GameObject collectEffect;
 
     public Kind PickupKind => kind;
 
@@ -59,6 +61,7 @@ public class Pickup : MonoBehaviour
         if (kind == Kind.FireFlower) gs.SetFireFlower(true);
         else gs.AddLife();
         AudioManager.Play(kind == Kind.OneUp ? Sfx.OneUp : Sfx.PowerUp);
+        if (collectEffect != null) Instantiate(collectEffect, transform.position + Vector3.up * 0.15f, Quaternion.identity);
         Debug.Log($"[Pickup] Collected {kind}.");
         InteractableBase.SafeDestroy(gameObject);
         return true;

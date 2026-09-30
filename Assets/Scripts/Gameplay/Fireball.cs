@@ -13,6 +13,8 @@ public class Fireball : MonoBehaviour
     [SerializeField] private float speed = 4f;
     [SerializeField] private float lifetime = 1.5f;
     [SerializeField] private float hitRadius = 0.3f;
+    [Tooltip("Burst of flame where it hits.")]
+    [SerializeField] private GameObject impactEffect;
 
     // Live fireballs; destroyed ones compare equal to null and are pruned on read,
     // so the count stays right even where OnDestroy doesn't run (edit-mode tests).
@@ -55,6 +57,7 @@ public class Fireball : MonoBehaviour
                 var gs = GameStateManager.Instance;
                 if (gs != null) target.ResolveHit("fireball", gs);
                 _onHit?.Invoke(target);
+                if (impactEffect != null) Instantiate(impactEffect, transform.position, Quaternion.identity);
                 InteractableBase.SafeDestroy(gameObject);
                 return target;
             }

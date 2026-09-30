@@ -33,6 +33,11 @@ public static class GameContentSetup
     public const string FireFlowerPath = PrefabDir + "/FireFlower.prefab";
     public const string OneUpPath = PrefabDir + "/OneUp.prefab";
     public const string BrickDebrisPath = PrefabDir + "/BrickDebris.prefab";
+    public const string SparklePath = PrefabDir + "/Effects/Sparkle.prefab";
+    public const string PoofPath = PrefabDir + "/Effects/Poof.prefab";
+    public const string FireBurstPath = PrefabDir + "/Effects/FireBurst.prefab";
+    public const string SmokePath = PrefabDir + "/Effects/Smoke.prefab";
+    public const string ConfettiPath = PrefabDir + "/Effects/Confetti.prefab";
     private const string BlockMeshPath = PrefabDir + "/BlockCube.asset";
     private const string PennantMeshPath = PrefabDir + "/Pennant.asset";
     public const string KoopaPath = PrefabDir + "/Koopa.prefab";
@@ -49,6 +54,7 @@ public static class GameContentSetup
         Directory.CreateDirectory(StageDir);
 
         var m = new Mats();
+        BuildEffects(m); // loaded by path by the elements that use them
         var coinPop = BuildCoinPop(m);
         BuildBrickDebris(m); // loaded by path when bricks are built
         var pickups = new Pickups(BuildFireFlower(m), BuildOneUp(m));
@@ -122,7 +128,7 @@ public static class GameContentSetup
     private static GameObject BuildFireFlower(Mats m)
     {
         var root = new GameObject("FireFlower");
-        root.AddComponent<Pickup>(); // Kind defaults to FireFlower
+        Set(root.AddComponent<Pickup>(), "collectEffect", Effect(SparklePath)); // Kind defaults to FireFlower
         Visual(PrimitiveType.Cylinder, "Stem", root.transform, new Vector3(0f, 0.07f, 0f), new Vector3(0.022f, 0.07f, 0.022f), m.Stem);
         Visual(PrimitiveType.Sphere, "LeafL", root.transform, new Vector3(-0.045f, 0.045f, 0f), new Vector3(0.08f, 0.025f, 0.045f), m.Stem, new Vector3(0f, 0f, 25f));
         Visual(PrimitiveType.Sphere, "LeafR", root.transform, new Vector3(0.045f, 0.045f, 0f), new Vector3(0.08f, 0.025f, 0.045f), m.Stem, new Vector3(0f, 0f, -25f));
@@ -143,6 +149,7 @@ public static class GameContentSetup
         var p = root.AddComponent<Pickup>();
         var so = new SerializedObject(p);
         so.FindProperty("kind").enumValueIndex = (int)Pickup.Kind.OneUp;
+        so.FindProperty("collectEffect").objectReferenceValue = Effect(SparklePath);
         so.ApplyModifiedPropertiesWithoutUndo();
         Visual(PrimitiveType.Sphere, "Stalk", root.transform, new Vector3(0f, 0.07f, 0f), new Vector3(0.14f, 0.14f, 0.14f), m.GoombaFace);
         foreach (int side in new[] { -1, 1 })
@@ -171,6 +178,7 @@ public static class GameContentSetup
     {
         var root = new GameObject("Koopa");
         var k = root.AddComponent<Koopa>();
+        Set(k, "stompEffect", Effect(PoofPath));
         var model = Group("Model", root.transform, Vector3.zero);
         model.gameObject.AddComponent<EnemyWaddle>();
 
@@ -258,6 +266,7 @@ public static class GameContentSetup
         so.FindProperty("muzzle").objectReferenceValue = muzzle.transform;
         so.FindProperty("column").objectReferenceValue = column.transform;
         so.FindProperty("warningGlow").objectReferenceValue = glow;
+        so.FindProperty("fireEffect").objectReferenceValue = Effect(SmokePath);
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
@@ -265,7 +274,7 @@ public static class GameContentSetup
     private static GameObject BuildGoomba(Mats m)
     {
         var root = new GameObject("Goomba");
-        root.AddComponent<Goomba>();
+        Set(root.AddComponent<Goomba>(), "stompEffect", Effect(PoofPath));
         var model = Group("Model", root.transform, Vector3.zero);
         model.gameObject.AddComponent<EnemyWaddle>();
 
@@ -288,7 +297,7 @@ public static class GameContentSetup
     private static GameObject BuildFireball(Mats m)
     {
         var root = new GameObject("Fireball");
-        root.AddComponent<Fireball>();
+        Set(root.AddComponent<Fireball>(), "impactEffect", Effect(FireBurstPath));
         var model = Group("Model", root.transform, Vector3.zero);
         model.gameObject.AddComponent<Spinner>();
         Visual(PrimitiveType.Sphere, "Ball", model, Vector3.zero, Vector3.one * 0.075f, m.Fire);
@@ -397,6 +406,55 @@ public static class GameContentSetup
         SetFloat(eh, "minHeightAboveFloor", 1.2f);
     }
 
+    // ---- effects (Burst variants) ----
+
+    private static GameObject Effect(string path) => AssetDatabase.LoadAssetAtPath<GameObject>(path);
+
+    private static void BuildEffects(Mats m)
+    {
+        Directory.CreateDirectory(PrefabDir + "/Effects");
+
+        // Power-up collected: golden sparkles.
+        BuildBurst(SparklePath, 12, PrimitiveType.Cube, 0.028f, i => i % 3 == 0 ? m.CoinShine : m.Coin,
+                   lifetime: 0.6f, speed: 1.1f, upBias: 0.6f, gravity: 0.6f, drag: 1f, spin: 540f);
+        // Stomped: a small white puff that hangs and fades.
+        BuildBurst(PoofPath, 8, PrimitiveType.Sphere, 0.055f, _ => m.Dust,
+                   lifetime: 0.45f, speed: 0.7f, upBias: 0.2f, gravity: -0.3f, drag: 4f, spin: 0f);
+        // Fireball hit: orange and yellow flame bits.
+        BuildBurst(FireBurstPath, 9, PrimitiveType.Sphere, 0.045f, i => i % 2 == 0 ? m.Fire : m.FireCore,
+                   lifetime: 0.35f, speed: 1.6f, upBias: 0.2f, gravity: 1f, drag: 2f, spin: 0f);
+        // Cannon fired: grey smoke pushed out of the barrel.
+        BuildBurst(SmokePath, 7, PrimitiveType.Sphere, 0.075f, _ => m.Smoke,
+                   lifetime: 0.7f, speed: 0.7f, upBias: 0.3f, gravity: -0.3f, drag: 2.5f, spin: 0f, forwardBias: 1.5f);
+        // Stage clear: confetti in the classic colours, fluttering down.
+        var confetti = new[] { m.ConfettiRed, m.Coin, m.ConfettiGreen, m.ConfettiBlue, m.White };
+        BuildBurst(ConfettiPath, 28, PrimitiveType.Cube, 0.03f, i => confetti[i % confetti.Length],
+                   lifetime: 1.6f, speed: 1.7f, upBias: 1.3f, gravity: 2.2f, drag: 1.2f, spin: 540f, flat: true);
+    }
+
+    private static void BuildBurst(string path, int count, PrimitiveType shape, float size, System.Func<int, Material> material,
+                                   float lifetime, float speed, float upBias, float gravity, float drag, float spin,
+                                   float forwardBias = 0f, bool flat = false)
+    {
+        var root = new GameObject(Path.GetFileNameWithoutExtension(path));
+        var burst = root.AddComponent<Burst>();
+        for (int i = 0; i < count; i++)
+        {
+            var scale = flat ? new Vector3(size, size, size * 0.2f) : Vector3.one * size * (0.8f + 0.4f * (i % 3) / 2f);
+            Visual(shape, "Piece", root.transform, Vector3.zero, scale, material(i));
+        }
+        var so = new SerializedObject(burst);
+        so.FindProperty("lifetime").floatValue = lifetime;
+        so.FindProperty("speed").floatValue = speed;
+        so.FindProperty("upBias").floatValue = upBias;
+        so.FindProperty("forwardBias").floatValue = forwardBias;
+        so.FindProperty("gravity").floatValue = gravity;
+        so.FindProperty("drag").floatValue = drag;
+        so.FindProperty("spinDegreesPerSecond").floatValue = spin;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        Save(root, path);
+    }
+
     private static GameObject BuildBrickDebris(Mats m)
     {
         var root = new GameObject("BrickDebris");
@@ -432,10 +490,17 @@ public static class GameContentSetup
             .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         Visual(PrimitiveType.Cylinder, "Pole", goal.transform, new Vector3(0f, 0.12f + poleHeight / 2f, 0f), new Vector3(0.022f, poleHeight / 2f, 0.022f), m.Pole);
         Visual(PrimitiveType.Sphere, "Ball", goal.transform, new Vector3(0f, 0.12f + poleHeight + 0.02f, 0f), Vector3.one * 0.055f, m.PoleBall);
-        var flag = Visual(PrimitiveType.Quad, "Flag", goal.transform, new Vector3(0f, 0.12f + poleHeight - 0.1f, 0f), Vector3.one, m.Flag);
+        // The flag and its emblems move together: it slides down the pole when the goal is reached.
+        var pennant = Group("Pennant", goal.transform, new Vector3(0f, 0.12f + poleHeight - 0.1f, 0f));
+        var flag = Visual(PrimitiveType.Quad, "Flag", pennant, Vector3.zero, Vector3.one, m.Flag);
         flag.GetComponent<MeshFilter>().sharedMesh = PennantMesh();
         foreach (int face in new[] { -1, 1 })
-            Visual(PrimitiveType.Cylinder, "Emblem", goal.transform, new Vector3(0.075f, 0.12f + poleHeight - 0.1f, 0.004f * face), new Vector3(0.05f, 0.002f, 0.05f), m.PoleBall, new Vector3(90f, 0f, 0f));
+            Visual(PrimitiveType.Cylinder, "Emblem", pennant, new Vector3(0.075f, 0f, 0.004f * face), new Vector3(0.05f, 0.002f, 0.05f), m.PoleBall, new Vector3(90f, 0f, 0f));
+        var gso = new SerializedObject(sg);
+        gso.FindProperty("pennant").objectReferenceValue = pennant;
+        gso.FindProperty("pennantBottom").floatValue = 0.25f;
+        gso.FindProperty("celebrationEffect").objectReferenceValue = Effect(ConfettiPath);
+        gso.ApplyModifiedPropertiesWithoutUndo();
     }
 
     /// <summary>A flat, double-sided triangular pennant: 0.2 m along +X from the pole, 0.16 m tall, centred on its origin's height.</summary>
@@ -585,6 +650,11 @@ public static class GameContentSetup
         public readonly Material KoopaSkin = Mat("KoopaSkin", new Color(1f, 0.84f, 0.35f));
         public readonly Material KoopaBelly = Mat("KoopaBelly", new Color(1f, 0.93f, 0.62f));
         public readonly Material Pipe = Mat("Pipe", Color.white, texture: PixelArt.PipeSide(), smoothness: 0.55f);
+        public readonly Material Dust = Mat("Dust", new Color(0.95f, 0.93f, 0.9f), smoothness: 0.1f);
+        public readonly Material Smoke = Mat("Smoke", new Color(0.55f, 0.55f, 0.58f), smoothness: 0.1f);
+        public readonly Material ConfettiRed = Mat("ConfettiRed", new Color(0.95f, 0.2f, 0.2f), emission: new Color(0.2f, 0.02f, 0.02f));
+        public readonly Material ConfettiGreen = Mat("ConfettiGreen", new Color(0.2f, 0.8f, 0.3f), emission: new Color(0.02f, 0.15f, 0.04f));
+        public readonly Material ConfettiBlue = Mat("ConfettiBlue", new Color(0.25f, 0.5f, 1f), emission: new Color(0.03f, 0.08f, 0.2f));
         public readonly Material CannonSteel = Mat("CannonSteel", new Color(0.32f, 0.34f, 0.38f));
         public readonly Material CannonBarrel = Mat("CannonBarrel", new Color(0.5f, 0.52f, 0.56f));
         public readonly Material CannonRim = Mat("CannonRim", new Color(0.82f, 0.84f, 0.88f));
