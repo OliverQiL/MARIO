@@ -87,6 +87,18 @@ public static class PixelArt
         ['L'] = Hex("B8794A"), ['S'] = Hex("4A2810"), ['Y'] = Hex("8C5428"), ['R'] = Hex("3A1E08"),
     });
 
+    /// <summary>Bonus-room wall: the brick pattern in underground blue.</summary>
+    public static Texture2D UndergroundBrick() => Save("UndergroundBrick", BrickRows, new Dictionary<char, Color>
+    {
+        ['H'] = Hex("5A8CD8"), ['B'] = Hex("2E5AA8"), ['M'] = Hex("0E1E40"),
+    });
+
+    /// <summary>Bonus-room floor tile: the block frame in dark underground blue.</summary>
+    public static Texture2D UndergroundFloor() => Save("UndergroundFloor", SpentRows, new Dictionary<char, Color>
+    {
+        ['L'] = Hex("3A64B0"), ['S'] = Hex("0A1430"), ['Y'] = Hex("1E3C78"), ['R'] = Hex("0A1430"),
+    });
+
     public static Texture2D Brick() => Save("Brick", BrickRows, new Dictionary<char, Color>
     {
         ['H'] = Hex("E0784A"), ['B'] = Hex("B8481E"), ['M'] = Hex("401C0C"),
@@ -148,6 +160,31 @@ public static class PixelArt
 
     /// <summary>A plain white sprite, for UI bars (a Filled Image needs a sprite).</summary>
     public static Sprite WhitePixel() => SaveSprite("WhitePixel", new[] { "WWWW", "WWWW", "WWWW", "WWWW" }, new Dictionary<char, Color> { ['W'] = Color.white });
+
+    private static readonly string[] CoinIconRows =
+    {
+        "................",
+        ".....KKKKKK.....",
+        "....KYYYYYYK....",
+        "...KYYWWYYYOK...",
+        "...KYWYYYYYOK...",
+        "..KYYWYKKYYYOK..",
+        "..KYYWYKKYYYOK..",
+        "..KYYYYKKYYYOK..",
+        "..KYYYYKKYYYOK..",
+        "..KYYYYKKYYYOK..",
+        "..KYYYYKKYYYOK..",
+        "...KYYYYYYYOK...",
+        "...KYYYYYYOOK...",
+        "....KOOOOOOK....",
+        ".....KKKKKK.....",
+        "................",
+    };
+
+    public static Sprite CoinIcon() => SaveSprite("CoinIcon", CoinIconRows, new Dictionary<char, Color>
+    {
+        ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['Y'] = Hex("FFC81E"), ['W'] = Hex("FFF5C0"), ['O'] = Hex("C8780A"),
+    });
 
     public static Sprite HeartIcon() => SaveSprite("HeartIcon", HeartRows, new Dictionary<char, Color>
     {

@@ -56,10 +56,16 @@ public static class HUDSetup
         var score = Styled(root, "Score (TMP)", new Vector2(0f, 1f), new Vector2(x, valueTop), new Vector2(360f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
         score.text = "000000";
 
-        x += 380f;
+        x += 340f;
+        Label(root, "CoinsLabel", "COINS", x, top, font, shadow);
+        Icon(root, "CoinsIcon", PixelArt.CoinIcon(), x, valueTop + 2f, 48f);
+        var coins = Styled(root, "Coins (TMP)", new Vector2(0f, 1f), new Vector2(x + 56f, valueTop), new Vector2(200f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
+        coins.text = "x00";
+
+        x += 260f;
         Label(root, "StageLabel", "STAGE", x, top, font, shadow);
-        var stage = Styled(root, "Stage (TMP)", new Vector2(0f, 1f), new Vector2(x, valueTop), new Vector2(200f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
-        stage.text = "1";
+        var stage = Styled(root, "Stage (TMP)", new Vector2(0f, 1f), new Vector2(x, valueTop), new Vector2(240f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
+        stage.text = "1-1";
 
         x += 260f;
         Label(root, "LivesLabel", "LIVES", x, top, font, shadow);
@@ -152,6 +158,7 @@ public static class HUDSetup
         so.FindProperty("networkClient").objectReferenceValue = Object.FindAnyObjectByType<NetworkClient>();
         so.FindProperty("scoreText").objectReferenceValue = score;
         so.FindProperty("stageText").objectReferenceValue = stage;
+        so.FindProperty("coinsText").objectReferenceValue = coins;
         so.FindProperty("livesText").objectReferenceValue = lives;
         so.FindProperty("livesIcon").objectReferenceValue = livesIcon;
         so.FindProperty("damageFlash").objectReferenceValue = flash;

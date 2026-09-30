@@ -10,17 +10,18 @@ using TMPro;
 ///
 /// Styled after the classic Mario HUD (pixel font, drop shadows), laid out
 /// by HUDSetup:
-/// - top bar:            SCORE (6 digits) · STAGE · LIVES (heart ×N) · POWER
+/// - top bar:            SCORE (6 digits) · COINS (coin ×NN) · STAGE ("1-2") · LIVES (heart ×N) · POWER
 ///                       (fire-flower icon while held)
 /// - connection (top-right, small)
 /// - banner (top-centre): the current *state* — scanning, tracking lost, no
 ///                       room to place a stage, placing, distance to the flag.
 ///                       Highest priority wins; polled every frame.
-/// - scan panel:         while scanning: "SCAN THE FLOOR", a progress bar with
-///                       the percentage of floor found, and rotating hints;
-///                       "READY!" pops in when the scan completes
-/// - title (centre):     big pop-in "STAGE N" when a stage starts, "STAGE CLEAR!"
-///                       or "WARP!" when it ends
+/// - scan panel:         while scanning: "SCAN THE FLOOR", the floor found so far
+///                       (a meter against what a full-size stage likes), and
+///                       "JUMP WHEN DONE" once enough is found — the player
+///                       confirms the scan; "READY!" pops in when they do
+/// - title (centre):     big pop-in "STAGE 1-2" when a stage starts, "STAGE CLEAR!"
+///                       when it ends, "WARP!" through a pipe
 /// - feedback (centre):  transient *events* — action results from
 ///                       EventResolver.OnEventProcessed and score gains. Fades.
 /// - game-over screen:   dimmed overlay with the final score and the restart prompt
@@ -47,6 +48,7 @@ public class HUDController : MonoBehaviour
 
     [Header("Top bar")]
     [SerializeField] private TMP_Text scoreText;
+    [SerializeField] private TMP_Text coinsText;
     [SerializeField] private TMP_Text stageText;
     [SerializeField] private TMP_Text livesText;
     [SerializeField] private Image livesIcon;
@@ -172,7 +174,8 @@ public class HUDController : MonoBehaviour
         if (delta > 0) ShowFeedback(FeedbackPrefix() + $"+{delta}", goodColor);
 
         if (scoreText != null) scoreText.text = Mathf.Min(gameState.Score, 999999).ToString("D6");
-        if (stageText != null) stageText.text = gameState.StageIndex.ToString();
+        if (coinsText != null) coinsText.text = $"x{gameState.Coins:D2}";
+        if (stageText != null) stageText.text = gameState.StageName;
         if (livesText != null) livesText.text = $"x{Mathf.Max(0, gameState.Lives)}";
         if (powerIcon != null) powerIcon.enabled = gameState.HasFireFlower;
         if (powerEmptyText != null) powerEmptyText.enabled = !gameState.HasFireFlower;
@@ -216,6 +219,11 @@ public class HUDController : MonoBehaviour
         else if (sessionManager != null && !sessionManager.IsScanComplete)
         {
             message = null; // the scan panel shows progress
+        }
+        else if (levelGenerator != null && levelGenerator.InBonusRoom)
+        {
+            message = "BONUS ROOM - SQUAT ON THE PIPE TO GO BACK";
+            color = titleColor;
         }
         else if (levelGenerator != null && levelGenerator.IsTransitioning)
         {
@@ -273,7 +281,7 @@ public class HUDController : MonoBehaviour
             _pendingPrefix = $"{label}!  ";
             _pendingPrefixFrame = Time.frameCount;
             ShowFeedback($"{label}!", goodColor);
-            if (result.Target is WarpPipe) ShowTitle("WARP!", goodColor); // replaces STAGE CLEAR! raised a moment ago
+            if (result.Target is WarpPipe) ShowTitle("WARP!", goodColor);
             return;
         }
 
@@ -332,12 +340,16 @@ public class HUDController : MonoBehaviour
     private void HandleStageStarted()
     {
         _placementFailedAt = float.NegativeInfinity;
-        if (gameState != null) ShowTitle($"STAGE {gameState.StageIndex}", Color.white);
+        if (gameState != null) ShowTitle($"STAGE {gameState.StageName}", Color.white);
     }
 
     private void HandleStageCompleted() => ShowTitle("STAGE CLEAR!", titleColor);
 
-    private void HandleScanComplete() => ShowTitle("READY!", goodColor);
+    private void HandleScanComplete()
+    {
+        ShowTitle("READY!", goodColor);
+        if (PlayerBody.EyeHeight is { } eyes) ShowFeedback($"Eye height {eyes:F2} m", quietColor); // stages are sized to it
+    }
 
     // ---- scan panel ----
 
@@ -349,18 +361,27 @@ public class HUDController : MonoBehaviour
         if (!scanning) return;
 
         float area = sessionManager.TotalScannedArea;
-        float progress = Mathf.Clamp01(area / Mathf.Max(0.01f, sessionManager.RequiredFloorArea));
-        if (scanFill != null) scanFill.fillAmount = progress;
-        if (scanPercentText != null) scanPercentText.text = $"{Mathf.FloorToInt(progress * 100f)}%";
+        float meter = Mathf.Clamp01(area / Mathf.Max(0.01f, sessionManager.FullSizeFloorArea));
+        if (scanFill != null) scanFill.fillAmount = meter;
+        if (scanPercentText != null) scanPercentText.text = $"{area:F1} M²";
         if (scanHintText != null)
         {
-            // Rotate hints; mention the small-room fallback once it can apply.
-            bool enoughForSmallRoom = area >= sessionManager.MinFloorArea;
-            int count = enoughForSmallRoom ? 3 : 2;
-            int i = (int)(Time.time / hintSeconds) % count;
-            scanHintText.text = i == 0 ? "SWEEP THE CAMERA SLOWLY OVER THE FLOOR"
-                              : i == 1 ? "ONLY FLOOR COUNTS - NOT TABLES OR BEDS"
-                              : "SMALL ROOM? HOLD STILL - IT WILL FINISH";
+            if (sessionManager.CanConfirmScan)
+            {
+                // Enough to play: the player decides when they've scanned everything.
+                bool blinkOn = Mathf.Repeat(Time.time, 1f) < 0.7f;
+                scanHintText.text = (int)(Time.time / hintSeconds) % 2 == 0
+                    ? (blinkOn ? "SCANNED EVERYTHING? JUMP TO START" : "")
+                    : "MORE FLOOR = BIGGER STAGES";
+                scanHintText.color = titleColor;
+            }
+            else
+            {
+                scanHintText.text = (int)(Time.time / hintSeconds) % 2 == 0
+                    ? "WALK AROUND - SCAN ALL THE FLOOR YOU CAN PLAY ON"
+                    : "ONLY FLOOR COUNTS - NOT TABLES OR BEDS";
+                scanHintText.color = new Color(1f, 0.92f, 0.75f);
+            }
         }
     }
 
@@ -413,7 +434,7 @@ public class HUDController : MonoBehaviour
         if (!over) return;
 
         if (gameOverStatsText != null)
-            gameOverStatsText.text = $"SCORE {Mathf.Min(gameState.Score, 999999):D6}   STAGE {gameState.StageIndex}";
+            gameOverStatsText.text = $"SCORE {Mathf.Min(gameState.Score, 999999):D6}   STAGE {gameState.StageName}";
         if (gameOverPromptText != null)
         {
             // The restart prompt appears once a jump can actually restart, then blinks.

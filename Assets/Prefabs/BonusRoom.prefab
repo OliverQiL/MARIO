@@ -1,0 +1,54 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2403610142652988576
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7265405558080487639}
+  - component: {fileID: 404329324068644111}
+  m_Layer: 0
+  m_Name: BonusRoom
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7265405558080487639
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2403610142652988576}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &404329324068644111
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2403610142652988576}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 76d118dff70ed46928925c59e6de7b6b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::BonusRoom
+  coinPrefab: {fileID: 3888140960519612349, guid: e11a276ed2cc64462bd244d01918d30e, type: 3}
+  exitPipePrefab: {fileID: 7436271038126197963, guid: bb86979b1993749bf91d877e67df9768, type: 3}
+  wallBlockPrefab: {fileID: 1938012141079777000, guid: 15e4cc4def7df462aa9b6134cf8582c4, type: 3}
+  floorMaterial: {fileID: 2100000, guid: 319aa184f496d4c378a849c751e9edb9, type: 2}
+  floorTilesPerMetre: 2
+  coinSpacing: 0.4
+  inset: 0.35
+  wallBlockSize: 0.25

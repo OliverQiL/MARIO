@@ -26,7 +26,8 @@ public static class SimulationSetup
     private const string PreferencesPath = "Assets/XR/UserSimulationSettings/Resources/XRSimulationPreferences.asset";
     private const string ContentPackage = "ContentPackages/com.unity.xr-content.xr-sim-environments-2.1.1.tgz";
     // 6 × 5.6 m with furniture and open floor: fits StandardStage and exercises the placement checks.
-    private const string DefaultEnvironment = "LivingRoom_20ftx18.5ft";
+    private const float StartingEyeHeight = 1.55f; // metres above the simulated floor (y = 0)
+    private const string DefaultEnvironment = "Museum_69ftx48ft"; // open floor for full-size (2.5 x 4 m) stages; the living room was too cramped
 
     [MenuItem("Tools/MARIO/Set Up Editor Simulation")]
     public static void Run()
@@ -63,6 +64,30 @@ public static class SimulationSetup
         throw new OperationCanceledException("[SimulationSetup] Importing environments — setup continues when the import finishes.");
     }
 
+    /// <summary>
+    /// Puts the simulated camera at a standing adult's eye height. Some sample
+    /// rooms start it much higher (the Museum at 2.55 m), and stage pieces are
+    /// placed relative to the player's eyes, so the whole stage floated. The
+    /// environments are re-imported locally (gitignored), so this runs on every setup.
+    /// </summary>
+    private static void SetStartingEyeHeight(string environmentPath)
+    {
+        var root = PrefabUtility.LoadPrefabContents(environmentPath);
+        try
+        {
+            var env = root.GetComponentsInChildren<MonoBehaviour>(true).FirstOrDefault(m => m.GetType().Name == "SimulationEnvironment"); // internal to AR Foundation
+            if (env == null) return;
+            var so = new SerializedObject(env);
+            var y = so.FindProperty("m_CameraStartingPose.position.y");
+            if (y == null || Mathf.Approximately(y.floatValue, StartingEyeHeight)) return;
+            Debug.Log($"[SimulationSetup] Starting eye height {y.floatValue:F2} m -> {StartingEyeHeight:F2} m.");
+            y.floatValue = StartingEyeHeight;
+            so.ApplyModifiedPropertiesWithoutUndo();
+            PrefabUtility.SaveAsPrefabAsset(root, environmentPath);
+        }
+        finally { PrefabUtility.UnloadPrefabContents(root); }
+    }
+
     private static void SelectEnvironment(string name)
     {
         var path = EnvironmentPrefabPaths().FirstOrDefault(p => Path.GetFileNameWithoutExtension(p).Equals(name, StringComparison.OrdinalIgnoreCase));
@@ -73,6 +98,7 @@ public static class SimulationSetup
         var so = new SerializedObject(prefs);
         so.FindProperty("m_EnvironmentPrefab").objectReferenceValue = AssetDatabase.LoadAssetAtPath<GameObject>(path);
         so.ApplyModifiedPropertiesWithoutUndo();
+        SetStartingEyeHeight(path);
         AssetDatabase.SaveAssets();
         Debug.Log($"[SimulationSetup] Simulated room: {name} ({path}).");
     }

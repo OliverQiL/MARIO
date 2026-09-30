@@ -25,9 +25,13 @@ public class GameStateManager : MonoBehaviour
     [SerializeField] private int lives = 3;
     [SerializeField] private int stageIndex = 1;
     [SerializeField] private bool hasFireFlower;
+    [SerializeField] private int coins;
 
     [Header("Scoring")]
     [SerializeField] private int stageClearBonus = 500;
+    [SerializeField] private int coinValue = 100;
+    [Tooltip("Collecting this many coins gives a 1-Up (the counter wraps to 0).")]
+    [SerializeField] private int coinsPerLife = 100;
 
     [Header("Lives")]
     [SerializeField] private int startingLives = 3;
@@ -62,7 +66,6 @@ public class GameStateManager : MonoBehaviour
     private float _invulnerableUntil = float.NegativeInfinity;
     private float _gameOverAt = float.NegativeInfinity;
     private float _lastStompAt = float.NegativeInfinity;
-    private int _pendingWarpSkip;
 
     [Tooltip("Stomp is re-sent every classification window; a pause this long between stomp events starts a new stomp.")]
     [SerializeField] private float newStompGapSeconds = 0.3f;
@@ -70,7 +73,13 @@ public class GameStateManager : MonoBehaviour
     public int Score => score;
     public int Lives => lives;
     public int StageIndex => stageIndex;
+    /// <summary>Stages per world in the names: stage 5 is "2-1" with 4 per world (the campaign's length).</summary>
+    public const int StagesPerWorld = 4;
+    /// <summary>Mario-style name of the current stage: "1-1", "1-2", ... "2-1" ...</summary>
+    public string StageName => NameOf(stageIndex);
+    public static string NameOf(int stage) => $"{(stage - 1) / StagesPerWorld + 1}-{(stage - 1) % StagesPerWorld + 1}";
     public bool HasFireFlower => hasFireFlower;
+    public int Coins => coins;
     public bool IsTracking => isTracking;
     public bool IsStageActive => isStageActive;
     /// <summary>EventResolver's Gate 1: tracking is good, a stage is live, and the game isn't over.</summary>
@@ -134,11 +143,11 @@ public class GameStateManager : MonoBehaviour
         lives = startingLives;
         stageIndex = 1;
         hasFireFlower = false;
+        coins = 0;
         isGameOver = false;
         isStageActive = false;
         _airborneUntil = _duckedUntil = _invulnerableUntil = _lastStompAt = float.NegativeInfinity;
         StompStartedAt = float.NegativeInfinity;
-        _pendingWarpSkip = 0;
         Debug.Log("[GameStateManager] New game.");
         OnGameRestarted?.Invoke();
     }
@@ -147,6 +156,18 @@ public class GameStateManager : MonoBehaviour
     {
         score += amount;
         Debug.Log($"[GameStateManager] Score +{amount} -> {score}");
+    }
+
+    /// <summary>A coin (collected, or from a ? block): score, the coin counter, and a 1-Up every coinsPerLife.</summary>
+    public void AddCoin()
+    {
+        AddScore(coinValue);
+        coins++;
+        if (coins < coinsPerLife) return;
+        coins = 0;
+        Debug.Log($"[GameStateManager] {coinsPerLife} coins!");
+        AddLife();
+        AudioManager.Play(Sfx.OneUp);
     }
 
     public void AddLife()
@@ -174,16 +195,12 @@ public class GameStateManager : MonoBehaviour
         Debug.Log($"[GameStateManager] Stage {stageIndex} started.");
     }
 
-    /// <summary>A warp pipe: the coming CompleteStage also skips this many stages.</summary>
-    public void QueueWarp(int skipStages) => _pendingWarpSkip = Mathf.Max(0, skipStages);
-
-    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter (further after a warp).</summary>
+    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter.</summary>
     public void CompleteStage()
     {
         isStageActive = false;
-        Debug.Log($"[GameStateManager] Stage {stageIndex} cleared{(_pendingWarpSkip > 0 ? $" by warp (skipping {_pendingWarpSkip})" : "")}.");
+        Debug.Log($"[GameStateManager] Stage {StageName} cleared.");
         AddScore(stageClearBonus);
-        stageIndex += 1 + _pendingWarpSkip;
-        _pendingWarpSkip = 0;
+        stageIndex++;
     }
 }

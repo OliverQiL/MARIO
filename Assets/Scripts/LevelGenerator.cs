@@ -40,6 +40,13 @@ using UnityEngine.XR.ARSubsystems;
 /// Game over: EndGame (wired from GameStateManager.OnGameOver) tears down
 /// the stage and halts the loop; RestartLoop (OnGameRestarted) re-anchors at
 /// the player and starts again from Step 3.
+///
+/// Campaign (Docs/GAME_DESIGN.md, maps): stage N plays campaignStages[(N-1) %
+/// count] if it fits the room — at full size, or compressed (campaignScales:
+/// pieces closer together, same sizes) — otherwise the largest stageTemplates
+/// fallback that does. Warp pipes: entering one hides the stage and puts the bonus room
+/// in the same place; its exit pipe removes the bonus room and brings the
+/// stage back as it was.
 /// </summary>
 [RequireComponent(typeof(ARSessionManager), typeof(ARAnchorManager), typeof(ARRaycastManager))]
 public class LevelGenerator : MonoBehaviour
@@ -57,12 +64,18 @@ public class LevelGenerator : MonoBehaviour
     [SerializeField] private GameObject debugMarkerPrefab;
 
     [Header("Stage Templates")]
-    [Tooltip("Stage prefabs, each with a StageFootprint component. Tried largest-footprint first, falling back to smaller ones.")]
+    [Tooltip("The hand-designed campaign, in order: stage N plays entry (N-1) % count, and after the last it loops (harder, via Difficulty).")]
+    [SerializeField] private List<GameObject> campaignStages = new();
+    [Tooltip("Fallback stage prefabs, each with a StageFootprint component, for when the campaign stage doesn't fit the room. Tried largest-footprint first.")]
     [SerializeField] private List<GameObject> stageTemplates = new();
+    [Tooltip("If the campaign stage doesn't fit at full size, it's tried at these scales (positions only; pieces keep their size) before the fallbacks.")]
+    [SerializeField] private float[] campaignScales = { 1f, 0.85f, 0.7f, 0.55f };
+    [Tooltip("The temporary area a warp pipe leads to, placed where the stage is.")]
+    [SerializeField] private GameObject bonusRoomPrefab;
 
     [Header("Placement Search")]
     [Tooltip("Distances (metres) from the checkpoint anchor to try, closest first.")]
-    [SerializeField] private float[] searchDistances = { 0.5f, 1f, 1.5f, 2f, 2.5f };
+    [SerializeField] private float[] searchDistances = { 0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f, 6f };
     [Tooltip("Half-angle (degrees) either side of the anchor's forward direction searched before expanding to the full circle.")]
     [SerializeField] private float forwardArcHalfAngle = 60f;
     [Tooltip("Angular step (degrees) between search directions.")]
@@ -112,6 +125,8 @@ public class LevelGenerator : MonoBehaviour
     public StageGoal CurrentGoal { get; private set; }
     public bool IsTransitioning { get; private set; }
     public int StagesCompleted { get; private set; }
+    /// <summary>True while the player is in a warp pipe's bonus room (the stage is hidden).</summary>
+    public bool InBonusRoom => _bonusRoom != null;
 
     /// <summary>True while placement is deferred waiting for the LiDAR mesh to settle.</summary>
     public bool IsWaitingForMesh { get; private set; }
@@ -125,6 +140,8 @@ public class LevelGenerator : MonoBehaviour
     public string LastObstructionName { get; private set; } = "";
 
     private bool _stagePlaced;
+    private GameObject _bonusRoom;
+    private float _searchScale = 1f; // layout scale being tried: footprint and piece positions (x, z) shrink together
     private bool _creatingAnchor;
     private float _scanCompleteTime;
     private int _searchObstructed;
@@ -147,11 +164,42 @@ public class LevelGenerator : MonoBehaviour
     private void OnEnable()
     {
         sessionManager.OnScanComplete.AddListener(HandleScanComplete);
+        WarpPipe.OnEntered += HandlePipeEntered;
     }
 
     private void OnDisable()
     {
         sessionManager.OnScanComplete.RemoveListener(HandleScanComplete);
+        WarpPipe.OnEntered -= HandlePipeEntered;
+    }
+
+    // ---- warp pipes: bonus room ----
+
+    private void HandlePipeEntered(WarpPipe pipe)
+    {
+        if (pipe.IsExit) ExitBonusRoom();
+        else EnterBonusRoom();
+    }
+
+    private void EnterBonusRoom()
+    {
+        if (bonusRoomPrefab == null || CurrentStage == null || InBonusRoom || IsTransitioning) return;
+        var stage = CurrentStage.transform;
+        CurrentStage.SetActive(false); // freezes its enemies and hides its targets until the player returns
+        _bonusRoom = Instantiate(bonusRoomPrefab, stage.position, stage.rotation, stage.parent);
+        var footprint = CurrentStage.GetComponent<StageFootprint>();
+        var room = _bonusRoom.GetComponent<BonusRoom>();
+        if (room != null && footprint != null) room.Build(footprint.width, footprint.depth);
+        Debug.Log($"[LevelGenerator] Warped into the bonus room ({(room != null ? room.CoinCount : 0)} coins).");
+    }
+
+    private void ExitBonusRoom()
+    {
+        if (!InBonusRoom) return;
+        Destroy(_bonusRoom);
+        _bonusRoom = null;
+        if (CurrentStage != null) CurrentStage.SetActive(true);
+        Debug.Log("[LevelGenerator] Back to the stage.");
     }
 
     private void HandleScanComplete()
@@ -228,27 +276,65 @@ public class LevelGenerator : MonoBehaviour
         Invoke(nameof(TryPlaceStage), retryDelaySeconds);
     }
 
+    /// <summary>The campaign stage for stage number <paramref name="stage"/> (1-based), looping; null if there's no campaign.</summary>
+    public static GameObject CampaignStageFor(IReadOnlyList<GameObject> campaign, int stage)
+    {
+        if (campaign == null || campaign.Count == 0) return null;
+        return campaign[((Mathf.Max(1, stage) - 1) % campaign.Count)];
+    }
+
     private bool FindAndInstantiateStage()
     {
-        var orderedTemplates = stageTemplates
-            .Where(t => t != null && t.GetComponent<StageFootprint>() != null)
-            .OrderByDescending(t => t.GetComponent<StageFootprint>().FootprintArea)
-            .ToList();
+        // This stage's campaign layout first, at full size and then compressed;
+        // then the fallbacks, largest first, at full size.
+        var gs = GameStateManager.Instance;
+        var candidates = new List<(GameObject template, float scale)>();
+        var campaign = CampaignStageFor(campaignStages, gs != null ? gs.StageIndex : 1);
+        if (campaign != null && campaign.GetComponent<StageFootprint>() != null)
+            foreach (var scale in campaignScales) candidates.Add((campaign, scale));
+        foreach (var t in stageTemplates
+                     .Where(t => t != null && t.GetComponent<StageFootprint>() != null)
+                     .OrderByDescending(t => t.GetComponent<StageFootprint>().FootprintArea))
+            candidates.Add((t, 1f));
 
-        foreach (var template in orderedTemplates)
+        foreach (var (template, scale) in candidates)
         {
             var footprint = template.GetComponent<StageFootprint>();
-            if (TryFindValidPlacement(footprint, out var pose))
-            {
-                CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
-                Debug.Log($"[LevelGenerator] Placed '{template.name}' at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}° — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
-                StartStage();
-                return true;
-            }
+            _searchScale = scale;
+            bool found = TryFindValidPlacement(footprint, out var pose);
+            _searchScale = 1f;
+            if (!found) continue;
+
+            CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
+            if (!Mathf.Approximately(scale, 1f)) CompressLayout(CurrentStage, scale);
+            Debug.Log($"[LevelGenerator] Placed '{template.name}'{(Mathf.Approximately(scale, 1f) ? "" : $" at {scale:P0} size")} at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}° — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
+            StartStage();
+            return true;
         }
 
         return false;
     }
+
+    /// <summary>
+    /// Fits a layout into less floor: moves its pieces closer together (their
+    /// x/z positions scale; sizes and heights don't) and shrinks its footprint
+    /// to match, so a bonus room built on it fits too.
+    /// </summary>
+    public static void CompressLayout(GameObject stage, float scale)
+    {
+        foreach (Transform piece in stage.transform)
+        {
+            var p = piece.localPosition;
+            piece.localPosition = new Vector3(p.x * scale, p.y, p.z * scale);
+        }
+        var footprint = stage.GetComponent<StageFootprint>();
+        if (footprint == null) return;
+        footprint.width *= scale;
+        footprint.depth *= scale;
+    }
+
+    /// <summary>A template-space point as it will be after CompressLayout at the scale being searched.</summary>
+    private Vector3 SearchScaled(Vector3 local) => new(local.x * _searchScale, local.y, local.z * _searchScale);
 
     private string SearchSummary() =>
         $"{_searchNoFloor} no-floor, {_searchTooClose} too-close-to-player, {_searchOffFloor} partly-off-floor, {_searchObstructed} obstructed";
@@ -353,6 +439,8 @@ public class LevelGenerator : MonoBehaviour
 
     private void TearDownStage()
     {
+        if (_bonusRoom != null) Destroy(_bonusRoom);
+        _bonusRoom = null;
         if (CurrentStage != null) Destroy(CurrentStage);
         CurrentStage = null;
         CurrentGoal = null;
@@ -421,13 +509,13 @@ public class LevelGenerator : MonoBehaviour
 
         // Horizontal distance from the player to the footprint rectangle.
         var local = Quaternion.Inverse(rotation) * (player - floorPosition);
-        float dx = Mathf.Max(0f, Mathf.Abs(local.x) - footprint.width * 0.5f);
-        float dz = Mathf.Max(0f, Mathf.Abs(local.z) - footprint.depth * 0.5f);
+        float dx = Mathf.Max(0f, Mathf.Abs(local.x) - footprint.width * _searchScale * 0.5f);
+        float dz = Mathf.Max(0f, Mathf.Abs(local.z) - footprint.depth * _searchScale * 0.5f);
         if (dx * dx + dz * dz < playerClearance * playerClearance) return false;
 
         var goal = footprint.GetComponentInChildren<StageGoal>(true);
         if (goal == null) return true;
-        var goalOffset = footprint.transform.InverseTransformPoint(goal.transform.position);
+        var goalOffset = SearchScaled(footprint.transform.InverseTransformPoint(goal.transform.position));
         var goalWorld = floorPosition + rotation * goalOffset;
         var toGoal = goalWorld - player;
         toGoal.y = 0f;
@@ -442,8 +530,8 @@ public class LevelGenerator : MonoBehaviour
     /// </summary>
     private bool IsFullyOnFloor(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation, float floorHeight)
     {
-        float hx = Mathf.Max(0f, footprint.width * 0.5f - floorCoverageInset);
-        float hz = Mathf.Max(0f, footprint.depth * 0.5f - floorCoverageInset);
+        float hx = Mathf.Max(0f, footprint.width * _searchScale * 0.5f - floorCoverageInset);
+        float hz = Mathf.Max(0f, footprint.depth * _searchScale * 0.5f - floorCoverageInset);
         for (int sx = -1; sx <= 1; sx += 2)
         for (int sz = -1; sz <= 1; sz += 2)
         {
@@ -453,7 +541,7 @@ public class LevelGenerator : MonoBehaviour
 
         var goal = footprint.GetComponentInChildren<StageGoal>(true);
         if (goal == null) return true;
-        var goalOffset = footprint.transform.InverseTransformPoint(goal.transform.position);
+        var goalOffset = SearchScaled(footprint.transform.InverseTransformPoint(goal.transform.position));
         return TryGetFloorProjectedPose(floorPosition + rotation * goalOffset, out _, floorHeight);
     }
 
@@ -461,7 +549,7 @@ public class LevelGenerator : MonoBehaviour
     {
         // Lift the box off the floor by the margin (shrinking it to keep the same
         // top), so the floor's own mesh triangles don't register as obstructions.
-        var halfExtents = footprint.HalfExtents;
+        var halfExtents = SearchScaled(footprint.HalfExtents);
         float margin = Mathf.Min(floorClearanceMargin, footprint.clearance * 0.5f);
         halfExtents.y -= margin * 0.5f;
         var boxCenter = floorPosition + Vector3.up * (margin + halfExtents.y);

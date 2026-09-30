@@ -124,9 +124,57 @@ Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
   - There's no background music yet.
 - **Art:** still primitives. It's deferred until after this playtest, so it can target what reads worst in the room (as the cannon restyle did).
 
+## Scanning the room (2026-09-30, Oliver's design)
+- **No fixed target.** The player walks round and scans all the floor they want to play on.
+- **The HUD** shows the floor found so far, as square metres and a meter against the ~12 m² a full-size stage likes. Once there's enough to play (**3 m²**, the smallest stage), it asks the player to **jump when they've scanned everything**. The jump is the confirmation: no touch input, like restarting after game over.
+- **Placement then uses that scanned space:**
+  - it searches the whole room out to 6 m from the player
+  - it prefers the campaign stage at full size, then compressed (85 / 70 / 55 %)
+  - more scanned floor means bigger stages
+- This replaced the fixed 4 → 7 → 12 m² target and the small-room fallback.
+- **Player height.**
+  - While scanning, the camera's height above the floor is sampled four times a second. When the scan is confirmed, the median becomes the player's **eye height** (`PlayerBody`), clamped to 0.9–2.1 m. The HUD shows it.
+  - Every stage is built from that one number, whatever the player is doing when the stage appears:
+    - **coins** at 60 % of eye height (waist)
+    - **bricks** at 78 % (chest)
+    - **? blocks** 0.35 m above the eyes, so the block's bottom clears the top of the player's head and they reach it by jumping
+  - A shorter player therefore gets lower pieces, and a taller player higher ones.
+- **The flag** is 1.8 m tall with a larger pennant, so it's easy to spot across a room.
+
+## Maps and layouts (2026-09-30)
+Decided with Oliver: a hand-designed campaign, full-size stages of about 2.5 × 4 m, collectable coins with a counter and a 1-Up every 100, and layouts that work in both labs and homes.
+- **The campaign.**
+  - It has four stages, 1-1 to 1-4, written as data in `Assets/Editor/StageDesigns.cs`, one prefab each in `Assets/Stages/Campaign`. Each design is a list of pieces (? block, brick, coin, spawner with its enemy sequence, cannon, warp pipe with a chance to appear, flag) at floor positions.
+  - Stage N plays design (N−1) mod 4. After 1-4 comes 2-1, the same layouts again, with Difficulty making each round harder.
+  - Stages are named like Mario's ("1-2"), in the HUD and the stage titles.
+- **The stages.**
+
+  | Stage | Theme |
+  |---|---|
+  | **1-1** | First steps: a line of coins, a ? block between two bricks, one Goomba, the flag |
+  | **1-2** | Koopa road: two ? blocks, a Goomba then a Koopa, a zigzag of coins, and a warp pipe (always there) |
+  | **1-3** | Bullet alley: two cannons, one firing across the path; coins lead the way; a warp pipe half the time |
+  | **1-4** | Fortress: two spawners (3 + 1 enemies), a cannon, a ring of coins, and a warp pipe |
+- **Fitting the room.** A clear 2.5 × 4 m of detected floor right in front of the player is rare in a furnished room: the 12 m² scan counts floor anywhere. (In the simulated living room, the campaign stages never fitted, which is why this was added.)
+  - The campaign stage is therefore tried at **100 %, 85 %, 70 % and 55 %** of its size (`campaignScales`). Its pieces move closer together but keep their sizes and heights, so the player always gets the designed layout, just denser.
+  - At 55 % it needs about 1.4 × 2.2 m.
+  - The search covers the whole scanned room, out to 6 m around the player.
+  - Only if even that doesn't fit is a generic fallback used (Large 2 × 3, Standard 1.2 × 2, Compact 0.6 × 1).
+  - The search reaches 3 m from the player.
+- **Coins.**
+  - Floating coins at waist height, collected by walking through them (within 0.3 m): +100 each, and they count towards the COINS counter on the HUD. A coin from a ? block counts too.
+  - Every 100 coins gives a 1-Up and the counter starts again. At the life cap of 8, you get the points only.
+  - The counter resets at game over.
+- **Warp pipes, final design** (this replaces the pass-3 placeholder).
+  - Squatting on a stage's pipe hides the stage, freezing its enemies, and puts a **bonus room** in exactly the same place, so it always fits.
+  - The bonus room lays itself out to that stage's footprint: an underground blue-tiled floor, a low blue-brick wall round the edge, a grid of coins (30 on a full-size stage), and an **exit pipe** at the far end.
+  - Squatting on the exit pipe removes the bonus room and brings the stage back exactly as it was.
+  - A stage's pipe works once. Squatting on it again just ducks.
+  - The flag can't be reached from the bonus room; the player has to go back first.
+
 ## Later passes
 - **Pass 3** (done, see above): warp pipes, difficulty scaling, audio, larger layouts. Art in place of primitives is still to come.
-- **Warp pipes, redesigned** (Oliver, 2026-09-30; to build when real maps and stages are made). A warp pipe should work like Mario's:
+- **Warp pipes, redesigned** (Oliver, 2026-09-30; **built** with the maps, see "Maps and layouts"). A warp pipe should work like Mario's:
   - it isn't a stage clear
   - entering it **teleports the player to a separate, temporary area** (a bonus room, for example), which has its own **exit pipe**
   - the exit pipe **returns the player to the main stage**, and play continues there

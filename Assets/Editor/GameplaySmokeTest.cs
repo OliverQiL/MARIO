@@ -238,26 +238,89 @@ public static class GameplaySmokeTest
 
         // ==== pass 3 ====
 
-        // -- warp pipe: a squat off the pipe is just a duck; on it, it clears the stage and skips one
-        var goalGO = new GameObject("Goal");
-        goalGO.transform.SetParent(s_Stage, false);
-        goalGO.transform.position = new Vector3(0f, 0f, 3f);
-        var goal = goalGO.AddComponent<StageGoal>();
+        // -- warp pipe: a squat off the pipe is just a duck; on it, it enters (LevelGenerator swaps in the bonus room)
         var pipe = Spawn<WarpPipe>(GameContentSetup.StandardStagePath, "WarpPipe", new Vector3(0f, 0f, 1f));
+        WarpPipe entered = null;
+        System.Action<WarpPipe> onEntered = p => entered = p;
+        WarpPipe.OnEntered += onEntered;
         r = Resolve("squat");
-        Check(r.Resolved && r.StateOnly && s_State.IsDucked && !goal.IsReached, "a squat away from a warp pipe just ducks", r);
+        Check(r.Resolved && r.StateOnly && s_State.IsDucked && entered == null, "a squat away from a warp pipe just ducks", r);
         pipe.transform.position = new Vector3(0.1f, 0f, 0.15f);
-        int stageBefore = s_State.StageIndex;
         r = Resolve("squat");
-        Check(r.Resolved && r.Target == pipe && goal.IsReached && s_State.IsDucked, "a squat on a warp pipe enters it and clears the stage", r);
-        s_State.CompleteStage(); // LevelGenerator's OnStageCompleted does this in the scene
-        Check(s_State.StageIndex == stageBefore + 2, "a warp skips a stage");
-        s_State.CompleteStage();
-        Check(s_State.StageIndex == stageBefore + 3, "the skip applies to the warped stage only");
-        s_State.BeginStage();
+        Check(r.Resolved && r.Target == pipe && entered == pipe && !pipe.IsExit, "a squat on a warp pipe enters it", r);
+        entered = null;
+        r = Resolve("squat");
+        Check(r.Resolved && r.StateOnly && entered == null, "a stage's warp pipe works once (squatting on it again just ducks)", r);
         SetField(s_State, "_duckedUntil", float.NegativeInfinity);
         UnityEngine.Object.DestroyImmediate(pipe.gameObject);
-        UnityEngine.Object.DestroyImmediate(goalGO);
+
+        // -- bonus room: laid out to the stage's footprint, full of coins, with an exit pipe back
+        var room = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.BonusRoomPath), s_Stage).GetComponent<BonusRoom>();
+        room.Build(2.5f, 4f);
+        Check(room.CoinCount >= 20 && room.ExitPipe != null && room.ExitPipe.IsExit, $"the bonus room has coins ({room.CoinCount}) and an exit pipe");
+        Register(room.ExitPipe);
+        room.ExitPipe.transform.position = new Vector3(0.05f, 0f, 0.1f);
+        entered = null;
+        r = Resolve("squat");
+        Check(r.Resolved && entered == room.ExitPipe, "a squat on the exit pipe leaves the bonus room", r);
+        WarpPipe.OnEntered -= onEntered;
+        SetField(s_State, "_duckedUntil", float.NegativeInfinity);
+        UnityEngine.Object.DestroyImmediate(room.gameObject);
+
+        // -- coins: walk through to collect; 100 make a 1-Up
+        var coin = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CoinPath), new Vector3(0f, 1f, 1f), Quaternion.identity, s_Stage).GetComponent<Coin>();
+        int coinsBefore = s_State.Coins;
+        scoreBefore = s_State.Score;
+        Check(!coin.TryCollect(s_Cam.transform.position), "a coin out of reach isn't collected");
+        Check(coin.TryCollect(new Vector3(0f, 1.5f, 0.9f)) && s_State.Coins == coinsBefore + 1 && s_State.Score == scoreBefore + 100, "walking through a coin collects it (+100, counter +1)");
+        SetField(s_State, "coins", 99);
+        livesBefore = s_State.Lives;
+        s_State.AddCoin();
+        Check(s_State.Coins == 0 && s_State.Lives == livesBefore + 1, "the 100th coin gives a 1-Up and resets the counter");
+
+        // -- pieces are placed for the player's body: shorter player, lower pieces
+        var hq = Spawn<QuestionBlock>(GameContentSetup.StandardStagePath, "QuestionBlock", new Vector3(0f, 0f, 3f));
+        var hb = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.5f, 0f, 3f));
+        var hc = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CoinPath), new Vector3(-0.5f, 0f, 3f), Quaternion.identity, s_Stage);
+        float[] PlaceAll(float eyes)
+        {
+            PlayerBody.Calibrate(eyes);
+            foreach (var go in new[] { hq.gameObject, hb.gameObject, hc }) go.GetComponent<EyeHeightPlacement>().Place();
+            return new[] { hq.transform.position.y, hb.transform.position.y, hc.transform.position.y };
+        }
+        var shortP = PlaceAll(1.2f);
+        var tallP = PlaceAll(1.85f);
+        Check(Mathf.Approximately(shortP[0], 1.55f) && Mathf.Approximately(shortP[1], 1.2f * 0.78f) && Mathf.Approximately(shortP[2], 1.2f * 0.6f),
+              $"a shorter player (eyes 1.2 m) gets lower pieces (? {shortP[0]:F2}, brick {shortP[1]:F2}, coin {shortP[2]:F2})");
+        Check(Mathf.Approximately(tallP[0], 2.2f) && Mathf.Approximately(tallP[1], 1.85f * 0.78f) && Mathf.Approximately(tallP[2], 1.85f * 0.6f),
+              $"a taller player (eyes 1.85 m) gets higher pieces (? {tallP[0]:F2}, brick {tallP[1]:F2}, coin {tallP[2]:F2})");
+        Check(tallP[0] - 0.125f > 1.85f + 0.12f, "a ? block's bottom clears the top of the player's head");
+        PlayerBody.Calibrate(3.5f);
+        Check(Mathf.Approximately(PlayerBody.EyeHeight.Value, PlayerBody.MaxEyeHeight), "an implausible eye height is clamped");
+        PlayerBody.Reset();
+        foreach (var go in new[] { hq.gameObject, hb.gameObject, hc }) UnityEngine.Object.DestroyImmediate(go);
+
+        // -- the flag is tall enough to spot across a room
+        var goalPole = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("Goal/Pole");
+        Check(goalPole != null && goalPole.localPosition.y + goalPole.localScale.y >= 1.8f, "the flagpole is at least 1.8 m tall");
+
+        // -- campaign: names, looping, and every stage is complete
+        Check(GameStateManager.NameOf(1) == "1-1" && GameStateManager.NameOf(4) == "1-4" && GameStateManager.NameOf(5) == "2-1", "stages are named 1-1 ... 1-4, then 2-1");
+        var campaignStages = StageDesigns.Campaign.Select(d => AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CampaignStagePath(d.Name))).ToList();
+        Check(campaignStages.All(c => c != null) && LevelGenerator.CampaignStageFor(campaignStages, 5) == campaignStages[0]
+              && LevelGenerator.CampaignStageFor(campaignStages, 3) == campaignStages[2], "the campaign plays in order and loops");
+        Check(campaignStages.All(c => c.GetComponent<StageFootprint>() is { } f && Mathf.Approximately(f.width, 2.5f) && Mathf.Approximately(f.depth, 4f)
+                                      && c.GetComponentInChildren<StageGoal>() != null && c.GetComponentsInChildren<Coin>().Length > 0),
+              "every campaign stage is 2.5 x 4 m with a flag and coins");
+        var squeezed = UnityEngine.Object.Instantiate(campaignStages[0], s_Stage);
+        var goalBefore = squeezed.GetComponentInChildren<StageGoal>().transform.localPosition;
+        LevelGenerator.CompressLayout(squeezed, 0.55f);
+        var goalAfter = squeezed.GetComponentInChildren<StageGoal>().transform.localPosition;
+        var fp = squeezed.GetComponent<StageFootprint>();
+        Check(Mathf.Approximately(fp.width, 2.5f * 0.55f) && Mathf.Approximately(fp.depth, 4f * 0.55f)
+              && Mathf.Approximately(goalAfter.z, goalBefore.z * 0.55f) && Mathf.Approximately(goalAfter.y, goalBefore.y),
+              "a campaign stage compresses to fit a smaller room (positions scale, heights don't)");
+        UnityEngine.Object.DestroyImmediate(squeezed);
 
         // -- difficulty grows with the stage number, up to caps
         var difficulty = manager.AddComponent<Difficulty>();

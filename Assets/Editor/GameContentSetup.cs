@@ -46,6 +46,12 @@ public static class GameContentSetup
     public const string StandardStagePath = StageDir + "/StandardStage.prefab";
     public const string CompactStagePath = StageDir + "/CompactStage.prefab";
     public const string LargeStagePath = StageDir + "/LargeStage.prefab";
+    public const string CampaignDir = StageDir + "/Campaign";
+    public const string CoinPath = PrefabDir + "/Coin.prefab";
+    public const string ExitPipePath = PrefabDir + "/ExitPipe.prefab";
+    public const string WallBlockPath = PrefabDir + "/UndergroundBlock.prefab";
+    public const string BonusRoomPath = PrefabDir + "/BonusRoom.prefab";
+    public static string CampaignStagePath(string name) => $"{CampaignDir}/Stage {name}.prefab";
 
     [MenuItem("Tools/MARIO/Build Game Content")]
     public static void Run()
@@ -65,6 +71,10 @@ public static class GameContentSetup
         var standard = BuildStandardStage(m, coinPop, pickups, goomba, koopa, bulletBill);
         var compact = BuildCompactStage(m, coinPop, pickups);
         var large = BuildLargeStage(m, coinPop, pickups, goomba, koopa, bulletBill);
+        var bonusRoom = BuildBonusRoom(m);
+        var campaign = new System.Collections.Generic.List<GameObject>();
+        foreach (var design in StageDesigns.Campaign)
+            campaign.Add(BuildCampaignStage(design, m, coinPop, pickups, goomba, koopa, bulletBill));
 
         var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
         var levelGenerator = Object.FindAnyObjectByType<LevelGenerator>();
@@ -78,6 +88,16 @@ public static class GameContentSetup
         templates.GetArrayElementAtIndex(0).objectReferenceValue = large;
         templates.GetArrayElementAtIndex(1).objectReferenceValue = standard;
         templates.GetArrayElementAtIndex(2).objectReferenceValue = compact;
+        var campaignProp = lg.FindProperty("campaignStages");
+        campaignProp.arraySize = campaign.Count;
+        for (int i = 0; i < campaign.Count; i++) campaignProp.GetArrayElementAtIndex(i).objectReferenceValue = campaign[i];
+        lg.FindProperty("bonusRoomPrefab").objectReferenceValue = bonusRoom;
+        // Search the whole scanned room (out to 6 m), not just in front of the player:
+        // full-size (4 m deep) stages need their centre 2.3 m+ away.
+        var distances = lg.FindProperty("searchDistances");
+        var wanted = new[] { 0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f, 6f };
+        distances.arraySize = wanted.Length;
+        for (int i = 0; i < wanted.Length; i++) distances.GetArrayElementAtIndex(i).floatValue = wanted[i];
         lg.ApplyModifiedPropertiesWithoutUndo();
 
         var er = new SerializedObject(resolver);
@@ -88,10 +108,10 @@ public static class GameContentSetup
         StageLoopSetup.AddListenerOnce(gameState.OnGameRestarted, levelGenerator.RestartLoop);
         EditorUtility.SetDirty(gameState);
 
-        // Design: scan a generous area (12 m², Oliver 2026-09-30) so larger layouts have room;
-        // a smaller room is accepted once its floor stops growing (at least 3 m², enough for Standard).
+        // The player scans the room and confirms with a jump (Oliver 2026-09-30); 12 m² is the
+        // HUD's guidance for a full-size stage, and at least 3 m² (Standard's worth) is needed to confirm.
         var ss = new SerializedObject(session);
-        ss.FindProperty("requiredFloorArea").floatValue = 12f;
+        ss.FindProperty("fullSizeFloorArea").floatValue = 12f;
         ss.FindProperty("minFloorArea").floatValue = 3f;
         ss.ApplyModifiedPropertiesWithoutUndo();
 
@@ -108,7 +128,7 @@ public static class GameContentSetup
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log("[GameContentSetup] Done. Built CoinPop, FireFlower, OneUp, Goomba, Koopa, BulletBill, Fireball, LargeStage, StandardStage, CompactStage; scene wired.");
+        Debug.Log($"[GameContentSetup] Done. Built CoinPop, FireFlower, OneUp, Goomba, Koopa, BulletBill, Fireball, LargeStage, StandardStage, CompactStage, BonusRoom, {StageDesigns.Campaign.Length} campaign stages; scene wired.");
     }
 
     // ---- element prefabs ----
@@ -356,22 +376,103 @@ public static class GameContentSetup
         so.ApplyModifiedPropertiesWithoutUndo();
 
         Cannon(root.transform, new Vector3(0.8f, 0f, 1.35f), m, bulletBill);
-        WarpPipe(root.transform, new Vector3(-0.6f, 0f, -0.2f), m); // near half: a shortcut past the rest
+        WarpPipe(root.transform, new Vector3(-0.6f, 0f, -0.2f), m); // near half: a detour to the bonus room early on
         Goal(root.transform, new Vector3(0f, 0f, 1.3f), m);
         return Save(root, LargeStagePath);
     }
 
     /// <summary>A short green pipe on the floor; squat on it to warp (appears on some stages only).</summary>
-    /// <summary>A short green pipe with a highlight stripe and a wider lip; squat on it to warp (appears on some stages only).</summary>
-    private static void WarpPipe(Transform parent, Vector3 localPos, Mats m)
+    /// <summary>A short green pipe with a highlight stripe and a wider lip; squat on it to warp (appearChance: how often it's there).</summary>
+    private static GameObject WarpPipe(Transform parent, Vector3 localPos, Mats m, float appearChance = 0.5f, bool isExit = false)
     {
-        var root = new GameObject("WarpPipe");
-        root.transform.SetParent(parent, false);
+        var root = new GameObject(isExit ? "ExitPipe" : "WarpPipe");
+        if (parent != null) root.transform.SetParent(parent, false);
         root.transform.localPosition = localPos;
-        root.AddComponent<WarpPipe>();
+        var pipe = root.AddComponent<WarpPipe>();
+        var so = new SerializedObject(pipe);
+        so.FindProperty("appearChance").floatValue = appearChance;
+        so.FindProperty("isExit").boolValue = isExit;
+        so.ApplyModifiedPropertiesWithoutUndo();
         Visual(PrimitiveType.Cylinder, "Body", root.transform, new Vector3(0f, 0.115f, 0f), new Vector3(0.36f, 0.115f, 0.36f), m.Pipe);
         Visual(PrimitiveType.Cylinder, "Lip", root.transform, new Vector3(0f, 0.26f, 0f), new Vector3(0.46f, 0.045f, 0.46f), m.Pipe);
         Visual(PrimitiveType.Cylinder, "Opening", root.transform, new Vector3(0f, 0.306f, 0f), new Vector3(0.36f, 0.002f, 0.36f), m.CannonBore);
+        return root;
+    }
+
+    // ---- coins, bonus room, campaign ----
+
+    /// <summary>A floating coin to walk through: spinning gold disc at waist height.</summary>
+    private static GameObject CoinObject(Transform parent, Vector3 localPos, Mats m)
+    {
+        var root = new GameObject("Coin");
+        if (parent != null) root.transform.SetParent(parent, false);
+        root.transform.localPosition = localPos;
+        Set(root.AddComponent<Coin>(), "collectEffect", Effect(SparklePath));
+        var eh = root.AddComponent<EyeHeightPlacement>();
+        SetFloat(eh, "fractionOfEyes", 0.6f); // waist height, scaled to the player
+        SetFloat(eh, "minHeightAboveFloor", 0.4f);
+        Visual(PrimitiveType.Cylinder, "Rim", root.transform, Vector3.zero, new Vector3(0.13f, 0.007f, 0.13f), m.CoinRim, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "Face", root.transform, Vector3.zero, new Vector3(0.11f, 0.009f, 0.11f), m.Coin, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cube, "Bar", root.transform, Vector3.zero, new Vector3(0.022f, 0.065f, 0.026f), m.CoinShine);
+        return root;
+    }
+
+    private static void Spawner(Transform parent, Vector3 localPos, string sequence, int count, GameObject goomba, GameObject koopa)
+    {
+        var spawner = new GameObject("EnemySpawner");
+        spawner.transform.SetParent(parent, false);
+        spawner.transform.localPosition = localPos;
+        spawner.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // face the player's side
+        var so = new SerializedObject(spawner.AddComponent<EnemySpawner>());
+        so.FindProperty("totalCount").intValue = count;
+        var seq = so.FindProperty("enemyPrefabs");
+        seq.arraySize = sequence.Length;
+        for (int i = 0; i < sequence.Length; i++)
+            seq.GetArrayElementAtIndex(i).objectReferenceValue = sequence[i] == 'K' ? koopa.GetComponent<Koopa>() : goomba.GetComponent<Goomba>();
+        so.ApplyModifiedPropertiesWithoutUndo();
+    }
+
+    /// <summary>A campaign stage from its StageDesigns entry.</summary>
+    private static GameObject BuildCampaignStage(StageDesigns.Design design, Mats m, GameObject coinPop, Pickups pickups, GameObject goomba, GameObject koopa, GameObject bulletBill)
+    {
+        Directory.CreateDirectory(CampaignDir);
+        var root = StageRoot($"Stage {design.Name}", design.Width, design.Depth, 2.0f);
+        int n = 0;
+        foreach (var piece in design.Pieces)
+        {
+            var at = new Vector3(piece.At.x, 0f, piece.At.y);
+            switch (piece.Kind)
+            {
+                case StageDesigns.Kind.Question: QuestionBlock(root.transform, at + Vector3.up * 1.8f, m, coinPop, pickups, $"QuestionBlock{n++}"); break;
+                case StageDesigns.Kind.Brick: Brick(root.transform, at + Vector3.up * 1.2f, m, coinPop, $"BrickBlock{n++}"); break;
+                case StageDesigns.Kind.Coin: CoinObject(root.transform, at, m); break;
+                case StageDesigns.Kind.Spawner: Spawner(root.transform, at, piece.Enemies, piece.Count, goomba, koopa); break;
+                case StageDesigns.Kind.Cannon: Cannon(root.transform, at, m, bulletBill); break;
+                case StageDesigns.Kind.Pipe: WarpPipe(root.transform, at, m, piece.Chance); break;
+                case StageDesigns.Kind.Flag: Goal(root.transform, at, m); break;
+            }
+        }
+        return Save(root, CampaignStagePath(design.Name));
+    }
+
+    /// <summary>The bonus room and the pieces it lays out at runtime (coin, exit pipe, wall block).</summary>
+    private static GameObject BuildBonusRoom(Mats m)
+    {
+        var coin = Save(CoinObject(null, Vector3.zero, m), CoinPath);
+        var exit = Save(WarpPipe(null, Vector3.zero, m, 1f, isExit: true), ExitPipePath);
+        var wallRoot = new GameObject("UndergroundBlock");
+        Visual(PrimitiveType.Cube, "Block", wallRoot.transform, Vector3.zero, Vector3.one * 0.25f, m.UndergroundBrick)
+            .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+        var wall = Save(wallRoot, WallBlockPath);
+
+        var root = new GameObject("BonusRoom");
+        var so = new SerializedObject(root.AddComponent<BonusRoom>());
+        so.FindProperty("coinPrefab").objectReferenceValue = coin.GetComponent<Coin>();
+        so.FindProperty("exitPipePrefab").objectReferenceValue = exit.GetComponent<WarpPipe>();
+        so.FindProperty("wallBlockPrefab").objectReferenceValue = wall;
+        so.FindProperty("floorMaterial").objectReferenceValue = m.UndergroundFloor;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        return Save(root, BonusRoomPath);
     }
 
     private static GameObject BuildCompactStage(Mats m, GameObject coinPop, Pickups pickups)
@@ -402,8 +503,8 @@ public static class GameContentSetup
         Set(qb, "oneUpPrefab", pickups.OneUp.GetComponent<Pickup>());
         Set(qb, "spentMaterial", m.Spent);
         var eh = block.AddComponent<EyeHeightPlacement>();
-        SetFloat(eh, "offsetFromEyes", 0.3f);
-        SetFloat(eh, "minHeightAboveFloor", 1.2f);
+        SetFloat(eh, "offsetFromEyes", 0.35f); // bottom clears the head; reached by jumping
+        SetFloat(eh, "minHeightAboveFloor", 1.1f);
     }
 
     // ---- effects (Burst variants) ----
@@ -473,11 +574,11 @@ public static class GameContentSetup
         Set(bb, "coinPopPrefab", coinPop);
         Set(bb, "debrisPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(BrickDebrisPath));
         var eh = brick.AddComponent<EyeHeightPlacement>();
-        SetFloat(eh, "offsetFromEyes", -0.35f);
-        SetFloat(eh, "minHeightAboveFloor", 0.6f);
+        SetFloat(eh, "fractionOfEyes", 0.78f); // chest height, scaled to the player
+        SetFloat(eh, "minHeightAboveFloor", 0.5f);
     }
 
-    /// <summary>Goal flagpole: block base, tall green pole topped with a ball, white pennant with a green emblem.</summary>
+    /// <summary>Goal flagpole: block base, a tall (1.8 m) green pole topped with a ball, a large white pennant with a green emblem — prominent across a room.</summary>
     private static void Goal(Transform parent, Vector3 localPos, Mats m)
     {
         var goal = new GameObject("Goal");
@@ -485,20 +586,22 @@ public static class GameContentSetup
         goal.transform.localPosition = localPos;
         var sg = goal.AddComponent<StageGoal>();
         SetFloat(sg, "reachRadius", 0.35f);
-        const float poleHeight = 1.0f;
+        const float poleHeight = 1.8f; // prominent across a room
+        const float flagScale = 1.6f;
         Visual(PrimitiveType.Cube, "Base", goal.transform, new Vector3(0f, 0.06f, 0f), Vector3.one * 0.12f, m.Spent)
             .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
-        Visual(PrimitiveType.Cylinder, "Pole", goal.transform, new Vector3(0f, 0.12f + poleHeight / 2f, 0f), new Vector3(0.022f, poleHeight / 2f, 0.022f), m.Pole);
-        Visual(PrimitiveType.Sphere, "Ball", goal.transform, new Vector3(0f, 0.12f + poleHeight + 0.02f, 0f), Vector3.one * 0.055f, m.PoleBall);
+        Visual(PrimitiveType.Cylinder, "Pole", goal.transform, new Vector3(0f, 0.12f + poleHeight / 2f, 0f), new Vector3(0.03f, poleHeight / 2f, 0.03f), m.Pole);
+        Visual(PrimitiveType.Sphere, "Ball", goal.transform, new Vector3(0f, 0.12f + poleHeight + 0.03f, 0f), Vector3.one * 0.08f, m.PoleBall);
         // The flag and its emblems move together: it slides down the pole when the goal is reached.
-        var pennant = Group("Pennant", goal.transform, new Vector3(0f, 0.12f + poleHeight - 0.1f, 0f));
+        var pennant = Group("Pennant", goal.transform, new Vector3(0f, 0.12f + poleHeight - 0.15f, 0f));
+        pennant.localScale = Vector3.one * flagScale;
         var flag = Visual(PrimitiveType.Quad, "Flag", pennant, Vector3.zero, Vector3.one, m.Flag);
         flag.GetComponent<MeshFilter>().sharedMesh = PennantMesh();
         foreach (int face in new[] { -1, 1 })
             Visual(PrimitiveType.Cylinder, "Emblem", pennant, new Vector3(0.075f, 0f, 0.004f * face), new Vector3(0.05f, 0.002f, 0.05f), m.PoleBall, new Vector3(90f, 0f, 0f));
         var gso = new SerializedObject(sg);
         gso.FindProperty("pennant").objectReferenceValue = pennant;
-        gso.FindProperty("pennantBottom").floatValue = 0.25f;
+        gso.FindProperty("pennantBottom").floatValue = 0.35f;
         gso.FindProperty("celebrationEffect").objectReferenceValue = Effect(ConfettiPath);
         gso.ApplyModifiedPropertiesWithoutUndo();
     }
@@ -655,6 +758,8 @@ public static class GameContentSetup
         public readonly Material ConfettiRed = Mat("ConfettiRed", new Color(0.95f, 0.2f, 0.2f), emission: new Color(0.2f, 0.02f, 0.02f));
         public readonly Material ConfettiGreen = Mat("ConfettiGreen", new Color(0.2f, 0.8f, 0.3f), emission: new Color(0.02f, 0.15f, 0.04f));
         public readonly Material ConfettiBlue = Mat("ConfettiBlue", new Color(0.25f, 0.5f, 1f), emission: new Color(0.03f, 0.08f, 0.2f));
+        public readonly Material UndergroundBrick = Mat("UndergroundBrick", Color.white, texture: PixelArt.UndergroundBrick(), smoothness: 0.1f);
+        public readonly Material UndergroundFloor = Mat("UndergroundFloor", Color.white, texture: PixelArt.UndergroundFloor(), smoothness: 0.1f);
         public readonly Material CannonSteel = Mat("CannonSteel", new Color(0.32f, 0.34f, 0.38f));
         public readonly Material CannonBarrel = Mat("CannonBarrel", new Color(0.5f, 0.52f, 0.56f));
         public readonly Material CannonRim = Mat("CannonRim", new Color(0.82f, 0.84f, 0.88f));

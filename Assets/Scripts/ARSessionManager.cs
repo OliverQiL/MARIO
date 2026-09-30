@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Events;
+using UnityEngine.Serialization;
 using UnityEngine.XR.ARFoundation;
 using UnityEngine.XR.ARSubsystems;
 
@@ -10,8 +11,12 @@ using UnityEngine.XR.ARSubsystems;
 /// half).
 ///
 /// Scan-phase orchestration: tracks total scanned floor area from AR
-/// Foundation's plane detection and signals when enough floor space has
-/// been scanned to place a stage. Only real floor counts — see IsFloorPlane:
+/// Foundation's plane detection. The player decides when the scan is done:
+/// they walk round scanning all the floor they want to play on, then confirm
+/// with a jump (touch-free, like restarting after game over), which completes
+/// the scan once at least minFloorArea has been found. fullSizeFloorArea is
+/// only guidance for the HUD (roughly what a full-size stage likes).
+/// Only real floor counts — see IsFloorPlane:
 /// ARKit's semantic classification is trusted when present (Floor counts;
 /// Table/Seat/etc. never do), and still-unclassified upward-facing planes
 /// count only if they sit at the floor height (the lowest sizeable
@@ -31,12 +36,16 @@ public class ARSessionManager : MonoBehaviour
     [SerializeField] private ARPlaneManager planeManager;
 
     [Header("Scan Settings")]
-    [Tooltip("Total horizontal floor area (in square metres) required before scanning is considered complete.")]
-    [SerializeField] private float requiredFloorArea = 4.0f;
-    [Tooltip("Small-room fallback: accept at least this much floor (m²) once it has stopped growing for plateauSeconds.")]
+    [Tooltip("Guidance only (the HUD's meter): about how much floor a full-size stage likes. The player ends the scan themselves.")]
+    [FormerlySerializedAs("requiredFloorArea")]
+    [SerializeField] private float fullSizeFloorArea = 12f;
+    [Tooltip("The scan can only be confirmed once at least this much floor (m²) has been found (enough for the smallest stage).")]
     [SerializeField] private float minFloorArea = 3.0f;
-    [Tooltip("Seconds without meaningful growth (0.1 m²) before the small-room fallback applies.")]
-    [SerializeField] private float plateauSeconds = 15f;
+    [Tooltip("Confirming the scan: a jump with at least this confidence.")]
+    [SerializeField] private EventResolver eventResolver;
+    [SerializeField] private float confirmMinConfidence = 0.6f;
+    [Tooltip("The camera used to measure the player's eye height while they scan (defaults to Camera.main).")]
+    [SerializeField] private Camera playerCamera;
 
     [Header("Floor Detection")]
     [Tooltip("Unclassified planes count as floor only within this height (metres) of the detected floor level.")]
@@ -61,11 +70,12 @@ public class ARSessionManager : MonoBehaviour
     private float _excludedArea;
     private float _lastLoggedArea;
     private bool _scanComplete;
-    private float _plateauArea;
-    private float _lastGrowthAt;
 
     public float TotalScannedArea => _totalScannedArea;
-    public float RequiredFloorArea => requiredFloorArea;
+    /// <summary>Guidance for the HUD: roughly the floor a full-size stage likes.</summary>
+    public float FullSizeFloorArea => fullSizeFloorArea;
+    /// <summary>Enough floor found for the player to confirm the scan.</summary>
+    public bool CanConfirmScan => !_scanComplete && _totalScannedArea >= minFloorArea;
     /// <summary>The small-room fallback's minimum: at least this much floor finishes the scan once it stops growing.</summary>
     public float MinFloorArea => minFloorArea;
     public bool IsScanComplete => _scanComplete;
@@ -79,8 +89,13 @@ public class ARSessionManager : MonoBehaviour
     public bool IsTracking { get; private set; } = true;
     public NotTrackingReason LastNotTrackingReason { get; private set; } = NotTrackingReason.None;
 
+    // Camera heights above the floor sampled while scanning; their median calibrates PlayerBody.
+    private readonly List<float> _eyeSamples = new();
+    private float _nextEyeSampleAt;
+
     private void Awake()
     {
+        PlayerBody.Reset(); // statics survive between Play sessions (no domain reload)
         if (planeManager == null)
         {
             planeManager = GetComponent<ARPlaneManager>();
@@ -90,38 +105,61 @@ public class ARSessionManager : MonoBehaviour
     private void OnEnable()
     {
         planeManager.trackablesChanged.AddListener(OnTrackablesChanged);
+        if (eventResolver == null) eventResolver = FindAnyObjectByType<EventResolver>();
+        if (eventResolver != null) eventResolver.OnEventProcessed += HandleEventProcessed;
     }
 
     private void OnDisable()
     {
         planeManager.trackablesChanged.RemoveListener(OnTrackablesChanged);
+        if (eventResolver != null) eventResolver.OnEventProcessed -= HandleEventProcessed;
     }
 
     private void Update()
     {
         PollTrackingState();
-        CheckScanPlateau();
+        SampleEyeHeight();
+    }
+
+    /// <summary>While scanning (and tracking, with the floor known), samples the camera's height above the floor 4× a second.</summary>
+    private void SampleEyeHeight()
+    {
+        if (_scanComplete || !IsTracking || FloorHeight == null || Time.time < _nextEyeSampleAt) return;
+        if (playerCamera == null) playerCamera = Camera.main;
+        if (playerCamera == null) return;
+        _nextEyeSampleAt = Time.time + 0.25f;
+        _eyeSamples.Add(playerCamera.transform.position.y - FloorHeight.Value);
+    }
+
+    /// <summary>The median sampled height becomes the player's eye height (robust to crouching or lowering the phone now and then).</summary>
+    private void CalibrateEyeHeight()
+    {
+        if (_eyeSamples.Count == 0) return;
+        _eyeSamples.Sort();
+        float median = _eyeSamples[_eyeSamples.Count / 2];
+        PlayerBody.Calibrate(median);
+        Debug.Log($"[ARSessionManager] Player eye height {PlayerBody.EyeHeight:F2} m (median of {_eyeSamples.Count} samples, raw {median:F2} m).");
     }
 
     /// <summary>
-    /// A room smaller than requiredFloorArea would otherwise scan forever: once
-    /// the floor found stops growing and is at least minFloorArea, accept it
-    /// (LevelGenerator then falls back to a template that fits).
+    /// Ends the scan: the player has scanned all the floor they want to play on.
+    /// Only once at least minFloorArea has been found. Returns whether it completed.
     /// </summary>
-    private void CheckScanPlateau()
+    public bool ConfirmScan()
     {
-        if (_scanComplete) return;
-        if (_totalScannedArea - _plateauArea >= 0.1f)
-        {
-            _plateauArea = _totalScannedArea;
-            _lastGrowthAt = Time.time;
-            return;
-        }
-        if (_totalScannedArea < minFloorArea || Time.time - _lastGrowthAt < plateauSeconds) return;
-
+        if (!CanConfirmScan) return false;
         _scanComplete = true;
-        Debug.Log($"[ARSessionManager] Scan complete — floor stopped growing at {_totalScannedArea:F2} m² (target {requiredFloorArea:F2}); using what's there.");
+        CalibrateEyeHeight();
+        Debug.Log($"[ARSessionManager] Scan confirmed by the player — {_totalScannedArea:F2} m² of floor ({_excludedArea:F2} m² of non-floor ignored).");
         OnScanComplete?.Invoke();
+        return true;
+    }
+
+    /// <summary>A jump while scanning confirms the scan (every action is otherwise dropped at Gate 1 until then).</summary>
+    private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
+    {
+        if (_scanComplete || evt.actionLabel != "jump" || evt.confidence < confirmMinConfidence) return;
+        ConfirmScan();
     }
 
     // ---- Tracking-state monitoring & relocalisation (Step 4, second half) ----
@@ -238,14 +276,7 @@ public class ARSessionManager : MonoBehaviour
         if (_totalScannedArea - _lastLoggedArea >= logAreaIncrement)
         {
             _lastLoggedArea = _totalScannedArea;
-            Debug.Log($"[ARSessionManager] Scanned floor area: {_totalScannedArea:F2} / {requiredFloorArea:F2} m² ({_excludedArea:F2} m² of non-floor surfaces ignored)");
-        }
-
-        if (_totalScannedArea >= requiredFloorArea)
-        {
-            _scanComplete = true;
-            Debug.Log($"[ARSessionManager] Scan complete — enough floor area found ({_totalScannedArea:F2} m²).");
-            OnScanComplete?.Invoke();
+            Debug.Log($"[ARSessionManager] Scanned floor area: {_totalScannedArea:F2} m² ({_excludedArea:F2} m² of non-floor surfaces ignored)");
         }
     }
 }

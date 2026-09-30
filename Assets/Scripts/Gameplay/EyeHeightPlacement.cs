@@ -1,25 +1,35 @@
 using UnityEngine;
 
 /// <summary>
-/// Sets this object's height relative to the player's eye height (the AR
-/// camera) when the stage appears, so "overhead" and "chest height" mean the
-/// same thing for every player. The stage root sits on the floor.
+/// Sets this object's height from the player's body when the stage appears,
+/// so pieces suit a short or a tall player: the eye height calibrated during
+/// the scan (PlayerBody), or, before calibration, the camera's height now.
+/// - fractionOfEyes > 0: a height proportional to the body, e.g. coins at
+///   waist height (0.6) and bricks at chest height (0.78).
+/// - otherwise offsetFromEyes above/below eye level, e.g. ? blocks at +0.35,
+///   so their bottom clears the player's head and they're reached by jumping.
+/// The stage root sits on the floor.
 /// </summary>
 public class EyeHeightPlacement : MonoBehaviour
 {
-    [Tooltip("Metres relative to eye height: +0.3 = overhead block, -0.35 = chest height.")]
+    [Tooltip("Metres relative to eye height, used when Fraction Of Eyes is 0: +0.35 = overhead block.")]
     [SerializeField] private float offsetFromEyes = 0.3f;
-    [Tooltip("Never lower than this above the floor (metres), e.g. for a seated or short player.")]
-    [SerializeField] private float minHeightAboveFloor = 0.6f;
+    [Tooltip("If > 0: height = this fraction of eye height (0.6 = waist, 0.78 = chest), so it scales with the player.")]
+    [SerializeField] private float fractionOfEyes;
+    [Tooltip("Never lower than this above the floor (metres).")]
+    [SerializeField] private float minHeightAboveFloor = 0.3f;
 
-    private void Start()
+    private void Start() => Place();
+
+    /// <summary>Public so headless tests can place with a chosen eye height.</summary>
+    public void Place()
     {
         var cam = Camera.main;
-        if (cam == null) return;
-
         float floorY = transform.parent != null ? transform.parent.position.y : 0f;
-        float y = Mathf.Max(cam.transform.position.y + offsetFromEyes, floorY + minHeightAboveFloor);
+        float live = cam != null ? cam.transform.position.y - floorY : 1.55f;
+        float eyes = PlayerBody.EyeHeightOr(live);
+        float above = fractionOfEyes > 0f ? eyes * fractionOfEyes : eyes + offsetFromEyes;
         var p = transform.position;
-        transform.position = new Vector3(p.x, y, p.z);
+        transform.position = new Vector3(p.x, floorY + Mathf.Max(above, minHeightAboveFloor), p.z);
     }
 }

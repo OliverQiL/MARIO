@@ -9,7 +9,6 @@ using UnityEngine;
 /// </summary>
 public class QuestionBlock : InteractableBase
 {
-    [SerializeField] private int coinValue = 100;
     [SerializeField] private GameObject coinPopPrefab;
     [SerializeField] private Pickup fireFlowerPrefab;
     [SerializeField] private Pickup oneUpPrefab;
@@ -66,7 +65,7 @@ public class QuestionBlock : InteractableBase
         }
         else
         {
-            gameState.AddScore(coinValue);
+            gameState.AddCoin();
             AudioManager.Play(Sfx.Coin);
             if (coinPopPrefab != null) Instantiate(coinPopPrefab, transform.position + Vector3.up * 0.15f, Quaternion.identity);
         }

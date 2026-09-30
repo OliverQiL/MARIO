@@ -279,7 +279,7 @@ Day-to-day gameplay testing happens in the Editor: open `SampleScene` and press 
   - Held continuous actions (stand, walk, stomp) repeat every 0.1 s, like classifier windows.
   - Discrete actions (jump, squat, fireball) fire once per press.
   - The component disables itself outside the Editor and uses the Input System package.
-- **Simulated room:** `LivingRoom_20ftx18.5ft`, from Unity's official XR Simulation sample environments.
+- **Simulated room:** `Museum_69ftx48ft` since 2026-09-30, chosen for its open floor; it was `LivingRoom_20ftx18.5ft`, which was too cramped for full-size stages. Both come from Unity's official XR Simulation sample environments.
   - **Each machine runs `tools/fetch_sim_environments.sh` once, with Unity closed.** It downloads the environments into `ContentPackages/`, imports them into `Assets/UnityXRContent/` (both gitignored, ~40 MB), and runs `SimulationSetup`.
   - To switch rooms: **Tools ▸ MARIO ▸ List Simulation Environments**, then `SimulationSetup.Run -environment NAME`.
 - **Floor rule:** simulation doesn't classify planes (`supportsClassification` is false), so `IsFloorPlane` uses the height fallback there. ARKit's Floor labels are used on devices.
@@ -439,6 +439,56 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
   - the checkpoint debug sphere (`LevelGenerator.debugMarkerPrefab` cleared)
   - the LiDAR readout (`LidarDebugHUD.show` = false)
 - **Tests:** gameplay 62/62; the simulation and network smoke tests pass. `SimulationSmokeTest` doesn't move the camera, so it finds no planes and doesn't exercise `ScanPlaneVisual`; the playtest covers that.
+
+### Maps and layouts — ✅ Editor-playtested (2026-09-30)
+The design is in `Docs/GAME_DESIGN.md`, "Maps and layouts".
+- **Campaign:**
+  - `StageDesigns.cs` (editor) holds four data designs, 1-1 to 1-4, each 2.5 × 4 m.
+  - `GameContentSetup.BuildCampaignStage` turns each into `Assets/Stages/Campaign/Stage 1-N.prefab`.
+  - `LevelGenerator.campaignStages` tries `CampaignStageFor(stage)` first, then the `stageTemplates` fallbacks, largest first.
+  - `searchDistances` now reaches 3 m.
+  - **Compression, after the first playtest:** in the simulated living room the 2.5 × 4 m campaign stages never fitted (600+ too-close and 250+ partly-off-floor rejections per search), so every stage fell back to Standard or Compact. `LevelGenerator` now tries the campaign stage at `campaignScales` {1, 0.85, 0.7, 0.55} first. Placement checks scale the footprint and goal via `_searchScale`, and `CompressLayout` scales the placed pieces' x/z and the footprint.
+  - **Simulated room → Museum (2026-09-30).**
+    - In LivingRoom_20ftx18.5ft, placement failed for lack of open floor. Oliver's session placed only Compact and Standard (958–1498 too-close and 610–855 off-floor rejections per search), and an automated scan there fitted 1-1 only at 55 %.
+    - `SimulationSetup`'s default is now **Museum_69ftx48ft**, a round hall about 18 m across with mostly open floor.
+    - Top-down renders were used to compare the Museum, Office_36ft, Backyard, Kitchen and Bedroom.
+  - **Waiting for a bigger fit** (`biggerFitWaitSeconds`, `IsSeekingSpace`) was briefly added, then **removed** when the scan became player-confirmed (below).
+  - **Scan confirmed by the player (Oliver's idea, 2026-09-30).**
+    - `ARSessionManager` no longer completes on a fixed area: `requiredFloorArea` became the guidance-only `fullSizeFloorArea` (12 m², via FormerlySerializedAs), and the plateau fallback is gone.
+    - It listens to `EventResolver.OnEventProcessed`: a jump (confidence ≥ 0.6) while scanning calls `ConfirmScan()`, allowed once `CanConfirmScan` (≥ `minFloorArea`, 3 m²).
+    - The HUD scan panel shows the square metres found and a meter against 12 m²; once confirmable, "SCANNED EVERYTHING? JUMP TO START" blinks.
+    - `LevelGenerator.searchDistances` reaches 6 m.
+    - `SimulationSmokeTest -scan` confirms with a jump after 25 s of sweeping.
+  - **Height-relative pieces (Oliver's request):**
+    - `ARSessionManager` samples the camera height above `FloorHeight` during the scan, and `ConfirmScan` stores the median in `PlayerBody.EyeHeight` (clamped 0.9–2.1).
+    - `EyeHeightPlacement` uses it (the live camera before calibration), with `fractionOfEyes` for coins (0.6) and bricks (0.78) and an offset for ? blocks (+0.35).
+    - New gameplay checks cover eyes at 1.2 and 1.85 m, head clearance and the clamp.
+    - The flag is now 1.8 m, with a pennant ×1.6.
+  - **Floating stage (Museum):**
+    - **Cause:** the Museum's simulated camera starts at 2.55 m, and pieces are placed relative to eye height, so ? blocks sat at about 2.85 m and coins at about 2 m above the floor.
+    - **Fix 1:** `SimulationSetup.SetStartingEyeHeight` sets the chosen room's `m_CameraStartingPose` y to 1.55 m on every setup (the imported rooms are gitignored).
+    - **Fix 2:** `EyeHeightPlacement` clamps the measured eye height to 1.0–1.9 m above the floor.
+    - **Batch-mode quirk:** XR Origin's `CameraYOffset` (1.1176, tracking mode Device) lifts the camera but not the trackables, so the camera reads 2.67 m over a floor at 0. In the interactive Editor both are offset (floor 1.12). `-scan` logs the heights.
+  - **`SimulationSmokeTest -scan`** steers the simulated camera (by reflection on `SimulationCameraPoseProvider.UpdatePose`) until a stage is placed, and passes if it's the campaign's 1-1.
+    - In the Museum it's placed at the full 2.5 × 4 m after about 14 s (two runs out of two).
+    - The room check now finds AR Foundation's internal `SimulationEnvironment` component, so it's no longer hard-coded to "LivingRoom".
+  - `GameStateManager.StageName` / `NameOf` give the "1-2" names, with `StagesPerWorld` = 4.
+- **Coins:** `Coin` (walk through, 0.3 m) calls `GameStateManager.AddCoin`: +100 score, `Coins` +1, and at 100 a 1-Up with the counter reset. A ? block's coin uses `AddCoin` too. The HUD has a COINS column (pixel coin icon ×NN).
+- **Warp pipes → bonus room:**
+  - `WarpPipe.OnEntered` (static event), with an `isExit` flag.
+  - `LevelGenerator` hides `CurrentStage` (SetActive false) and instantiates `BonusRoom` at the stage's pose, then calls `Build(footprint.width, footprint.depth)`: a tiled underground floor, a wall of `UndergroundBlock`s, a grid of `Coin`s and an `ExitPipe`.
+  - Exiting destroys the room and reactivates the stage. `TearDownStage` also removes a live bonus room.
+  - The HUD banner reads "BONUS ROOM - SQUAT ON THE PIPE TO GO BACK".
+  - The pass-3 stage-skip (`QueueWarp`) is gone.
+- **`ArtPreview`** renders `stage_1-1.png` to `stage_1-4.png` and `bonus_room.png`.
+- **Tests:** `GameplaySmokeTest` passes 69/69, with new checks for:
+  - pipe enter and exit events, and that a pipe works once
+  - the bonus room layout (coin count, exit pipe)
+  - coin collection and the 100-coin 1-Up
+  - stage names, and the campaign's order and looping
+  - every campaign stage's size, flag and coins
+
+  The simulation and network smoke tests pass too. The bonus-room swap itself, which runs in `LevelGenerator`, needs AR and so is covered by the playtest.
 
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):

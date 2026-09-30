@@ -87,8 +87,43 @@ public static class ArtPreview
         Shoot(Path.Combine(outDir, "closeup.png"), new Vector3(0f, 0.2f, -0.6f), new Vector3(0f, 0.12f, 0f), 1400, 700);
         Object.DestroyImmediate(close.gameObject);
 
+        RenderStages(outDir);
         RenderHud(outDir);
-        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, hud_scan.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
+        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, stage_*.png, bonus_room.png, hud_scan.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
+    }
+
+    /// <summary>
+    /// Each campaign stage, and the bonus room laid out on a full-size footprint,
+    /// seen from behind the start at a high angle, with heights set as for a
+    /// player whose eyes are at 1.5 m.
+    /// </summary>
+    private static void RenderStages(string outDir)
+    {
+        foreach (var design in StageDesigns.Campaign)
+        {
+            EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+            var stage = Object.Instantiate(Load(GameContentSetup.CampaignStagePath(design.Name)));
+            ShootLayout(stage, Path.Combine(outDir, $"stage_{design.Name}.png"));
+        }
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var room = Object.Instantiate(Load(GameContentSetup.BonusRoomPath));
+        room.GetComponent<BonusRoom>().Build(2.5f, 4f);
+        ShootLayout(room, Path.Combine(outDir, "bonus_room.png"));
+    }
+
+    private static void ShootLayout(GameObject layout, string path)
+    {
+        var eyes = Camera.main; // the default scene's camera stands in for the player's eyes
+        eyes.transform.position = new Vector3(0f, 1.5f, -2.6f);
+        foreach (var eh in layout.GetComponentsInChildren<EyeHeightPlacement>())
+            typeof(EyeHeightPlacement).GetMethod("Start", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(eh, null);
+        // A floor to stand the layout on.
+        var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        floor.transform.localScale = new Vector3(0.4f, 1f, 0.6f);
+        var floorRenderer = floor.GetComponent<Renderer>();
+        floorRenderer.sharedMaterial = new Material(floorRenderer.sharedMaterial) { color = new Color(0.72f, 0.66f, 0.58f) }; // a copy: never edit the built-in default
+        Shoot(path, new Vector3(0f, 3.4f, -3.9f), new Vector3(0f, 0.3f, 0.2f), 1600, 1200);
+        Object.DestroyImmediate(floor);
     }
 
     /// <summary>
