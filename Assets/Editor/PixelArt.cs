@@ -1,0 +1,157 @@
+using System.Collections.Generic;
+using System.IO;
+using UnityEditor;
+using UnityEngine;
+
+/// <summary>
+/// Pixel-art textures for game content, drawn as data: each texture is rows
+/// of palette characters (top row first). Saved as point-filtered PNGs so the
+/// pixels stay crisp in AR. Original designs in the style of the classic
+/// blocks; used by GameContentSetup.
+/// </summary>
+public static class PixelArt
+{
+    private const string TextureDir = "Assets/Textures";
+
+    // L light bevel, S shadow bevel, Y gold, R rivet, Q "?" glyph, G glyph shadow
+    private static readonly string[] QuestionRows =
+    {
+        "LLLLLLLLLLLLLLLS",
+        "LYYYYYYYYYYYYYYS",
+        "LYRYYYYYYYYYYRYS",
+        "LYYYYYQQQQYYYYYS",
+        "LYYYYQQGGQQYYYYS",
+        "LYYYYQQGYQQGYYYS",
+        "LYYYYYGGYQQGYYYS",
+        "LYYYYYYYQQGGYYYS",
+        "LYYYYYYQQGGYYYYS",
+        "LYYYYYYQQGYYYYYS",
+        "LYYYYYYYGGYYYYYS",
+        "LYYYYYYQQYYYYYYS",
+        "LYYYYYYQQGYYYYYS",
+        "LYRYYYYYGGYYYRYS",
+        "LYYYYYYYYYYYYYYS",
+        "SSSSSSSSSSSSSSSS",
+    };
+
+    // Same frame as the ? block, empty face: L light, S shadow, Y fill, R rivet
+    private static readonly string[] SpentRows =
+    {
+        "LLLLLLLLLLLLLLLS",
+        "LYYYYYYYYYYYYYYS",
+        "LYRYYYYYYYYYYRYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYYYYYYYYYYYYYYS",
+        "LYRYYYYYYYYYYRYS",
+        "LYYYYYYYYYYYYYYS",
+        "SSSSSSSSSSSSSSSS",
+    };
+
+    // H brick top highlight, B brick, M mortar (running bond)
+    private static readonly string[] BrickRows =
+    {
+        "HHHHHHHMHHHHHHHM",
+        "BBBBBBBMBBBBBBBM",
+        "BBBBBBBMBBBBBBBM",
+        "MMMMMMMMMMMMMMMM",
+        "HHHMHHHHHHHMHHHH",
+        "BBBMBBBBBBBMBBBB",
+        "BBBMBBBBBBBMBBBB",
+        "MMMMMMMMMMMMMMMM",
+        "HHHHHHHMHHHHHHHM",
+        "BBBBBBBMBBBBBBBM",
+        "BBBBBBBMBBBBBBBM",
+        "MMMMMMMMMMMMMMMM",
+        "HHHMHHHHHHHMHHHH",
+        "BBBMBBBBBBBMBBBB",
+        "BBBMBBBBBBBMBBBB",
+        "MMMMMMMMMMMMMMMM",
+    };
+
+    public static Texture2D QuestionBlock() => Save("QuestionBlock", QuestionRows, new Dictionary<char, Color>
+    {
+        ['L'] = Hex("FFD98C"), ['S'] = Hex("8C4A0A"), ['Y'] = Hex("F7A81A"),
+        ['R'] = Hex("5A2E05"), ['Q'] = Hex("FFF7DC"), ['G'] = Hex("9C5410"),
+    });
+
+    public static Texture2D SpentBlock() => Save("SpentBlock", SpentRows, new Dictionary<char, Color>
+    {
+        ['L'] = Hex("B8794A"), ['S'] = Hex("4A2810"), ['Y'] = Hex("8C5428"), ['R'] = Hex("3A1E08"),
+    });
+
+    public static Texture2D Brick() => Save("Brick", BrickRows, new Dictionary<char, Color>
+    {
+        ['H'] = Hex("E0784A"), ['B'] = Hex("B8481E"), ['M'] = Hex("401C0C"),
+    });
+
+    /// <summary>
+    /// Warp pipe side: wraps once around a cylinder (u = around), so each
+    /// column is a vertical band: dark edges, mid green, a bright highlight stripe.
+    /// </summary>
+    public static Texture2D PipeSide()
+    {
+        const string band = "DDMMLLWWLMMMMMDD";
+        return Save("PipeSide", new[] { band, band, band, band }, new Dictionary<char, Color>
+        {
+            ['D'] = Hex("0A5A14"), ['M'] = Hex("1E9E2E"), ['L'] = Hex("5AD05A"), ['W'] = Hex("B4F5A0"),
+        });
+    }
+
+    /// <summary>Koopa shell scutes: rounded plates on an offset grid, with dark seams.</summary>
+    public static Texture2D KoopaShell()
+    {
+        const int size = 32;
+        var baseCol = Hex("1E8C32");
+        var plate = Hex("3CB44A");
+        var seam = Hex("0E5A1C");
+        var rows = new string[size];
+        var palette = new Dictionary<char, Color> { ['b'] = baseCol, ['p'] = plate, ['s'] = seam };
+        for (int y = 0; y < size; y++)
+        {
+            var chars = new char[size];
+            for (int x = 0; x < size; x++)
+            {
+                int row = y / 8;
+                float cx = (x + (row % 2 == 1 ? 4 : 0)) % 8 - 3.5f;
+                float cy = y % 8 - 3.5f;
+                float d = Mathf.Sqrt(cx * cx + cy * cy);
+                chars[x] = d < 2.6f ? 'p' : d < 3.4f ? 'b' : 's';
+            }
+            rows[y] = new string(chars);
+        }
+        return Save("KoopaShell", rows, palette);
+    }
+
+    private static Texture2D Save(string name, string[] rows, Dictionary<char, Color> palette)
+    {
+        int h = rows.Length, w = rows[0].Length;
+        var tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        for (int r = 0; r < h; r++)
+            for (int c = 0; c < w; c++)
+                tex.SetPixel(c, h - 1 - r, palette[rows[r][c]]); // rows are top-first; texture y is bottom-up
+
+        Directory.CreateDirectory(TextureDir);
+        var path = $"{TextureDir}/{name}.png";
+        File.WriteAllBytes(path, tex.EncodeToPNG());
+        Object.DestroyImmediate(tex);
+        AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
+
+        var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+        importer.filterMode = FilterMode.Point;
+        importer.mipmapEnabled = false;
+        importer.textureCompression = TextureImporterCompression.Uncompressed;
+        importer.wrapMode = TextureWrapMode.Repeat;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+    }
+
+    private static Color Hex(string rgb) => ColorUtility.TryParseHtmlString("#" + rgb, out var c) ? c : Color.magenta;
+}

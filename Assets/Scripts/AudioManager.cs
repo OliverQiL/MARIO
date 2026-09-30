@@ -17,6 +17,9 @@ public enum Sfx
 /// Most sounds come from events it listens to (EventResolver, GameStateManager,
 /// LevelGenerator); elements with no suitable event call AudioManager.Play
 /// directly, which is a no-op when there's no AudioManager in the scene.
+///
+/// Background music: assign any imported audio file to Music. It loops from
+/// the first stage, stops at game over and starts again with the next game.
 /// </summary>
 [RequireComponent(typeof(AudioSource))]
 public class AudioManager : MonoBehaviour
@@ -27,10 +30,16 @@ public class AudioManager : MonoBehaviour
     [Range(0f, 1f)] [SerializeField] private float volume = 0.6f;
     [SerializeField] private bool muted;
 
+    [Header("Background music")]
+    [Tooltip("Any imported audio file (e.g. Assets/Audio/theme.ogg). Leave empty for no music.")]
+    [SerializeField] private AudioClip music;
+    [Range(0f, 1f)] [SerializeField] private float musicVolume = 0.3f;
+
     private const int SampleRate = 22050;
     private static AudioManager s_Instance;
     private readonly Dictionary<Sfx, AudioClip> _clips = new();
     private AudioSource _source;
+    private AudioSource _musicSource;
 
     public IReadOnlyDictionary<Sfx, AudioClip> Clips => _clips;
 
@@ -54,6 +63,10 @@ public class AudioManager : MonoBehaviour
         _source = GetComponent<AudioSource>();
         _source.playOnAwake = false;
         _source.spatialBlend = 0f;
+        _musicSource = gameObject.AddComponent<AudioSource>();
+        _musicSource.playOnAwake = false;
+        _musicSource.loop = true;
+        _musicSource.spatialBlend = 0f;
         BuildClips();
     }
 
@@ -69,7 +82,11 @@ public class AudioManager : MonoBehaviour
             gameState.OnLifeLost.AddListener(HandleLifeLost);
             gameState.OnGameOver.AddListener(HandleGameOver);
         }
-        if (levelGenerator != null) levelGenerator.OnStageCompleted.AddListener(HandleStageCompleted);
+        if (levelGenerator != null)
+        {
+            levelGenerator.OnStageCompleted.AddListener(HandleStageCompleted);
+            levelGenerator.OnStageStarted.AddListener(HandleStageStarted);
+        }
     }
 
     private void OnDisable()
@@ -84,7 +101,11 @@ public class AudioManager : MonoBehaviour
             gameState.OnLifeLost.RemoveListener(HandleLifeLost);
             gameState.OnGameOver.RemoveListener(HandleGameOver);
         }
-        if (levelGenerator != null) levelGenerator.OnStageCompleted.RemoveListener(HandleStageCompleted);
+        if (levelGenerator != null)
+        {
+            levelGenerator.OnStageCompleted.RemoveListener(HandleStageCompleted);
+            levelGenerator.OnStageStarted.RemoveListener(HandleStageStarted);
+        }
     }
 
     private void PlayNow(Sfx sfx)
@@ -123,7 +144,20 @@ public class AudioManager : MonoBehaviour
         if (livesLeft > 0) PlayNow(Sfx.Damage);
     }
 
-    private void HandleGameOver() => PlayNow(Sfx.GameOver);
+    private void HandleGameOver()
+    {
+        if (_musicSource != null) _musicSource.Stop();
+        PlayNow(Sfx.GameOver);
+    }
+
+    /// <summary>Starts the music with the first stage (and again after a game over); it keeps looping between stages.</summary>
+    private void HandleStageStarted()
+    {
+        if (music == null || muted || _musicSource == null || _musicSource.isPlaying) return;
+        _musicSource.clip = music;
+        _musicSource.volume = musicVolume;
+        _musicSource.Play();
+    }
     private void HandleStageCompleted() => PlayNow(Sfx.StageClear);
 
     // ---- synthesis ----

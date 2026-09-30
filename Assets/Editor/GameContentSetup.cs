@@ -32,6 +32,9 @@ public static class GameContentSetup
     public const string GoombaPath = PrefabDir + "/Goomba.prefab";
     public const string FireFlowerPath = PrefabDir + "/FireFlower.prefab";
     public const string OneUpPath = PrefabDir + "/OneUp.prefab";
+    public const string BrickDebrisPath = PrefabDir + "/BrickDebris.prefab";
+    private const string BlockMeshPath = PrefabDir + "/BlockCube.asset";
+    private const string PennantMeshPath = PrefabDir + "/Pennant.asset";
     public const string KoopaPath = PrefabDir + "/Koopa.prefab";
     public const string BulletBillPath = PrefabDir + "/BulletBill.prefab";
     public const string CoinPopPath = PrefabDir + "/CoinPop.prefab";
@@ -47,6 +50,7 @@ public static class GameContentSetup
 
         var m = new Mats();
         var coinPop = BuildCoinPop(m);
+        BuildBrickDebris(m); // loaded by path when bricks are built
         var pickups = new Pickups(BuildFireFlower(m), BuildOneUp(m));
         var goomba = BuildGoomba(m);
         var koopa = BuildKoopa(m);
@@ -103,24 +107,36 @@ public static class GameContentSetup
 
     // ---- element prefabs ----
 
+    /// <summary>Coin: gold disc with a darker rim and a raised bar on each face.</summary>
     private static GameObject BuildCoinPop(Mats m)
     {
         var root = new GameObject("CoinPop");
         root.AddComponent<CoinPop>();
-        Visual(PrimitiveType.Cylinder, "Coin", root.transform, Vector3.zero, new Vector3(0.12f, 0.008f, 0.12f), m.Coin, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "Rim", root.transform, Vector3.zero, new Vector3(0.13f, 0.007f, 0.13f), m.CoinRim, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "Face", root.transform, Vector3.zero, new Vector3(0.11f, 0.009f, 0.11f), m.Coin, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cube, "Bar", root.transform, Vector3.zero, new Vector3(0.022f, 0.065f, 0.026f), m.CoinShine);
         return Save(root, CoinPopPath);
     }
 
+    /// <summary>Fire flower: red outer petals, a yellow ring and a cream centre with eyes, on a stem with two leaves.</summary>
     private static GameObject BuildFireFlower(Mats m)
     {
         var root = new GameObject("FireFlower");
         root.AddComponent<Pickup>(); // Kind defaults to FireFlower
-        Visual(PrimitiveType.Cylinder, "Stem", root.transform, new Vector3(0f, 0.08f, 0f), new Vector3(0.025f, 0.08f, 0.025f), m.Stem);
-        Visual(PrimitiveType.Sphere, "Petals", root.transform, new Vector3(0f, 0.2f, 0f), new Vector3(0.14f, 0.14f, 0.05f), m.Flower);
-        Visual(PrimitiveType.Sphere, "Centre", root.transform, new Vector3(0f, 0.2f, 0.025f), new Vector3(0.06f, 0.06f, 0.03f), m.Coin);
+        Visual(PrimitiveType.Cylinder, "Stem", root.transform, new Vector3(0f, 0.07f, 0f), new Vector3(0.022f, 0.07f, 0.022f), m.Stem);
+        Visual(PrimitiveType.Sphere, "LeafL", root.transform, new Vector3(-0.045f, 0.045f, 0f), new Vector3(0.08f, 0.025f, 0.045f), m.Stem, new Vector3(0f, 0f, 25f));
+        Visual(PrimitiveType.Sphere, "LeafR", root.transform, new Vector3(0.045f, 0.045f, 0f), new Vector3(0.08f, 0.025f, 0.045f), m.Stem, new Vector3(0f, 0f, -25f));
+        var head = Group("Head", root.transform, new Vector3(0f, 0.19f, 0f));
+        Visual(PrimitiveType.Sphere, "Petals", head, Vector3.zero, new Vector3(0.17f, 0.13f, 0.05f), m.Flower);
+        Visual(PrimitiveType.Sphere, "Ring", head, Vector3.zero, new Vector3(0.12f, 0.09f, 0.06f), m.FlowerRing);
+        Visual(PrimitiveType.Sphere, "Centre", head, Vector3.zero, new Vector3(0.07f, 0.05f, 0.07f), m.FlowerCentre);
+        foreach (int side in new[] { -1, 1 })
+            foreach (int face in new[] { -1, 1 }) // eyes on both faces: it spins
+                Visual(PrimitiveType.Sphere, "Eye", head, new Vector3(0.012f * side, 0.004f, 0.034f * face), new Vector3(0.01f, 0.022f, 0.008f), m.Black);
         return Save(root, FireFlowerPath);
     }
 
+    /// <summary>1-Up mushroom: green cap dotted with white spots all round, cream stalk with eyes.</summary>
     private static GameObject BuildOneUp(Mats m)
     {
         var root = new GameObject("OneUp");
@@ -128,42 +144,83 @@ public static class GameContentSetup
         var so = new SerializedObject(p);
         so.FindProperty("kind").enumValueIndex = (int)Pickup.Kind.OneUp;
         so.ApplyModifiedPropertiesWithoutUndo();
-        Visual(PrimitiveType.Cylinder, "Stalk", root.transform, new Vector3(0f, 0.05f, 0f), new Vector3(0.09f, 0.05f, 0.09f), m.White);
-        Visual(PrimitiveType.Sphere, "Cap", root.transform, new Vector3(0f, 0.12f, 0f), new Vector3(0.2f, 0.12f, 0.2f), m.OneUp);
-        Visual(PrimitiveType.Sphere, "SpotF", root.transform, new Vector3(0f, 0.14f, 0.085f), new Vector3(0.06f, 0.06f, 0.02f), m.White);
-        Visual(PrimitiveType.Sphere, "SpotB", root.transform, new Vector3(0f, 0.14f, -0.085f), new Vector3(0.06f, 0.06f, 0.02f), m.White);
+        Visual(PrimitiveType.Sphere, "Stalk", root.transform, new Vector3(0f, 0.07f, 0f), new Vector3(0.14f, 0.14f, 0.14f), m.GoombaFace);
+        foreach (int side in new[] { -1, 1 })
+            foreach (int face in new[] { -1, 1 })
+                Visual(PrimitiveType.Sphere, "Eye", root.transform, new Vector3(0.024f * side, 0.075f, 0.066f * face), new Vector3(0.018f, 0.04f, 0.012f), m.Black);
+
+        var capCentre = new Vector3(0f, 0.16f, 0f);
+        var capRadii = new Vector3(0.12f, 0.085f, 0.12f);
+        Visual(PrimitiveType.Sphere, "Cap", root.transform, capCentre, capRadii * 2f, m.OneUp);
+        // Spots sit on the cap's surface, flat against it: one on top, four around the sides.
+        var spots = new (float yaw, float elevation, float size)[] { (0f, 90f, 0.07f), (0f, 25f, 0.06f), (90f, 25f, 0.06f), (180f, 25f, 0.06f), (270f, 25f, 0.06f) };
+        foreach (var (yaw, elevation, size) in spots)
+        {
+            float y = elevation * Mathf.Deg2Rad, a = yaw * Mathf.Deg2Rad;
+            var unit = new Vector3(Mathf.Cos(y) * Mathf.Sin(a), Mathf.Sin(y), Mathf.Cos(y) * Mathf.Cos(a));
+            var pos = capCentre + Vector3.Scale(unit, capRadii);
+            var normal = new Vector3(unit.x / capRadii.x, unit.y / capRadii.y, unit.z / capRadii.z).normalized;
+            var spot = Visual(PrimitiveType.Sphere, "Spot", root.transform, pos, new Vector3(size, size, 0.02f), m.White);
+            spot.transform.localRotation = Quaternion.LookRotation(normal, Mathf.Abs(normal.y) > 0.99f ? Vector3.forward : Vector3.up);
+        }
         return Save(root, OneUpPath);
     }
 
+    /// <summary>Koopa: patterned green shell with a white rim, yellow head with a snout, big eyes, yellow feet.</summary>
     private static GameObject BuildKoopa(Mats m)
     {
         var root = new GameObject("Koopa");
         var k = root.AddComponent<Koopa>();
-        Visual(PrimitiveType.Sphere, "Shell", root.transform, new Vector3(0f, 0.09f, 0f), new Vector3(0.26f, 0.16f, 0.3f), m.KoopaShell);
-        var head = Visual(PrimitiveType.Sphere, "Head", root.transform, new Vector3(0f, 0.2f, 0.15f), Vector3.one * 0.11f, m.KoopaSkin);
-        var footL = Visual(PrimitiveType.Cube, "FootL", root.transform, new Vector3(-0.07f, 0.015f, 0.05f), new Vector3(0.07f, 0.03f, 0.1f), m.KoopaSkin);
-        var footR = Visual(PrimitiveType.Cube, "FootR", root.transform, new Vector3(0.07f, 0.015f, 0.05f), new Vector3(0.07f, 0.03f, 0.1f), m.KoopaSkin);
+        var model = Group("Model", root.transform, Vector3.zero);
+        model.gameObject.AddComponent<EnemyWaddle>();
+
+        Visual(PrimitiveType.Sphere, "Shell", model, new Vector3(0f, 0.1f, -0.02f), new Vector3(0.26f, 0.18f, 0.3f), m.KoopaShell);
+        Visual(PrimitiveType.Cylinder, "Rim", model, new Vector3(0f, 0.06f, -0.02f), new Vector3(0.28f, 0.016f, 0.32f), m.White);
+        Visual(PrimitiveType.Cylinder, "Belly", model, new Vector3(0f, 0.045f, -0.02f), new Vector3(0.24f, 0.012f, 0.28f), m.KoopaBelly);
+
+        var head = Group("Head", model, new Vector3(0f, 0.2f, 0.15f));
+        Visual(PrimitiveType.Capsule, "Neck", head, new Vector3(0f, -0.055f, -0.045f), new Vector3(0.06f, 0.05f, 0.06f), m.KoopaSkin, new Vector3(-25f, 0f, 0f));
+        Visual(PrimitiveType.Sphere, "Skull", head, Vector3.zero, new Vector3(0.11f, 0.12f, 0.11f), m.KoopaSkin);
+        Visual(PrimitiveType.Sphere, "Snout", head, new Vector3(0f, -0.02f, 0.055f), new Vector3(0.08f, 0.06f, 0.07f), m.KoopaSkin);
+        foreach (int side in new[] { -1, 1 })
+        {
+            Visual(PrimitiveType.Sphere, side < 0 ? "EyeL" : "EyeR", head, new Vector3(0.022f * side, 0.025f, 0.045f), new Vector3(0.035f, 0.06f, 0.025f), m.White);
+            Visual(PrimitiveType.Sphere, side < 0 ? "PupilL" : "PupilR", head, new Vector3(0.02f * side, 0.022f, 0.056f), new Vector3(0.018f, 0.032f, 0.012f), m.Black);
+        }
+
+        var feet = Group("Feet", model, Vector3.zero);
+        foreach (var (x, z) in new[] { (-1, 1), (1, 1), (-1, -1), (1, -1) })
+            Visual(PrimitiveType.Sphere, "Foot", feet, new Vector3(0.09f * x, 0.025f, 0.08f * z), new Vector3(0.07f, 0.05f, 0.09f), m.KoopaSkin);
+
         var so = new SerializedObject(k);
         so.FindProperty("scoreValue").intValue = 200;
         so.FindProperty("bodyHeight").floatValue = 0.15f;
         var hide = so.FindProperty("hideInShell");
-        hide.arraySize = 3;
-        hide.GetArrayElementAtIndex(0).objectReferenceValue = head;
-        hide.GetArrayElementAtIndex(1).objectReferenceValue = footL;
-        hide.GetArrayElementAtIndex(2).objectReferenceValue = footR;
+        hide.arraySize = 2;
+        hide.GetArrayElementAtIndex(0).objectReferenceValue = head.gameObject;
+        hide.GetArrayElementAtIndex(1).objectReferenceValue = feet.gameObject;
         so.ApplyModifiedPropertiesWithoutUndo();
         return Save(root, KoopaPath);
     }
 
+    /// <summary>Bullet Bill: glossy black bullet, round nose, flared tail, big white eyes and white gloves.</summary>
     private static GameObject BuildBulletBill(Mats m)
     {
         var root = new GameObject("BulletBill");
         root.AddComponent<BulletBill>();
         // Nose along +Z (the flight direction).
-        Visual(PrimitiveType.Capsule, "Hull", root.transform, Vector3.zero, new Vector3(0.22f, 0.2f, 0.22f), m.Dark, new Vector3(90f, 0f, 0f));
-        Visual(PrimitiveType.Cylinder, "Tail", root.transform, new Vector3(0f, 0f, -0.2f), new Vector3(0.24f, 0.03f, 0.24f), m.Dark, new Vector3(90f, 0f, 0f));
-        Visual(PrimitiveType.Sphere, "EyeL", root.transform, new Vector3(-0.06f, 0.04f, 0.12f), Vector3.one * 0.05f, m.White);
-        Visual(PrimitiveType.Sphere, "EyeR", root.transform, new Vector3(0.06f, 0.04f, 0.12f), Vector3.one * 0.05f, m.White);
+        Visual(PrimitiveType.Cylinder, "Body", root.transform, new Vector3(0f, 0f, -0.03f), new Vector3(0.22f, 0.13f, 0.22f), m.BillBody, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Sphere, "Nose", root.transform, new Vector3(0f, 0f, 0.1f), new Vector3(0.22f, 0.22f, 0.2f), m.BillBody);
+        Visual(PrimitiveType.Cylinder, "TailRing", root.transform, new Vector3(0f, 0f, -0.165f), new Vector3(0.25f, 0.018f, 0.25f), m.CannonSteel, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Cylinder, "TailFin", root.transform, new Vector3(0f, 0f, -0.2f), new Vector3(0.17f, 0.025f, 0.17f), m.BillBody, new Vector3(90f, 0f, 0f));
+        foreach (int side in new[] { -1, 1 })
+        {
+            Visual(PrimitiveType.Sphere, side < 0 ? "EyeL" : "EyeR", root.transform, new Vector3(0.05f * side, 0.04f, 0.175f), new Vector3(0.07f, 0.1f, 0.05f), m.White);
+            Visual(PrimitiveType.Sphere, side < 0 ? "PupilL" : "PupilR", root.transform, new Vector3(0.042f * side, 0.036f, 0.198f), new Vector3(0.032f, 0.05f, 0.015f), m.Black);
+            // Angry brow: a slanted cut across the top of each eye, in the body colour.
+            Visual(PrimitiveType.Cube, side < 0 ? "LidL" : "LidR", root.transform, new Vector3(0.05f * side, 0.088f, 0.18f), new Vector3(0.085f, 0.03f, 0.06f), m.BillBody, new Vector3(0f, 0f, 22f * side));
+            Visual(PrimitiveType.Sphere, side < 0 ? "GloveL" : "GloveR", root.transform, new Vector3(0.125f * side, -0.03f, 0.0f), new Vector3(0.06f, 0.055f, 0.07f), m.White);
+        }
         return Save(root, BulletBillPath);
     }
 
@@ -204,23 +261,39 @@ public static class GameContentSetup
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
+    /// <summary>Goomba: a big brown mushroom-cap head over a tan face, angry brows, fangs and dark feet.</summary>
     private static GameObject BuildGoomba(Mats m)
     {
         var root = new GameObject("Goomba");
         root.AddComponent<Goomba>();
-        Visual(PrimitiveType.Sphere, "Body", root.transform, new Vector3(0f, 0.11f, 0f), new Vector3(0.26f, 0.22f, 0.26f), m.Goomba);
-        Visual(PrimitiveType.Sphere, "EyeL", root.transform, new Vector3(-0.05f, 0.15f, 0.11f), Vector3.one * 0.05f, m.White);
-        Visual(PrimitiveType.Sphere, "EyeR", root.transform, new Vector3(0.05f, 0.15f, 0.11f), Vector3.one * 0.05f, m.White);
-        Visual(PrimitiveType.Cube, "FootL", root.transform, new Vector3(-0.06f, 0.015f, 0.02f), new Vector3(0.08f, 0.03f, 0.1f), m.Dark);
-        Visual(PrimitiveType.Cube, "FootR", root.transform, new Vector3(0.06f, 0.015f, 0.02f), new Vector3(0.08f, 0.03f, 0.1f), m.Dark);
+        var model = Group("Model", root.transform, Vector3.zero);
+        model.gameObject.AddComponent<EnemyWaddle>();
+
+        // Tan lower body under a big brown head; the face (eyes, brows, fangs) is on the head's front.
+        Visual(PrimitiveType.Sphere, "Body", model, new Vector3(0f, 0.075f, 0f), new Vector3(0.17f, 0.13f, 0.16f), m.GoombaFace);
+        Visual(PrimitiveType.Sphere, "Head", model, new Vector3(0f, 0.175f, 0f), new Vector3(0.3f, 0.21f, 0.26f), m.Goomba);
+        foreach (int side in new[] { -1, 1 })
+        {
+            Visual(PrimitiveType.Sphere, side < 0 ? "EyeL" : "EyeR", model, new Vector3(0.042f * side, 0.19f, 0.118f), new Vector3(0.052f, 0.085f, 0.035f), m.White);
+            Visual(PrimitiveType.Sphere, side < 0 ? "PupilL" : "PupilR", model, new Vector3(0.036f * side, 0.183f, 0.133f), new Vector3(0.026f, 0.045f, 0.015f), m.Black);
+            // Angry brows: thick, inner ends low.
+            Visual(PrimitiveType.Cube, side < 0 ? "BrowL" : "BrowR", model, new Vector3(0.046f * side, 0.243f, 0.11f), new Vector3(0.07f, 0.02f, 0.02f), m.Black, new Vector3(0f, 0f, 24f * side));
+            Visual(PrimitiveType.Cube, side < 0 ? "FangL" : "FangR", model, new Vector3(0.032f * side, 0.115f, 0.108f), new Vector3(0.02f, 0.024f, 0.012f), m.White);
+            Visual(PrimitiveType.Sphere, side < 0 ? "FootL" : "FootR", model, new Vector3(0.06f * side, 0.022f, 0.02f), new Vector3(0.09f, 0.045f, 0.13f), m.GoombaFeet);
+        }
         return Save(root, GoombaPath);
     }
 
+    /// <summary>Fireball: a glowing orange ball with flame licks, spinning as it flies.</summary>
     private static GameObject BuildFireball(Mats m)
     {
         var root = new GameObject("Fireball");
         root.AddComponent<Fireball>();
-        Visual(PrimitiveType.Sphere, "Ball", root.transform, Vector3.zero, Vector3.one * 0.08f, m.Fire);
+        var model = Group("Model", root.transform, Vector3.zero);
+        model.gameObject.AddComponent<Spinner>();
+        Visual(PrimitiveType.Sphere, "Ball", model, Vector3.zero, Vector3.one * 0.075f, m.Fire);
+        foreach (var d in new[] { Vector3.up, Vector3.down, Vector3.left, Vector3.right })
+            Visual(PrimitiveType.Sphere, "Lick", model, d * 0.035f, Vector3.one * 0.035f, m.FireCore);
         return Save(root, FireballPath);
     }
 
@@ -280,15 +353,16 @@ public static class GameContentSetup
     }
 
     /// <summary>A short green pipe on the floor; squat on it to warp (appears on some stages only).</summary>
+    /// <summary>A short green pipe with a highlight stripe and a wider lip; squat on it to warp (appears on some stages only).</summary>
     private static void WarpPipe(Transform parent, Vector3 localPos, Mats m)
     {
         var root = new GameObject("WarpPipe");
         root.transform.SetParent(parent, false);
         root.transform.localPosition = localPos;
         root.AddComponent<WarpPipe>();
-        Visual(PrimitiveType.Cylinder, "Body", root.transform, new Vector3(0f, 0.125f, 0f), new Vector3(0.36f, 0.125f, 0.36f), m.Pipe);
-        Visual(PrimitiveType.Cylinder, "Rim", root.transform, new Vector3(0f, 0.27f, 0f), new Vector3(0.44f, 0.03f, 0.44f), m.PipeRim);
-        Visual(PrimitiveType.Cylinder, "Opening", root.transform, new Vector3(0f, 0.301f, 0f), new Vector3(0.32f, 0.002f, 0.32f), m.CannonBore);
+        Visual(PrimitiveType.Cylinder, "Body", root.transform, new Vector3(0f, 0.115f, 0f), new Vector3(0.36f, 0.115f, 0.36f), m.Pipe);
+        Visual(PrimitiveType.Cylinder, "Lip", root.transform, new Vector3(0f, 0.26f, 0f), new Vector3(0.46f, 0.045f, 0.46f), m.Pipe);
+        Visual(PrimitiveType.Cylinder, "Opening", root.transform, new Vector3(0f, 0.306f, 0f), new Vector3(0.36f, 0.002f, 0.36f), m.CannonBore);
     }
 
     private static GameObject BuildCompactStage(Mats m, GameObject coinPop, Pickups pickups)
@@ -312,6 +386,7 @@ public static class GameContentSetup
     private static void QuestionBlock(Transform parent, Vector3 localPos, Mats m, GameObject coinPop, Pickups pickups, string name = "QuestionBlock")
     {
         var block = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f, m.Question);
+        block.GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         var qb = block.AddComponent<QuestionBlock>();
         Set(qb, "coinPopPrefab", coinPop);
         Set(qb, "fireFlowerPrefab", pickups.FireFlower.GetComponent<Pickup>());
@@ -322,16 +397,29 @@ public static class GameContentSetup
         SetFloat(eh, "minHeightAboveFloor", 1.2f);
     }
 
+    private static GameObject BuildBrickDebris(Mats m)
+    {
+        var root = new GameObject("BrickDebris");
+        root.AddComponent<BrickDebris>();
+        foreach (var (x, y) in new[] { (-1, 1), (1, 1), (-1, -1), (1, -1) })
+            Visual(PrimitiveType.Cube, "Piece", root.transform, new Vector3(0.06f * x, 0.06f * y, 0f), Vector3.one * 0.11f, m.Brick)
+                .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+        return Save(root, BrickDebrisPath);
+    }
+
     private static void Brick(Transform parent, Vector3 localPos, Mats m, GameObject coinPop, string name = "BrickBlock")
     {
         var brick = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f, m.Brick);
+        brick.GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         var bb = brick.AddComponent<BrickBlock>();
         Set(bb, "coinPopPrefab", coinPop);
+        Set(bb, "debrisPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(BrickDebrisPath));
         var eh = brick.AddComponent<EyeHeightPlacement>();
         SetFloat(eh, "offsetFromEyes", -0.35f);
         SetFloat(eh, "minHeightAboveFloor", 0.6f);
     }
 
+    /// <summary>Goal flagpole: block base, tall green pole topped with a ball, white pennant with a green emblem.</summary>
     private static void Goal(Transform parent, Vector3 localPos, Mats m)
     {
         var goal = new GameObject("Goal");
@@ -339,11 +427,93 @@ public static class GameContentSetup
         goal.transform.localPosition = localPos;
         var sg = goal.AddComponent<StageGoal>();
         SetFloat(sg, "reachRadius", 0.35f);
-        Visual(PrimitiveType.Cylinder, "Pole", goal.transform, new Vector3(0f, 0.25f, 0f), new Vector3(0.02f, 0.25f, 0.02f), m.Pole);
-        Visual(PrimitiveType.Cube, "Flag", goal.transform, new Vector3(0.075f, 0.44f, 0f), new Vector3(0.15f, 0.1f, 0.01f), m.Flag);
+        const float poleHeight = 1.0f;
+        Visual(PrimitiveType.Cube, "Base", goal.transform, new Vector3(0f, 0.06f, 0f), Vector3.one * 0.12f, m.Spent)
+            .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+        Visual(PrimitiveType.Cylinder, "Pole", goal.transform, new Vector3(0f, 0.12f + poleHeight / 2f, 0f), new Vector3(0.022f, poleHeight / 2f, 0.022f), m.Pole);
+        Visual(PrimitiveType.Sphere, "Ball", goal.transform, new Vector3(0f, 0.12f + poleHeight + 0.02f, 0f), Vector3.one * 0.055f, m.PoleBall);
+        var flag = Visual(PrimitiveType.Quad, "Flag", goal.transform, new Vector3(0f, 0.12f + poleHeight - 0.1f, 0f), Vector3.one, m.Flag);
+        flag.GetComponent<MeshFilter>().sharedMesh = PennantMesh();
+        foreach (int face in new[] { -1, 1 })
+            Visual(PrimitiveType.Cylinder, "Emblem", goal.transform, new Vector3(0.075f, 0.12f + poleHeight - 0.1f, 0.004f * face), new Vector3(0.05f, 0.002f, 0.05f), m.PoleBall, new Vector3(90f, 0f, 0f));
+    }
+
+    /// <summary>A flat, double-sided triangular pennant: 0.2 m along +X from the pole, 0.16 m tall, centred on its origin's height.</summary>
+    private static Mesh PennantMesh()
+    {
+        var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(PennantMeshPath);
+        if (mesh == null)
+        {
+            mesh = new Mesh { name = "Pennant" };
+            AssetDatabase.CreateAsset(mesh, PennantMeshPath);
+        }
+        var top = new Vector3(0f, 0.08f, 0f);
+        var bottom = new Vector3(0f, -0.08f, 0f);
+        var tip = new Vector3(0.2f, 0f, 0f);
+        mesh.Clear();
+        mesh.SetVertices(new[] { top, tip, bottom, top, tip, bottom });
+        mesh.SetNormals(new[] { Vector3.back, Vector3.back, Vector3.back, Vector3.forward, Vector3.forward, Vector3.forward });
+        mesh.SetUVs(0, new[] { new Vector2(0, 1), new Vector2(1, 0.5f), new Vector2(0, 0), new Vector2(0, 1), new Vector2(1, 0.5f), new Vector2(0, 0) });
+        mesh.SetTriangles(new[] { 0, 1, 2, 3, 5, 4 }, 0); // front face (seen from -Z) clockwise; back face reversed
+        mesh.RecalculateBounds();
+        EditorUtility.SetDirty(mesh);
+        return mesh;
     }
 
     // ---- helpers ----
+
+    /// <summary>
+    /// A unit cube whose side faces all show their texture upright (Unity's
+    /// built-in cube draws some faces upside down, which turns "?" into "¿").
+    /// Top and bottom are oriented to read from the -Z side.
+    /// </summary>
+    private static Mesh BlockMesh()
+    {
+        var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(BlockMeshPath);
+        if (mesh == null)
+        {
+            mesh = new Mesh { name = "BlockCube" };
+            AssetDatabase.CreateAsset(mesh, BlockMeshPath);
+        }
+        var verts = new System.Collections.Generic.List<Vector3>();
+        var normals = new System.Collections.Generic.List<Vector3>();
+        var uvs = new System.Collections.Generic.List<Vector2>();
+        var tris = new System.Collections.Generic.List<int>();
+        var faces = new (Vector3 n, Vector3 up)[]
+        {
+            (Vector3.back, Vector3.up), (Vector3.forward, Vector3.up), (Vector3.left, Vector3.up), (Vector3.right, Vector3.up),
+            (Vector3.up, Vector3.forward), (Vector3.down, Vector3.back),
+        };
+        foreach (var (n, up) in faces)
+        {
+            var right = Vector3.Cross(up, -n); // the viewer's right, looking at the face from outside
+            var c = n * 0.5f;
+            int i = verts.Count;
+            verts.Add(c - right * 0.5f - up * 0.5f); uvs.Add(new Vector2(0f, 0f));
+            verts.Add(c - right * 0.5f + up * 0.5f); uvs.Add(new Vector2(0f, 1f));
+            verts.Add(c + right * 0.5f + up * 0.5f); uvs.Add(new Vector2(1f, 1f));
+            verts.Add(c + right * 0.5f - up * 0.5f); uvs.Add(new Vector2(1f, 0f));
+            for (int k = 0; k < 4; k++) normals.Add(n);
+            tris.AddRange(new[] { i, i + 1, i + 2, i, i + 2, i + 3 }); // clockwise seen from outside
+        }
+        mesh.Clear();
+        mesh.SetVertices(verts);
+        mesh.SetNormals(normals);
+        mesh.SetUVs(0, uvs);
+        mesh.SetTriangles(tris, 0);
+        mesh.RecalculateTangents();
+        mesh.RecalculateBounds();
+        EditorUtility.SetDirty(mesh);
+        return mesh;
+    }
+
+    private static Transform Group(string name, Transform parent, Vector3 localPos)
+    {
+        var go = new GameObject(name);
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localPos;
+        return go.transform;
+    }
 
     /// <summary>A primitive with its collider removed: targeting uses InteractableBase's registry, and colliders would interfere with placement.</summary>
     private static GameObject Visual(PrimitiveType type, string name, Transform parent, Vector3 localPos, Vector3 localScale, Material mat, Vector3 euler = default)
@@ -388,30 +558,40 @@ public static class GameContentSetup
 
     private sealed class Mats
     {
-        public readonly Material Question = Mat("Question", new Color(1f, 0.78f, 0.1f));
-        public readonly Material Spent = Mat("SpentBlock", new Color(0.45f, 0.3f, 0.15f));
-        public readonly Material Brick = Mat("Brick", new Color(0.72f, 0.3f, 0.18f));
-        public readonly Material Coin = Mat("Coin", new Color(1f, 0.85f, 0.2f));
+        public readonly Material Question = Mat("Question", Color.white, texture: PixelArt.QuestionBlock(), smoothness: 0.15f);
+        public readonly Material Spent = Mat("SpentBlock", Color.white, texture: PixelArt.SpentBlock(), smoothness: 0.15f);
+        public readonly Material Brick = Mat("Brick", Color.white, texture: PixelArt.Brick(), smoothness: 0.1f);
+        public readonly Material Coin = Mat("Coin", new Color(1f, 0.8f, 0.15f), emission: new Color(0.25f, 0.18f, 0f), smoothness: 0.8f);
+        public readonly Material CoinRim = Mat("CoinRim", new Color(0.85f, 0.55f, 0.05f), smoothness: 0.8f);
+        public readonly Material CoinShine = Mat("CoinShine", new Color(1f, 0.96f, 0.7f), emission: new Color(0.3f, 0.28f, 0.15f));
         public readonly Material Stem = Mat("FlowerStem", new Color(0.2f, 0.65f, 0.25f));
-        public readonly Material Flower = Mat("FlowerPetals", new Color(1f, 0.45f, 0.1f));
-        public readonly Material Goomba = Mat("Goomba", new Color(0.55f, 0.33f, 0.18f));
+        public readonly Material Flower = Mat("FlowerPetals", new Color(0.95f, 0.25f, 0.1f));
+        public readonly Material FlowerRing = Mat("FlowerRing", new Color(1f, 0.75f, 0.1f));
+        public readonly Material FlowerCentre = Mat("FlowerCentre", new Color(1f, 0.97f, 0.85f));
+        public readonly Material Goomba = Mat("Goomba", new Color(0.6f, 0.3f, 0.12f));
+        public readonly Material GoombaFace = Mat("GoombaFace", new Color(0.96f, 0.8f, 0.58f));
+        public readonly Material GoombaFeet = Mat("GoombaFeet", new Color(0.28f, 0.14f, 0.06f));
+        public readonly Material Black = Mat("Black", new Color(0.04f, 0.04f, 0.05f));
+        public readonly Material BillBody = Mat("BillBody", new Color(0.09f, 0.09f, 0.11f), smoothness: 0.75f);
         public readonly Material White = Mat("White", Color.white);
         public readonly Material Dark = Mat("Dark", new Color(0.15f, 0.12f, 0.1f));
-        public readonly Material Fire = Mat("Fire", new Color(1f, 0.35f, 0.05f));
-        public readonly Material Pole = Mat("GoalPole", new Color(0.85f, 0.85f, 0.85f));
-        public readonly Material Flag = Mat("GoalFlag", new Color(1f, 0.8f, 0.1f));
+        public readonly Material Fire = Mat("Fire", new Color(1f, 0.45f, 0.05f), emission: new Color(1f, 0.35f, 0.02f));
+        public readonly Material FireCore = Mat("FireCore", new Color(1f, 0.85f, 0.2f), emission: new Color(1f, 0.7f, 0.1f));
+        public readonly Material Pole = Mat("GoalPole", new Color(0.3f, 0.75f, 0.3f), smoothness: 0.7f);
+        public readonly Material PoleBall = Mat("GoalBall", new Color(0.1f, 0.5f, 0.15f), smoothness: 0.7f);
+        public readonly Material Flag = Mat("GoalFlag", new Color(0.97f, 0.97f, 0.95f));
         public readonly Material OneUp = Mat("OneUp", new Color(0.2f, 0.75f, 0.3f));
-        public readonly Material KoopaShell = Mat("KoopaShell", new Color(0.15f, 0.6f, 0.2f));
-        public readonly Material KoopaSkin = Mat("KoopaSkin", new Color(1f, 0.85f, 0.45f));
-        public readonly Material Pipe = Mat("Pipe", new Color(0.15f, 0.65f, 0.2f));
-        public readonly Material PipeRim = Mat("PipeRim", new Color(0.1f, 0.5f, 0.15f));
+        public readonly Material KoopaShell = Mat("KoopaShell", Color.white, texture: PixelArt.KoopaShell(), smoothness: 0.6f, tiling: new Vector2(2f, 1f));
+        public readonly Material KoopaSkin = Mat("KoopaSkin", new Color(1f, 0.84f, 0.35f));
+        public readonly Material KoopaBelly = Mat("KoopaBelly", new Color(1f, 0.93f, 0.62f));
+        public readonly Material Pipe = Mat("Pipe", Color.white, texture: PixelArt.PipeSide(), smoothness: 0.55f);
         public readonly Material CannonSteel = Mat("CannonSteel", new Color(0.32f, 0.34f, 0.38f));
         public readonly Material CannonBarrel = Mat("CannonBarrel", new Color(0.5f, 0.52f, 0.56f));
         public readonly Material CannonRim = Mat("CannonRim", new Color(0.82f, 0.84f, 0.88f));
         public readonly Material CannonBore = Mat("CannonBore", new Color(0.05f, 0.05f, 0.05f));
         public readonly Material CannonGlow = Mat("CannonGlow", new Color(1f, 0.6f, 0.2f), emission: new Color(0.9f, 0.45f, 0.1f));
 
-        private static Material Mat(string name, Color color, Color? emission = null)
+        private static Material Mat(string name, Color color, Color? emission = null, Texture2D texture = null, float smoothness = 0.5f, Vector2? tiling = null)
         {
             var path = $"{MaterialDir}/{name}.mat";
             var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
@@ -422,6 +602,9 @@ public static class GameContentSetup
                 AssetDatabase.CreateAsset(mat, path);
             }
             mat.SetColor("_BaseColor", color);
+            mat.SetTexture("_BaseMap", texture);
+            mat.SetTextureScale("_BaseMap", tiling ?? Vector2.one);
+            mat.SetFloat("_Smoothness", smoothness);
             if (emission.HasValue)
             {
                 mat.EnableKeyword("_EMISSION");

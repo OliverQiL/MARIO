@@ -19,14 +19,30 @@ public class QuestionBlock : InteractableBase
     [Tooltip("Horizontal distance past the block (away from the player) where a dropped pickup lands. Must exceed the pickup's collect radius.")]
     [SerializeField] private float flowerLandingOffset = 0.5f;
 
+    [Tooltip("The block bumps up by this much when hit, then settles back.")]
+    [SerializeField] private float bumpHeight = 0.08f;
+    [SerializeField] private float bumpSeconds = 0.18f;
+
     private bool _spent;
+    private float _bumpAge = float.PositiveInfinity;
+    private Vector3 _bumpFrom;
 
     public override bool IsActionable => !_spent;
     public override bool RespondsTo(string actionLabel) => actionLabel == "jump";
 
+    private void Update()
+    {
+        if (_bumpAge >= bumpSeconds) return;
+        _bumpAge += Time.deltaTime;
+        float t = Mathf.Clamp01(_bumpAge / bumpSeconds);
+        transform.position = _bumpFrom + Vector3.up * (bumpHeight * Mathf.Sin(t * Mathf.PI));
+    }
+
     public override void ResolveHit(string actionLabel, GameStateManager gameState)
     {
         _spent = true;
+        _bumpFrom = transform.position;
+        _bumpAge = 0f;
         if (spentMaterial != null)
             foreach (var r in GetComponentsInChildren<Renderer>()) r.sharedMaterial = spentMaterial;
 

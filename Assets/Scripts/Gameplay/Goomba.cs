@@ -33,6 +33,8 @@ public class Goomba : InteractableBase
 
     /// <summary>Whether it walks and hurts on contact (a Koopa shell doesn't).</summary>
     protected virtual bool IsWalking => true;
+    /// <summary>Alive and walking (for the waddle animation).</summary>
+    public bool IsMoving => !_dead && IsWalking;
 
     public override void ResolveHit(string actionLabel, GameStateManager gameState) => Defeat(actionLabel, gameState);
 

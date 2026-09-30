@@ -370,6 +370,30 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 - **Difficulty:** by stage 5 or so there should be more enemies, faster walkers and an extra cannon shot.
 - **Audio:** check the Game view isn't muted. Listen for jump, coin, power-ups, stomp, brick, fireball, damage, the cannon warning and fire, stage clear and game over. A refused jump, squat or fireball gives a soft bonk; a held stomp or walk gives nothing.
 
+### Art pass 1: blocks and enemies — ✅ Editor-playtested (2026-09-30)
+- **Blocks:** pixel-art textures drawn as data in `Assets/Editor/PixelArt.cs`: the ? block (gold, rivets, bevel, "?" with a drop shadow), the spent block and the brick.
+  - They're saved as point-filtered PNGs in `Assets/Textures/`.
+  - Blocks use a generated `BlockCube` mesh, because Unity's cube draws some faces upside down ("¿").
+  - A ? block bumps when hit (`QuestionBlock`); a brick bursts into `BrickDebris`.
+- **Enemies:** remodelled from primitives after the Mario designs.
+  - **Goomba:** brown head with the face on it (eyes, angry brows, fangs), tan body, dark feet.
+  - **Koopa:** scute-textured green shell (`PixelArt.KoopaShell`), white rim, yellow head with a snout and big eyes, four feet. In the shell it hides `Model/Head` and `Model/Feet`.
+  - **Bullet Bill:** glossy black, eyes with angry lids, white gloves, tail ring.
+  - Walking enemies waddle (`EnemyWaddle` on `Model`, which reads `Goomba.IsMoving`).
+- **`ArtPreview`** (Tools ▸ MARIO ▸ Render Art Preview, or `-executeMethod ArtPreview.Run -out <dir>`) renders the blocks and enemies to PNGs without Play Mode. It turns URP's SRP batcher off while rendering, because in batch mode the batcher drew every block with the first block's texture.
+- **Background music:** `AudioManager` has a **Music** clip slot and a **Music Volume** setting. It loops from the first stage, stops at game over and restarts with the next game.
+- **Tests:** 62/62, and the simulation and network tests pass.
+
+### Art pass 2: items — ✅ Editor-playtested (2026-09-30)
+- **Fire flower:** red petals, a yellow ring, and a cream centre with eyes on both faces (it spins), on a stem with two leaves.
+- **1-Up:** green cap with white spots placed flat on its curve (one on top, four around the sides), and a cream stalk with eyes.
+- **Coin:** a slightly glowing gold disc with a darker rim and a raised shine bar.
+- **Fireball:** a glowing orange ball with yellow flame licks, spinning (`Spinner` on `Model`).
+- **Warp pipe:** body and a wider lip textured with `PixelArt.PipeSide`, a band texture that wraps once around the cylinder, giving the highlight stripe.
+- **Goal:** a spent-block base, a 1 m green pole with a ball on top, and a white double-sided pennant (a generated `Pennant` mesh) with a green emblem. The flag used to be a yellow cube on a 0.5 m pole.
+- **`ArtPreview`** now also renders `items.png`.
+- **Background music:** Oliver added `Assets/Audio/Super Mario Bros. Theme Song.mp3` and assigned it to AudioManager's Music slot. **It's copyrighted.** It's committed because the repo is private (Oliver's decision, 2026-09-30). Remove it before the repo, a demo video or a build goes public.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.
