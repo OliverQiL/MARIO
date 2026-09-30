@@ -16,6 +16,14 @@ Usage:
                                                 # device testing while someone else plays
   python3 tools/mock_gateway.py --keys          # single keys, no Enter: play along on the device
                                                 # holding the Mac's keyboard (see "Keys" below)
+  python3 tools/mock_gateway.py --dummy --every 2
+                                                # every 2 s send a random packet from
+                                                # tools/dummy_packets.json (real GAME_EVENT format;
+                                                # edit the file while it runs: re-read on change)
+
+Output: colour-coded (→ sent events cyan, ← ACK green if resolved / yellow if rejected,
+← HAPTIC magenta, connection status dim; each phone connection gets its own tag colour),
+and the same lines without colours are appended to --log (default Logs/mock_gateway.log).
 
 Interactive commands:
   stand | walk | jump | squat | fireball | stomp   send a GAME_EVENT (confidence 0.95)
@@ -29,6 +37,7 @@ Keys (--keys):
   Hold 1/2/6 to keep sending (every 0.1 s, like classifier windows); 3/4/5 send
   once per press (a held key's auto-repeat is ignored).
   l = next action at low confidence   d = duplicate   k = kick   q = quit
+  r = a random packet from the dummy file (tools/dummy_packets.json)
   Headset tuning (DEV_TUNE, development only): = / - window bigger/smaller,
   ] / [ gap between the eye images wider/narrower, 0 reset.
 Requires: pip install websockets
@@ -60,7 +69,7 @@ class KeyMapper:
     auto-repeats arrive faster than `repeat_gap`, so a key seen again within it is
     still being held and is ignored.
     """
-    KEYS = {"1": "stand", "2": "walk", "3": "jump", "4": "squat", "5": "fireball", "6": "stomp",
+    KEYS = {"r": "dummy", "1": "stand", "2": "walk", "3": "jump", "4": "squat", "5": "fireball", "6": "stomp",
             "d": "dup", "k": "kick", "q": "quit",
             # Headset tuning while wearing it (DEV_TUNE): window size, image separation, reset.
             "=": "tune:eyeImageScale:0.05", "+": "tune:eyeImageScale:0.05", "-": "tune:eyeImageScale:-0.05",
@@ -116,8 +125,27 @@ def lan_ip():
         return "127.0.0.1"
 
 
-def log(msg):
-    print(f"[{datetime.datetime.now():%H:%M:%S.%f}"[:-3] + f"] {msg}", flush=True)
+# ---- output: colour-coded terminal, plain log file ----
+COLOURS = {"sent": "36", "ok": "32", "rejected": "33", "haptic": "35", "status": "2", "tune": "34", "warn": "31"}
+CONNECTION_COLOURS = ["1;36", "1;35", "1;33", "1;34", "1;32"]   # one per phone connection
+USE_COLOUR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+LOG_FILE = None
+ANSI = __import__("re").compile(r"\x1b\[[0-9;]*m")
+
+
+def paint(text, colour):
+    return f"\x1b[{colour}m{text}\x1b[0m" if USE_COLOUR and colour else text
+
+
+def log(msg, kind=None, conn=None):
+    """One line: time, optional connection tag (its own colour), message coloured by kind."""
+    stamp = f"[{datetime.datetime.now():%H:%M:%S.%f}"[:-3] + "]"
+    tag = f"{paint(conn[0], conn[1])} " if conn else ""
+    line = f"{stamp} {tag}{paint(msg, COLOURS.get(kind))}"
+    print(line, flush=True)
+    if LOG_FILE:
+        LOG_FILE.write(ANSI.sub("", line) + "\n")
+        LOG_FILE.flush()
 
 
 class Gateway:
@@ -130,6 +158,11 @@ class Gateway:
         self.acks = 0
         self.clients = set()
         self.done = asyncio.Event()
+        self.conn_tags = {}          # websocket -> (tag text, colour)
+        self.conn_count = 0
+        self.dummy_path = pathlib.Path(args.dummy) if args.dummy else pathlib.Path(__file__).parent / "dummy_packets.json"
+        self.dummy_mtime = None
+        self.dummy_packets = []
 
     def make_event(self, action, confidence=0.95):
         evt = {"type": "GAME_EVENT", "protocol_version": 1, "session_id": self.session,
@@ -138,21 +171,54 @@ class Gateway:
         self.next_id += 1
         return evt
 
-    async def send(self, evt):
+    async def send(self, evt, source=""):
         if not self.clients:
-            log("no phone connected — event not sent")
+            log("no phone connected — event not sent", "warn")
             return
         self.last_event = evt
         self.sent_at[(evt["session_id"], evt["event_id"])] = time.perf_counter()
         for ws in list(self.clients):
             await ws.send(json.dumps(evt))
-        log(f"→ GAME_EVENT {evt['event_id']} {evt['action']} conf={evt['confidence']}")
+        log(f"→ GAME_EVENT {evt['event_id']:>10}  {evt['action']:<8} conf={evt['confidence']:.2f}  window={evt['window_id']}{source}", "sent")
+
+    def load_dummies(self):
+        """(Re)reads the dummy packet file if it changed since the last read."""
+        try:
+            mtime = self.dummy_path.stat().st_mtime
+        except FileNotFoundError:
+            log(f"dummy file {self.dummy_path} not found", "warn")
+            return False
+        if mtime != self.dummy_mtime:
+            try:
+                packets = json.loads(self.dummy_path.read_text())["packets"]
+                bad = [p for p in packets if p.get("action") not in ACTIONS or not 0 <= float(p.get("confidence", -1)) <= 1]
+                if bad:
+                    log(f"dummy file: ignoring invalid packets {bad}", "warn")
+                self.dummy_packets = [p for p in packets if p not in bad]
+                self.dummy_mtime = mtime
+                log(f"loaded {len(self.dummy_packets)} dummy packets from {self.dummy_path.name}", "status")
+            except (ValueError, KeyError) as e:
+                log(f"dummy file unreadable ({e}) — keeping the previous packets", "warn")
+        return bool(self.dummy_packets)
+
+    async def send_dummy(self):
+        """A random dummy packet, in the real GAME_EVENT format."""
+        if not self.load_dummies():
+            return
+        template = random.choice(self.dummy_packets)
+        evt = self.make_event(template["action"], float(template["confidence"]))
+        for key in ("event_id", "window_id", "session_id"):
+            if key in template:
+                evt[key] = template[key]
+        await self.send(evt, "  (dummy)")
 
     async def command(self, line):
         line = line.strip()
         if not line:
             return
-        if line == "dup":
+        if line == "dummy":
+            await self.send_dummy()
+        elif line == "dup":
             if self.last_event:
                 await self.send(self.last_event)
         elif line == "newsession":
@@ -166,7 +232,7 @@ class Gateway:
             msg = {"type": "DEV_TUNE", "param": param, "delta": float(delta)}
             for ws in list(self.clients):
                 await ws.send(json.dumps(msg))
-            log(f"→ DEV_TUNE {param} {float(delta):+.2f}" if param != "reset" else "→ DEV_TUNE reset")
+            log(f"→ DEV_TUNE {param} {float(delta):+.2f}" if param != "reset" else "→ DEV_TUNE reset", "tune")
         elif line.startswith("low:"):
             await self.send(self.make_event(line[4:], 0.3))
         elif line in ACTIONS:
@@ -176,7 +242,10 @@ class Gateway:
 
     async def handler(self, ws):
         peer = ws.remote_address
-        log(f"phone connected from {peer}")
+        self.conn_count += 1
+        tag = (f"[phone{self.conn_count} {peer[0]}]", CONNECTION_COLOURS[(self.conn_count - 1) % len(CONNECTION_COLOURS)])
+        self.conn_tags[ws] = tag
+        log("connected", "status", tag)
         self.clients.add(ws)
         try:
             async for raw in ws:
@@ -186,23 +255,25 @@ class Gateway:
                     key = (msg.get("session_id"), msg.get("event_id"))
                     rtt = (time.perf_counter() - self.sent_at.get(key, time.perf_counter())) * 1000
                     self.acks += 1
-                    log(f"← EVENT_ACK {msg.get('event_id')} {msg.get('outcome')} gate={msg.get('gate')} "
-                        f"({msg.get('reason')}) phone={msg.get('processing_ms', 0):.2f}ms rtt={rtt:.1f}ms")
+                    resolved = msg.get("outcome") == "resolved"
+                    log(f"← EVENT_ACK  {msg.get('event_id'):>10}  {msg.get('outcome'):<8} gate={msg.get('gate')} "
+                        f"({msg.get('reason')})  phone={msg.get('processing_ms', 0):.2f}ms  rtt={rtt:.1f}ms",
+                        "ok" if resolved else "rejected", tag)
                     if self.args.exit_after_acks and self.acks >= self.expected_acks:
                         self.done.set()
                 elif kind == "HAPTIC_CMD":
-                    log(f"← HAPTIC_CMD {msg.get('event_id')} target={msg.get('target')} pattern={msg.get('pattern')}")
+                    log(f"← HAPTIC_CMD {msg.get('event_id') or '-':>10}  target={msg.get('target')} pattern={msg.get('pattern')}", "haptic", tag)
                 elif kind == "VISUALIZER_READY":
-                    log(f"← VISUALIZER_READY app_version={msg.get('app_version')}")
+                    log(f"← VISUALIZER_READY app_version={msg.get('app_version')}", "status", tag)
                     if self.args.script:
                         asyncio.create_task(self.run_script())
                 else:
-                    log(f"← unknown {raw}")
+                    log(f"← unknown {raw}", "warn", tag)
         except websockets.ConnectionClosed:
             pass
         finally:
             self.clients.discard(ws)
-            log(f"phone disconnected ({peer})")
+            log("disconnected", "status", tag)
 
     async def run_script(self):
         await asyncio.sleep(0.5)
@@ -261,6 +332,12 @@ class Gateway:
                 for line in chunk.splitlines():
                     await self.command(line)
 
+    async def dummy_loop(self, period):
+        while True:
+            await asyncio.sleep(period)
+            if self.clients:
+                await self.send_dummy()
+
     async def auto_loop(self, period):
         while True:
             await asyncio.sleep(period)
@@ -286,6 +363,10 @@ class Gateway:
             tasks = []
             if self.args.auto:
                 tasks.append(asyncio.create_task(self.auto_loop(self.args.auto)))
+            if self.args.dummy is not None:
+                self.load_dummies()
+                tasks.append(asyncio.create_task(self.dummy_loop(self.args.every)))
+                log(f"sending a random dummy packet every {self.args.every:g} s (edit {self.dummy_path.name} any time)", "status")
             if self.args.command_file:
                 tasks.append(asyncio.create_task(self.command_file_loop(self.args.command_file)))
                 log(f"reading commands appended to {self.args.command_file}")
@@ -293,7 +374,7 @@ class Gateway:
                 if not sys.stdin.isatty():
                     sys.exit("--keys needs an interactive terminal")
                 tasks.append(asyncio.create_task(self.keys_loop()))
-            elif not self.args.script and not self.args.auto and sys.stdin.isatty():
+            elif not self.args.script and not self.args.auto and self.args.dummy is None and sys.stdin.isatty():
                 tasks.append(asyncio.create_task(self.stdin_loop()))
             try:
                 if self.args.timeout:
@@ -317,12 +398,21 @@ if __name__ == "__main__":
     p.add_argument("--script", help="comma-separated commands to send after VISUALIZER_READY")
     p.add_argument("--exit-after-acks", action="store_true", help="with --script: exit once every scripted event is ACKed")
     p.add_argument("--timeout", type=float, help="exit with code 2 after this many seconds")
+    p.add_argument("--dummy", nargs="?", const="", metavar="FILE",
+                   help="send random packets from a dummy file (default tools/dummy_packets.json)")
+    p.add_argument("--every", type=float, default=2.0, metavar="SECONDS", help="with --dummy: seconds between packets")
+    p.add_argument("--log", default=str(pathlib.Path(__file__).parent.parent / "Logs" / "mock_gateway.log"),
+                   help="also append the (uncoloured) output here; '' to disable")
     p.add_argument("--keys", action="store_true", help="single-key control: 1-6 send actions (hold 1/2/6 to repeat)")
     p.add_argument("--print-fingerprint", action="store_true", help="print the cert fingerprint and exit")
     args = p.parse_args()
     if args.print_fingerprint:
         print(ensure_cert(lan_ip())[2])
         sys.exit(0)
+    if args.log:
+        pathlib.Path(args.log).parent.mkdir(parents=True, exist_ok=True)
+        LOG_FILE = open(args.log, "a")
+        LOG_FILE.write(f"\n===== mock gateway started {datetime.datetime.now():%Y-%m-%d %H:%M:%S} ({' '.join(sys.argv[1:])}) =====\n")
     try:
         asyncio.run(Gateway(args).main())
     except KeyboardInterrupt:

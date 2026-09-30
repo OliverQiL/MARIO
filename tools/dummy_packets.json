@@ -1,0 +1,22 @@
+{
+  "_comment": [
+    "Dummy GAME_EVENT packets for the mock gateway (python3 tools/mock_gateway.py --dummy).",
+    "Each is a real GAME_EVENT as defined in Docs/GATEWAY_PROTOCOL.md; the gateway fills in",
+    "type, protocol_version, session_id, event_id, window_id and timestamp, then sends one",
+    "chosen at random every --every seconds (or on 'r' in --keys mode).",
+    "Edit this file while the gateway runs: it is re-read automatically on the next pick.",
+    "Fields you may set: action (stand|walk|jump|squat|fireball|stomp), confidence (0..1),",
+    "and optionally event_id / window_id / session_id to force duplicates or other sessions."
+  ],
+  "packets": [
+    { "action": "stand",    "confidence": 0.97 },
+    { "action": "walk",     "confidence": 0.91 },
+    { "action": "jump",     "confidence": 0.95 },
+    { "action": "jump",     "confidence": 0.42 },
+    { "action": "squat",    "confidence": 0.88 },
+    { "action": "fireball", "confidence": 0.93 },
+    { "action": "fireball", "confidence": 0.55 },
+    { "action": "stomp",    "confidence": 0.90 },
+    { "action": "stomp",    "confidence": 0.99, "event_id": "e-dup-001" }
+  ]
+}

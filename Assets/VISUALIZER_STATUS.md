@@ -519,6 +519,11 @@ The design is in `Docs/GAME_DESIGN.md`, "Maps and layouts".
   - 3, 4 and 5 send once per press; auto-repeats within 0.3 s are ignored.
   - `l` sends the next action at low confidence; `d` duplicates the last event; `k` kicks the connection; `q` quits.
   - The logic is in `KeyMapper`, which was unit-tested with simulated timings and tested end to end through a pty and a websocket client.
+- **Demo tooling (2026-09-30), for the subcomponent test rubric:**
+  - `--dummy [FILE] --every S` sends a random packet from `tools/dummy_packets.json` (real `GAME_EVENT` format; the file is re-read whenever it changes, so packets can be edited live), and `r` sends one in `--keys` mode.
+  - Terminal output is colour-coded by message kind, with a coloured `[phoneN ip]` tag per connection.
+  - The same lines, uncoloured, are appended to `Logs/mock_gateway.log` (`--log`).
+  - The walk-through, diagrams (state engine, concurrency, FSMs), video script and fallbacks are in `Docs/DEMO_GUIDE.md`.
 - **The run:** the player wears the phone in a head mount and holds the Mac's keyboard. Actions go over Wi-Fi to the phone exactly as the real gateway's would, with ACKs and haptics.
 - **Headset mode (`HeadsetView`, on the HUD Canvas; added by `HUDSetup`):** for a phone VR viewer worn on the head.
   - The AR camera renders to a screen-sized RenderTexture, so AR Foundation's projection and camera-image mapping are untouched.

@@ -126,3 +126,7 @@ InitTestScene*.unity*
 
 # IL2CPP debug-symbol backup written next to the iOS build (never ship, never commit)
 /ios-build_BackUpThisFolder_ButDontShipItWithYourGame/
+
+# Frozen builds and hashes (Builds/ is already ignored above; archives and IPAs anywhere else too)
+*.ipa
+*.xcarchive/
