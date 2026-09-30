@@ -1,6 +1,6 @@
 # Game Design — Actions, Stage Elements, Enemies
 
-Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Pass 1 is implemented; passes 2–3 are planned. All numbers are tunable in the Inspector. The values below are the defaults.
+Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver); pass 3 is planned. All numbers are tunable in the Inspector. The values below are the defaults.
 
 ## Constraints that shape the design
 - **Everything is physical.** The player can't really leap onto things or duck quickly, so all interaction happens around them at human scale.
@@ -18,14 +18,16 @@ Every action still passes the six-gate chain (session → validity → capabilit
 | `squat` | The player is **ducked** for 1.0 s: projectiles at head height miss (pass 2). Later: enter a warp pipe (pass 3). | — |
 | `fireball` **with** a fire flower | Throws a fireball in the direction the camera faces (aim by looking). It hits the first enemy or brick along its path. **Gate 3:** at most 2 fireballs can be in flight. | — (the projectile finds its own target) |
 | `fireball` **without** a flower | A **bare-handed strike**, per the report: it breaks a brick block. | A brick at chest height, within **0.8 m** and **±35°** of facing |
-| `stomp` | A downward attack that defeats an enemy at the player's feet. | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
+| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two *separate* stomps (see Pass 2 details). | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
 
 Game over: the gate chain is suspended, and a `jump`, at least 2 s after the game over, restarts the game.
 
 ## Stage elements (pass 1)
 - **"?" block.** Floats **0.3 m above the player's eye height**, measured when the stage appears. A `jump` underneath hits it:
-  - if the player has no fire flower, a **fire flower** drops to the floor below the block
-  - otherwise a **coin** pops out (+100)
+  - it drops a **random power-up**: a **fire flower** or a **1-Up mushroom** (+1 life, pass 2), 50/50
+  - the power-up falls from the block and lands 0.5 m past it, on the side away from the player (straight down it would land on the player and be collected unseen)
+  - if the roll would be wasted (a flower while the player holds one, or a 1-Up at the life cap), it drops the other one
+  - if both would be wasted, a **coin** pops out instead (+100)
 
   It then becomes spent: brown, and it can't be hit again (Gate 5, "already used").
 - **Brick block.** Sits at **chest height** (eye height − 0.35 m). A bare-handed strike or a fireball breaks it for +50.
@@ -42,7 +44,7 @@ Enemies spawn from a spawner on the stage, within a bounded distance of the play
 | **Bullet Bill** | 2 | Flies at head height from about 5 m away. A warning marker appears first, giving about 3 s to react. | Can't be defeated | Passes through the player's position while the player isn't **ducked** |
 
 ## Lives and game over
-- The player starts with **3 lives**.
+- The player starts with **3 lives**. 1-Ups can raise that to at most **8**.
 - Taking damage costs one life and the fire flower, and gives **2 s of invulnerability**.
 - At 0 lives it's **game over**: the stage and enemies are removed and every action is ignored, except `jump` after 2 s, which restarts. Restarting resets score, lives and stage, then re-anchors and places a new stage.
 
@@ -56,7 +58,7 @@ Each template's +Z axis points away from the player.
 
 | Template | Footprint | Contents |
 |---|---|---|
-| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), Goomba spawner (far side, 2 Goombas, one at a time), flag (far end) |
+| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), enemy spawner (far side: a Goomba, then a Koopa, one at a time), Bullet Bill cannon (far corner), flag (far end) |
 | **Compact** | 0.6 × 1.0 m | "?" block, flag. This is the fallback for cramped spaces. |
 
 ## Feedback
@@ -76,6 +78,22 @@ Each template's +Z axis points away from the player.
   - damage in red ("Ouch! −1 life")
   - "GAME OVER — jump to play again" as the top banner
 
+## Pass 2 details
+These fill gaps in the agreed table above. They were chosen while implementing and are all tunable in the Inspector.
+- **Koopa, two stomps.** `stomp` is re-sent every classification window, so one held stomp would shell and clear a Koopa within 0.1 s. A stomp therefore only clears a shell if its *motion* started after the shell appeared. A new motion is a stomp event arriving more than **0.3 s** after the previous one (`GameStateManager.newStompGapSeconds`). Until then the shell is at Gate 5, which is silent for continuous actions.
+  - **To check with Xavier:** does the classifier's stomp stream actually pause for 0.3 s between two real stomps?
+- **Koopa scoring.** The first stomp scores nothing; clearing the shell or a fireball kill gives +200. A shell is stationary and harmless, and it stays until it's cleared or the stage ends.
+- **Bullet Bill cannon.**
+  - **The tower:** it stands on the Standard stage's far corner. Its head is at the player's head height (0.1 m below the eyes, set when the stage appears) and keeps turning to face the player at 120°/s.
+  - **Firing:** up to 2 Bills per stage, one at a time: the first 6 s into the stage, then every 10 s.
+  - **Warning:** before each shot the muzzle glows and the HUD shows "Bullet Bill! Squat!" for 1.5 s. The cannon then fires along its barrel.
+  - **Too close:** it holds fire while the player is within 1.2 m of it, which would leave no time to react.
+- **Bullet Bill.**
+  - **Flight:** it flies in a **straight line** at 2 m/s. It doesn't home in on the player. From the far corner the player is usually 2–3 m away, so there's about 2.5–3 s to react in all.
+  - **Hit:** it hits if, as it passes, the player is within 0.35 m of its path and not ducked. Stepping aside also dodges it.
+  - **Can't be defeated:** fireballs and stomps ignore it.
+  - **Compact stages** have no cannon and no enemies.
+- **Power-ups:** see "Stage elements": a random flower or 1-Up, with a life cap of 8. This replaced an earlier rule where a 1-Up only came when the player held a flower and was below 3 lives.
+
 ## Later passes
-- **Pass 2:** Koopa, Bullet Bill with squat-dodging, a 1-Up mushroom from "?" blocks (+1 life).
 - **Pass 3:** warp pipes (squat while standing on one), difficulty that scales with stage number, audio (AudioManager), and art in place of primitives.

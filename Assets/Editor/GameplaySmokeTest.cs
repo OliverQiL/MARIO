@@ -71,12 +71,13 @@ public static class GameplaySmokeTest
         r = Resolve("jump");
         Check(r.Resolved && r.StateOnly && s_State.IsAirborne, "jump with no block is airborne, state-only", r);
 
-        // -- "?" block: jump underneath drops a fire flower (no flower yet), then it's spent
+        // -- "?" block: jump underneath drops a power-up (rolled a flower here), then it's spent
         var block = Spawn<QuestionBlock>(GameContentSetup.StandardStagePath, "QuestionBlock", new Vector3(0.1f, 1.8f, 0.2f));
+        SetField(block, "oneUpChance", 0f);
         r = Resolve("jump");
         Check(r.Resolved && r.Target == block, "jump under ? block hits it", r);
         var flower = s_Stage.GetComponentInChildren<Pickup>();
-        Check(flower != null && flower.PickupKind == Pickup.Kind.FireFlower, "? block drops a fire flower when the player has none");
+        Check(flower != null && flower.PickupKind == Pickup.Kind.FireFlower, "? block drops a fire flower when it rolls one");
         r = Resolve("jump");
         Check(r.Gate == 5, "second jump on the spent block is Gate 5", r);
 
@@ -141,6 +142,100 @@ public static class GameplaySmokeTest
         r = Resolve("stomp");
         Check(r.Gate == 4, "stomp with no enemy in range is Gate 4", r);
 
+        // ==== pass 2 ====
+
+        // -- Koopa: stomp → shell (harmless); the same held stomp can't clear it; a new stomp does (+200)
+        var k1 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 0.5f));
+        scoreBefore = s_State.Score;
+        NewStomp();
+        r = Resolve("stomp");
+        Check(r.Resolved && r.Target == k1 && k1.InShell && s_State.Score == scoreBefore, "first stomp knocks a Koopa into its shell (no score)", r);
+        r = Resolve("stomp"); // next classifier window of the same stomp
+        Check(r.Gate == 5 && k1.InShell, "a held stomp doesn't clear the shell (Gate 5)", r);
+        int livesBefore = s_State.Lives;
+        k1.transform.position = new Vector3(0f, 0f, 0.1f);
+        ClearAirborne();
+        k1.Tick(0.02f, s_Cam.transform.position);
+        Check(s_State.Lives == livesBefore && k1.transform.position.z == 0.1f, "a shell doesn't move or hurt");
+        SetField(k1, "_shelledAt", Time.time - 1f); // the shell appeared a moment ago...
+        NewStomp();                                  // ...and this is a new stomp motion
+        r = Resolve("stomp");
+        Check(r.Resolved && r.Target == k1 && !k1.IsActionable && s_State.Score == scoreBefore + 200, "a second, separate stomp clears the shell (+200)", r);
+
+        // -- Koopa: a fireball defeats it outright
+        s_State.SetFireFlower(true);
+        var k2 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 2f));
+        s_Cam.transform.LookAt(k2.HitPoint);
+        scoreBefore = s_State.Score;
+        r = Resolve("fireball");
+        fb = UnityEngine.Object.FindObjectsByType<Fireball>(FindObjectsSortMode.None).FirstOrDefault();
+        hit = null;
+        for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
+        Check(r.LaunchedProjectile && hit == k2 && !k2.IsActionable && !k2.InShell && s_State.Score == scoreBefore + 200, "a fireball defeats a walking Koopa outright (+200)", r);
+        FaceForward();
+
+        // -- ? block power-up is random; a roll that would be wasted gives the other; both wasted → coin
+        Check(s_State.HasFireFlower && s_State.Lives < s_State.MaxLives, "(setup) flower held, below the life cap");
+        var oneUp = HitFreshBlock(1f);
+        Check(oneUp != null && oneUp.PickupKind == Pickup.Kind.OneUp, "? block drops a 1-Up when it rolls one");
+        livesBefore = s_State.Lives;
+        Check(oneUp != null && oneUp.TryCollect(landing) && s_State.Lives == livesBefore + 1, "collecting the 1-Up adds a life");
+        var p2 = HitFreshBlock(0f);
+        Check(p2 != null && p2.PickupKind == Pickup.Kind.OneUp, "a flower roll while holding a flower gives a 1-Up instead");
+        if (p2 != null) UnityEngine.Object.DestroyImmediate(p2.gameObject);
+        SetField(s_State, "lives", s_State.MaxLives);
+        s_State.AddLife();
+        Check(s_State.Lives == s_State.MaxLives && s_State.MaxLives == 8, "lives are capped at 8");
+        s_State.SetFireFlower(false);
+        var p3 = HitFreshBlock(1f);
+        Check(p3 != null && p3.PickupKind == Pickup.Kind.FireFlower, "a 1-Up roll at the life cap gives a flower instead");
+        if (p3 != null) UnityEngine.Object.DestroyImmediate(p3.gameObject);
+        s_State.SetFireFlower(true);
+        scoreBefore = s_State.Score;
+        var p4 = HitFreshBlock(1f);
+        Check(p4 == null && s_State.Score == scoreBefore + 100, "at the life cap with a flower, the ? block gives a coin (+100)");
+        SetField(s_State, "lives", 2);
+
+        // -- Bullet Bill: flies straight; hits unless ducked or stepped aside
+        var eye = s_Cam.transform.position;
+        SetField(s_State, "_duckedUntil", float.NegativeInfinity); // Time.time doesn't advance here: clear the earlier squat
+        livesBefore = s_State.Lives;
+        var bill = LaunchBill(eye);
+        FlyBill(bill, eye);
+        Check(bill.State == BulletBill.Phase.Passed && bill.HitPlayer && s_State.Lives == livesBefore - 1, "Bullet Bill hits a player who isn't ducked");
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+
+        bill = LaunchBill(eye);
+        livesBefore = s_State.Lives;
+        r = Resolve("squat");
+        FlyBill(bill, eye);
+        Check(bill.State == BulletBill.Phase.Passed && !bill.HitPlayer && s_State.Lives == livesBefore, "squatting ducks under a Bullet Bill", r);
+        SetField(s_State, "_duckedUntil", float.NegativeInfinity);
+
+        bill = LaunchBill(eye);
+        var aimed = bill.Direction;
+        FlyBill(bill, eye + new Vector3(0.6f, 0f, 0f)); // the player steps aside after it's fired
+        Check(bill.State == BulletBill.Phase.Passed && !bill.HitPlayer && s_State.Lives == livesBefore && bill.Direction == aimed,
+              "a Bullet Bill flies straight (no homing), so stepping aside dodges it");
+        foreach (var b in UnityEngine.Object.FindObjectsByType<BulletBill>(FindObjectsSortMode.None)) UnityEngine.Object.DestroyImmediate(b.gameObject);
+
+        // -- cannon: turns to face the player, holds fire when they're close, warns, then fires along its barrel
+        var cannon = UnityEngine.Object.Instantiate(
+            AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("BulletBillCannon").gameObject,
+            new Vector3(2f, 0f, 2f), Quaternion.identity, s_Stage).GetComponent<BulletBillCannon>();
+        var cannonHead = cannon.transform.Find("Head");
+        cannon.Tick(2f, eye); // 2 s at 120°/s: plenty to turn
+        var toEye = eye - cannonHead.position; toEye.y = 0f;
+        Check(Vector3.Angle(cannonHead.forward, toEye) < 1f, "cannon turns to face the player");
+        Check(cannon.Tick(4.1f, eye) == null && cannon.IsWarning, "after its initial delay the cannon warns first");
+        var fired = cannon.Tick(1.6f, eye);
+        Check(fired != null && Vector3.Angle(fired.Direction, toEye) < 1f && fired.State == BulletBill.Phase.Flying, "then fires a Bill along its barrel, at the player");
+        var nearCannon = cannonHead.position + (eye - cannonHead.position).normalized * 0.8f;
+        nearCannon.y = eye.y;
+        UnityEngine.Object.DestroyImmediate(fired.gameObject);
+        Check(cannon.Tick(11f, nearCannon) == null && !cannon.IsWarning, "cannon holds fire while the player is within 1.2 m");
+        UnityEngine.Object.DestroyImmediate(cannon.gameObject);
+
         // -- game over and restart
         SetField(s_State, "lives", 1);
         SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
@@ -160,7 +255,7 @@ public static class GameplaySmokeTest
         spawnerGO.transform.SetParent(s_Stage, false);
         spawnerGO.transform.position = new Vector3(0f, 0f, 2f);
         var spawner = spawnerGO.AddComponent<EnemySpawner>();
-        SetField(spawner, "enemyPrefab", Load<Goomba>(GameContentSetup.GoombaPath));
+        SetField(spawner, "enemyPrefabs", new[] { Load<Goomba>(GameContentSetup.GoombaPath), Load<Koopa>(GameContentSetup.KoopaPath) });
         var far = s_Cam.transform.position;
         var near = new Vector3(0f, 1.5f, 1.5f); // 0.5 m from the spawn point
         Check(spawner.Tick(1f, far) == null, "spawner waits for its initial delay");
@@ -168,13 +263,16 @@ public static class GameplaySmokeTest
         var spawned = spawner.Tick(0.1f, far);
         Check(spawned != null, "spawner spawns once the player is clear");
         Check(spawner.Tick(5f, far) == null, "spawner waits while its enemy is alive");
+        UnityEngine.Object.DestroyImmediate(spawned.gameObject);
+        Check(spawner.Tick(3.1f, far) is Koopa, "spawner's second enemy is a Koopa");
 
         // -- stage templates are complete
         var standard = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath);
         var compact = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CompactStagePath);
         Check(standard.GetComponent<StageFootprint>() != null && standard.GetComponentInChildren<StageGoal>() != null
               && standard.GetComponentInChildren<QuestionBlock>() != null && standard.GetComponentInChildren<BrickBlock>() != null
-              && standard.GetComponentInChildren<EnemySpawner>() != null, "StandardStage has footprint, goal, ? block, brick, spawner");
+              && standard.GetComponentInChildren<EnemySpawner>() != null && standard.GetComponentInChildren<BulletBillCannon>() != null,
+              "StandardStage has footprint, goal, ? block, brick, spawner, Bullet Bill cannon");
         Check(compact.GetComponent<StageFootprint>() != null && compact.GetComponentInChildren<StageGoal>() != null
               && compact.GetComponentInChildren<QuestionBlock>() != null, "CompactStage has footprint, goal, ? block");
         Check(standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "Standard is tried before Compact");
@@ -193,6 +291,34 @@ public static class GameplaySmokeTest
     }
 
     private static void FaceForward() => s_Cam.transform.rotation = Quaternion.LookRotation(Vector3.forward);
+
+    /// <summary>Makes the next stomp event start a new stomp motion (as after a pause between stomps).</summary>
+    private static void NewStomp() => SetField(s_State, "_lastStompAt", float.NegativeInfinity);
+
+    /// <summary>Spawns a fresh ? block overhead with a fixed roll, jumps under it, and returns what it dropped (null for a coin).</summary>
+    private static Pickup HitFreshBlock(float oneUpChance)
+    {
+        var existing = new HashSet<Pickup>(s_Stage.GetComponentsInChildren<Pickup>());
+        var b = Spawn<QuestionBlock>(GameContentSetup.StandardStagePath, "QuestionBlock", new Vector3(0.1f, 1.8f, 0.2f));
+        SetField(b, "oneUpChance", oneUpChance);
+        Resolve("jump");
+        UnityEngine.Object.DestroyImmediate(b.gameObject);
+        return s_Stage.GetComponentsInChildren<Pickup>().FirstOrDefault(p => !existing.Contains(p));
+    }
+
+    /// <summary>A Bill 5 m in front of the player at head height, fired straight at them.</summary>
+    private static BulletBill LaunchBill(Vector3 eye)
+    {
+        var bill = SpawnPrefab<BulletBill>(GameContentSetup.BulletBillPath, eye + new Vector3(0f, -0.1f, 5f));
+        bill.Launch(Vector3.back);
+        return bill;
+    }
+
+    /// <summary>Ticks a Bullet Bill until it has passed the player (or gives up).</summary>
+    private static void FlyBill(BulletBill bill, Vector3 player)
+    {
+        for (int i = 0; i < 200 && bill != null && bill.State != BulletBill.Phase.Passed; i++) bill.Tick(0.05f, player);
+    }
 
     private static void ClearAirborne() => SetField(s_State, "_airborneUntil", float.NegativeInfinity);
 

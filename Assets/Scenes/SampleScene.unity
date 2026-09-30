@@ -469,6 +469,7 @@ MonoBehaviour:
   hasFireFlower: 0
   stageClearBonus: 500
   startingLives: 3
+  maxLives: 8
   invulnerableSeconds: 2
   OnLifeLost:
     m_PersistentCalls:
@@ -507,6 +508,7 @@ MonoBehaviour:
   isStageActive: 0
   isGameOver: 0
   movementState: stand
+  newStompGapSeconds: 0.3
 --- !u!114 &104318749
 MonoBehaviour:
   m_ObjectHideFlags: 0

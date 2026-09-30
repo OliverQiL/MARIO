@@ -8,6 +8,7 @@ using UnityEngine;
 /// Frozen while the session isn't ready (tracking lost, game over, transitions).
 ///
 /// Movement lives in Tick(dt) with its own clock so headless tests can drive it.
+/// Koopa derives from this and overrides the hit and the walking condition.
 /// </summary>
 public class Goomba : InteractableBase
 {
@@ -15,10 +16,10 @@ public class Goomba : InteractableBase
     [SerializeField] private float contactRadius = 0.35f;
     [Tooltip("After passing under an airborne player, keep going this long before turning back.")]
     [SerializeField] private float passSeconds = 1.2f;
-    [SerializeField] private int scoreValue = 100;
-    [SerializeField] private float bodyHeight = 0.12f;
+    [SerializeField] protected int scoreValue = 100;
+    [SerializeField] protected float bodyHeight = 0.12f;
 
-    private bool _dead;
+    protected bool _dead;
     private float _clock;
     private float _passUntil = float.NegativeInfinity;
     private Vector3 _passDirection;
@@ -27,14 +28,19 @@ public class Goomba : InteractableBase
     public override bool RespondsTo(string actionLabel) => actionLabel == "stomp" || actionLabel == "fireball";
     public override Vector3 HitPoint => transform.position + Vector3.up * bodyHeight;
 
-    public override void ResolveHit(string actionLabel, GameStateManager gameState)
+    /// <summary>Whether it walks and hurts on contact (a Koopa shell doesn't).</summary>
+    protected virtual bool IsWalking => true;
+
+    public override void ResolveHit(string actionLabel, GameStateManager gameState) => Defeat(actionLabel, gameState);
+
+    protected void Defeat(string actionLabel, GameStateManager gameState)
     {
         _dead = true;
         gameState.AddScore(scoreValue);
         // Squash, then remove.
         transform.localScale = new Vector3(transform.localScale.x * 1.2f, transform.localScale.y * 0.25f, transform.localScale.z * 1.2f);
         SafeDestroy(gameObject, 0.4f);
-        Debug.Log($"[Goomba] Defeated by {actionLabel}.");
+        Debug.Log($"[{GetType().Name}] Defeated by {actionLabel}.");
     }
 
     private void Update()
@@ -46,7 +52,7 @@ public class Goomba : InteractableBase
     public void Tick(float dt, Vector3 playerPosition)
     {
         var gs = GameStateManager.Instance;
-        if (_dead || gs == null || !gs.IsSessionReady) return;
+        if (_dead || !IsWalking || gs == null || !gs.IsSessionReady) return;
         _clock += dt;
 
         var toPlayer = playerPosition - transform.position;
@@ -68,11 +74,11 @@ public class Goomba : InteractableBase
             // Jumped over: keep walking the same way for a moment, then turn back.
             _passUntil = _clock + passSeconds;
             _passDirection = distance > 0.01f ? toPlayer / distance : transform.forward;
-            Debug.Log("[Goomba] Jumped over.");
+            Debug.Log($"[{GetType().Name}] Jumped over.");
             return;
         }
 
-        if (gs.TakeHit("Goomba"))
+        if (gs.TakeHit(GetType().Name))
         {
             _dead = true;
             SafeDestroy(gameObject);

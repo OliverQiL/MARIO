@@ -80,6 +80,7 @@ public class HUDController : MonoBehaviour
             levelGenerator.OnStageStarted.AddListener(HandleStageStarted);
         }
         if (gameState != null) _lastScore = gameState.Score;
+        BulletBillCannon.OnWarning += HandleBulletBillWarning;
     }
 
     private void OnDisable()
@@ -95,6 +96,7 @@ public class HUDController : MonoBehaviour
             levelGenerator.OnPlacementFailed.RemoveListener(HandlePlacementFailed);
             levelGenerator.OnStageStarted.RemoveListener(HandleStageStarted);
         }
+        BulletBillCannon.OnWarning -= HandleBulletBillWarning;
     }
 
     private void Update()
@@ -250,6 +252,8 @@ public class HUDController : MonoBehaviour
 
     private void HandleLifeLost(int livesLeft) =>
         ShowFeedback(livesLeft > 0 ? "Ouch! −1 life" : "Out of lives!", warningColor);
+
+    private void HandleBulletBillWarning() => ShowFeedback("Bullet Bill! Squat!", warningColor);
 
     private void HandlePlacementFailed() => _placementFailedAt = Time.time;
 

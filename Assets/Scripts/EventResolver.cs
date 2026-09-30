@@ -69,7 +69,8 @@ public readonly struct ResolutionResult
 /// - jump: airborne window; hits an overhead block if there is one
 /// - fireball: with a fire flower, launches a projectile (Gate 3 caps how many
 ///   are in flight); without, a bare-handed "strike" on a brick in reach
-/// - stomp: attack on an enemy at the player's feet
+/// - stomp: attack on an enemy at the player's feet (a Koopa takes two
+///   separate stomps: held stomp windows count as one)
 /// During game over everything is dropped at Gate 1, except a jump (after a
 /// short grace period), which restarts the game.
 ///
@@ -203,6 +204,7 @@ public class EventResolver : MonoBehaviour
                 return Hit(FindTarget("strike", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f), "strike");
 
             case "stomp":
+                gameState.NoteStomp(); // a Koopa shell needs a *new* stomp, not the next window of this one
                 return Hit(FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f), "stomp");
 
             default:
@@ -216,7 +218,7 @@ public class EventResolver : MonoBehaviour
         // Gate 4 — Spatial gating
         if (target == null) return new ResolutionResult(4, "no target in range/facing");
         // Gate 5 — Target state
-        if (!target.IsActionable) return new ResolutionResult(5, "target not actionable");
+        if (!target.IsActionableFor(label)) return new ResolutionResult(5, "target not actionable");
         // Gate 6 — Resolution
         target.ResolveHit(label, gameState);
         return new ResolutionResult(6, "resolved", target);
@@ -261,7 +263,7 @@ public class EventResolver : MonoBehaviour
             if (halfAngle < 180f && distance > 0.05f && facing.sqrMagnitude > 1e-4f
                 && Vector3.Angle(facing, offset) > halfAngle) continue;
 
-            float score = distance + (t.IsActionable ? 0f : 1000f);
+            float score = distance + (t.IsActionableFor(label) ? 0f : 1000f);
             if (score < bestScore) { bestScore = score; best = t; }
         }
         return best;

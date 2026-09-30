@@ -68,7 +68,7 @@ public class Fireball : MonoBehaviour
     {
         foreach (var t in InteractableBase.All)
         {
-            if (t == null || !t.IsActionable || !t.RespondsTo("fireball")) continue;
+            if (t == null || !t.RespondsTo("fireball") || !t.IsActionableFor("fireball")) continue;
             if ((t.HitPoint - transform.position).sqrMagnitude <= hitRadius * hitRadius) return t;
         }
         return null;

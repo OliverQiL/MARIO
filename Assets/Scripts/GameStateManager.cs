@@ -31,6 +31,8 @@ public class GameStateManager : MonoBehaviour
 
     [Header("Lives")]
     [SerializeField] private int startingLives = 3;
+    [Tooltip("1-Ups can't raise lives above this.")]
+    [SerializeField] private int maxLives = 8;
     [Tooltip("Seconds of invulnerability after taking damage.")]
     [SerializeField] private float invulnerableSeconds = 2f;
 
@@ -59,6 +61,10 @@ public class GameStateManager : MonoBehaviour
     private float _duckedUntil = float.NegativeInfinity;
     private float _invulnerableUntil = float.NegativeInfinity;
     private float _gameOverAt = float.NegativeInfinity;
+    private float _lastStompAt = float.NegativeInfinity;
+
+    [Tooltip("Stomp is re-sent every classification window; a pause this long between stomp events starts a new stomp.")]
+    [SerializeField] private float newStompGapSeconds = 0.3f;
 
     public int Score => score;
     public int Lives => lives;
@@ -74,6 +80,10 @@ public class GameStateManager : MonoBehaviour
     public bool IsAirborne => Time.time < _airborneUntil;
     public bool IsDucked => Time.time < _duckedUntil;
     public bool IsInvulnerable => Time.time < _invulnerableUntil;
+    public int StartingLives => startingLives;
+    public int MaxLives => maxLives;
+    /// <summary>When the current stomp motion began (its first event after a pause).</summary>
+    public float StompStartedAt { get; private set; } = float.NegativeInfinity;
 
     private void Awake() => s_Instance = this;
 
@@ -82,6 +92,13 @@ public class GameStateManager : MonoBehaviour
     public void SetMovementState(string state) => movementState = state;
     public void Jump(float seconds) => _airborneUntil = Time.time + seconds;
     public void Duck(float seconds) => _duckedUntil = Time.time + seconds;
+
+    /// <summary>Records a stomp event; one arriving after a pause of newStompGapSeconds starts a new stomp motion.</summary>
+    public void NoteStomp()
+    {
+        if (Time.time - _lastStompAt > newStompGapSeconds) StompStartedAt = Time.time;
+        _lastStompAt = Time.time;
+    }
 
     /// <summary>
     /// Damage from an enemy or hazard. Ignored while invulnerable. Costs a
@@ -118,7 +135,8 @@ public class GameStateManager : MonoBehaviour
         hasFireFlower = false;
         isGameOver = false;
         isStageActive = false;
-        _airborneUntil = _duckedUntil = _invulnerableUntil = float.NegativeInfinity;
+        _airborneUntil = _duckedUntil = _invulnerableUntil = _lastStompAt = float.NegativeInfinity;
+        StompStartedAt = float.NegativeInfinity;
         Debug.Log("[GameStateManager] New game.");
         OnGameRestarted?.Invoke();
     }
@@ -131,7 +149,7 @@ public class GameStateManager : MonoBehaviour
 
     public void AddLife()
     {
-        lives++;
+        lives = Mathf.Min(lives + 1, maxLives);
         Debug.Log($"[GameStateManager] Extra life -> {lives}");
     }
 

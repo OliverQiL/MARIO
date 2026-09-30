@@ -312,6 +312,37 @@ Running the tests from the command line:
 - `Unity` on this Mac's PATH is a different CLI. Use `/Applications/Unity/Hub/Editor/6000.6.0f1/Unity.app/Contents/MacOS/Unity`.
 - `NetworkSmokeTest` needs the gateway started with `--script "stomp,stomp,dup,fireball,low:jump,walk" --exit-after-acks`.
 
+### Gameplay (pass 2) — ✅ done and Editor-playtested (2026-09-30); on-device check deferred to the end
+The rules are in `Docs/GAME_DESIGN.md`, "Pass 2 details".
+- **`Koopa`** (derives from `Goomba`): the first stomp turns it into a stationary, harmless shell, and a second *separate* stomp clears it (+200). A fireball defeats it outright.
+  - "Separate" is decided by `GameStateManager.NoteStomp`/`StompStartedAt`: a stomp event arriving more than 0.3 s after the previous one starts a new stomp motion.
+  - Gate 5 is per action (`InteractableBase.IsActionableFor`).
+- **`BulletBillCannon`** (Standard stage, far corner):
+  - a tower whose head is set to head height at `Start` (the column is stretched to meet it)
+  - the head turns to face the player at 120°/s
+  - up to 2 shots per stage; each is preceded by a 1.5 s warning (muzzle glow and `OnWarning` → HUD)
+  - it holds fire within 1.2 m of the player
+- **`BulletBill`:** `Launch(direction)`, then a straight line at 2 m/s, with no homing. It hits unless the player is ducked or has stepped aside, and it can't be targeted. This replaced the first version's `BulletBillLauncher`, where a Bill appeared 5 m ahead of the player with no cannon.
+- **? block power-up:** random, `oneUpChance` 0.5. A roll that would be wasted gives the other power-up, and a coin comes only if both would be wasted. `GameStateManager.maxLives` = 8 caps `AddLife`.
+- **`EnemySpawner`:** cycles through `enemyPrefabs`, a Goomba then a Koopa.
+- **Tests:** `GameplaySmokeTest` passes 51/51. The simulation and network smoke tests also pass.
+
+**Playtest history:**
+- **First Editor playtest (2026-09-30):** the Koopa, Bullet Bill and 1-Up rules all worked. Oliver then asked for:
+  - a random power-up
+  - an 8-life cap
+  - a visible cannon that tracks the player and fires Bills that fly straight
+
+- **Second Editor playtest (2026-09-30):** the logic was fine. The cannon read as a bare rod, and the warning was a jarring red ball about 1 m across, because the pulse overwrote the glow's authored scale (a bug).
+  - The fix pulses the glow ±12 % around its own scale.
+  - The cannon was restyled: base, steel column, collar, black housing with skull plates, a grey barrel with a silver rim and black bore (so it reads head-on), and an amber emissive glow inside the bore.
+
+**Playtest checklist for pass 2** (reuse it on the device):
+- **Koopa:** stomp once, and check it becomes a shell and nothing is shown while stomp is held. Release, stomp again, and check it's cleared for +200. A fireball kills a walking Koopa outright.
+- **Cannon:** it stands on the far corner of a Standard stage and turns to follow you as you move. About 6 s in, the muzzle glows and the warning shows, then it fires.
+- **Bill:** squat (key 4) as it arrives and it misses. Stand still and you lose a life. Step aside after it's fired and it misses, because it doesn't turn. Walk within 1.2 m of the cannon and it shouldn't start a shot.
+- **? blocks:** over several stages you should see both flowers and green 1-Up mushrooms. Hearts go up to 8 at most.
+
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
 - **Stats (top-left):** `Stage N   Score S   ♥♥♥`.
@@ -467,7 +498,7 @@ These cost real debugging time once already — don't rediscover them:
 2. ~~Build `NetworkClient`~~: done, and tested on the iPhone 17 on 2026-09-28. What's left: investigate the ~100 ms Wi-Fi round trip, then integrate with John's real gateway (his URL and certificate pin).
 3. ~~Build Step 6 (stage completion loop)~~: done and tested on the device on 2026-09-28. Re-check the furniture-plane fix on the next device session.
 4. ~~Expand `HUDController`~~: built on 2026-09-28; the on-device check is pending.
-5. ~~Add a second, smaller stage template~~: `CompactStage` added 2026-09-29. Next: check the fallback fires on the device in a cramped spot. After that comes gameplay pass 2 (Koopa, Bullet Bill + squat, 1-Up), per `Docs/GAME_DESIGN.md`.
+5. ~~Add a second, smaller stage template~~: `CompactStage` added 2026-09-29. Next: check the fallback fires on the device in a cramped spot. Gameplay pass 2 (Koopa, Bullet Bill cannon + squat, random power-ups) was built on 2026-09-30 and revised after an Editor playtest. On-device testing is deferred to the very end (Oliver's call). Next is pass 3 (warp pipes, difficulty scaling, audio, art).
 6. **Build `AudioManager`**: deferred to a later enhancement (decided 2026-09-29).
 7. Once `NetworkClient` exists and Xavier's classifier is producing real events, revisit `minConfidence` and Gate 2's dedup strategy against real traffic characteristics.
 

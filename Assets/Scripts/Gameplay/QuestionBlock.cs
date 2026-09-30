@@ -2,16 +2,21 @@ using UnityEngine;
 
 /// <summary>
 /// "?" block (Docs/GAME_DESIGN.md). Floats overhead; a jump underneath hits it.
-/// Drops a fire flower to the floor if the player doesn't have one, otherwise
-/// pops a coin. Then it's spent (Gate 5 rejects further hits).
+/// Drops a random power-up: a fire flower or a 1-Up mushroom. If the one
+/// rolled would be wasted (a flower while holding one, a 1-Up at the life
+/// cap), it drops the other; if both would be, it pops a coin instead.
+/// Then it's spent (Gate 5 rejects further hits).
 /// </summary>
 public class QuestionBlock : InteractableBase
 {
     [SerializeField] private int coinValue = 100;
     [SerializeField] private GameObject coinPopPrefab;
     [SerializeField] private Pickup fireFlowerPrefab;
+    [SerializeField] private Pickup oneUpPrefab;
+    [Tooltip("Chance the power-up is a 1-Up rather than a fire flower.")]
+    [Range(0f, 1f)] [SerializeField] private float oneUpChance = 0.5f;
     [SerializeField] private Material spentMaterial;
-    [Tooltip("Horizontal distance past the block (away from the player) where the flower lands. Must exceed the pickup's collect radius.")]
+    [Tooltip("Horizontal distance past the block (away from the player) where a dropped pickup lands. Must exceed the pickup's collect radius.")]
     [SerializeField] private float flowerLandingOffset = 0.5f;
 
     private bool _spent;
@@ -25,17 +30,22 @@ public class QuestionBlock : InteractableBase
         if (spentMaterial != null)
             foreach (var r in GetComponentsInChildren<Renderer>()) r.sharedMaterial = spentMaterial;
 
-        if (!gameState.HasFireFlower && fireFlowerPrefab != null)
+        bool flowerUseful = !gameState.HasFireFlower && fireFlowerPrefab != null;
+        bool oneUpUseful = gameState.Lives < gameState.MaxLives && oneUpPrefab != null;
+        bool rollOneUp = Random.value < oneUpChance;
+        var drop = rollOneUp ? (oneUpUseful ? oneUpPrefab : flowerUseful ? fireFlowerPrefab : null)
+                             : (flowerUseful ? fireFlowerPrefab : oneUpUseful ? oneUpPrefab : null);
+        if (drop != null)
         {
-            // The player is under the block, so a flower dropped straight down
+            // The player is under the block, so a pickup dropped straight down
             // would be collected before it's seen. Land it on the far side,
             // at least flowerLandingOffset from the player, falling from the block.
             float floorY = transform.parent != null ? transform.parent.position.y : transform.position.y - 1.5f;
             var at = transform.position + AwayFromPlayer() * flowerLandingOffset;
             at.y = floorY;
-            var flower = Instantiate(fireFlowerPrefab, at, Quaternion.identity, transform.parent);
-            flower.DropFrom(transform.position);
-            Debug.Log("[QuestionBlock] Fire flower dropped.");
+            var pickup = Instantiate(drop, at, Quaternion.identity, transform.parent);
+            pickup.DropFrom(transform.position);
+            Debug.Log($"[QuestionBlock] Dropped {drop.PickupKind}.");
         }
         else
         {

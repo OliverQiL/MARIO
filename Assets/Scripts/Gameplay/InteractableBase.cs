@@ -15,6 +15,8 @@ public abstract class InteractableBase : MonoBehaviour, IInteractable
 
     public abstract bool IsActionable { get; }
     public abstract bool RespondsTo(string actionLabel);
+    /// <summary>Gate 5 for one action. Defaults to IsActionable; a Koopa shell differs per action.</summary>
+    public virtual bool IsActionableFor(string actionLabel) => IsActionable;
     public abstract void ResolveHit(string actionLabel, GameStateManager gameState);
 
     /// <summary>The point used for range checks and projectile hits.</summary>
