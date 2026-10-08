@@ -1,5 +1,7 @@
 # Visualizer ⇄ Gateway WebSocket Protocol (v1 — proposal)
 
+> **Comms integrators:** start with [`COMMS_INTEGRATION.md`](COMMS_INTEGRATION.md). It's a practical guide (what your gateway must do, a minimal working gateway, a test checklist, troubleshooting). This file is the wire-format reference.
+
 Status: **proposed by the visualizer side, needs John's sign-off.** `NetworkClient.cs` and `tools/mock_gateway.py` implement exactly this. If the gateway uses different names, change `GatewayMessages.cs`. Nothing else in the phone app depends on the wire format.
 
 ## Transport
