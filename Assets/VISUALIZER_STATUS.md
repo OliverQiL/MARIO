@@ -135,6 +135,13 @@ Canvas               HUDController, HeadsetView; the HUD's text/icons/panels (bu
 - **Configure Simulation** (`SimulationSetup`) and **List Simulation Environments**.
 - **Render Art Preview** (`ArtPreview`) and **Build iOS** (`BuildScript`).
 
+### Sharing with the team's integration repo
+`tools/push_to_integration.sh` copies this repo's committed `main` into `visualizer/` of https://github.com/icknee/CG4002-G15 (git subtree, squashed: one commit per sync, naming the MARIO commit), then pushes to its `main`.
+- **First run:** `tools/push_to_integration.sh <url>`; the URL is remembered in git config.
+- **Afterwards:** `tools/push_to_integration.sh`.
+- `DRY_RUN=1` shows the result without pushing.
+- **Treat `visualizer/` there as read-only:** change things here in MARIO and sync.
+
 ### Tests
 Run headless, with Unity closed (see memory/notes for the editor path):
 - `GameplaySmokeTest` (75 checks)
