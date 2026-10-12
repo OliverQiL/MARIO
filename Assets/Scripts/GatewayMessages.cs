@@ -7,7 +7,7 @@ using System;
 /// </summary>
 public static class GatewayMessages
 {
-    public const int ProtocolVersion = 1;
+    public const int ProtocolVersion = 2;
 
     public const string VisualizerReady = "VISUALIZER_READY";
     public const string GameEventType = "GAME_EVENT";

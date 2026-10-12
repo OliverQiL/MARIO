@@ -15,11 +15,11 @@ using Debug = UnityEngine.Debug;
 ///   EventResolver.Resolve, and replies with an EVENT_ACK carrying the outcome.
 ///   Duplicates are still ACKed (so the gateway stops retrying) — dedup itself
 ///   stays in EventResolver's Gate 2, the single source of truth.
-/// - Issues HAPTIC_CMD (Docs/GAME_DESIGN.md): "success" on a hit and on a
-///   fireball impact (EventResolver.OnImpact), "denied" on Gates 3-5 for
-///   discrete actions only (continuous stand/walk/stomp are re-sent every
-///   window and would buzz constantly), "damage" to both straps when the
-///   player loses a life. Nothing for state-only actions or Gates 1-2.
+/// - Issues HAPTIC_CMD (Docs/GAME_DESIGN.md): "success" on a hit and on each
+///   projectile impact (fireball or thrown shell, EventResolver.OnImpact),
+///   "denied" on Gates 3-5, "damage" to both straps when the player loses a
+///   life. Nothing for state-only actions or Gates 1-2. Limb: throw / punch /
+///   clap → wrist, stomp → ankle, anything else → both.
 /// </summary>
 public class NetworkClient : MonoBehaviour
 {
@@ -204,7 +204,7 @@ public class NetworkClient : MonoBehaviour
 
         if (result.Resolved)
             SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "success");
-        else if (result.NotPermitted && !EventResolver.IsContinuous(evt.actionLabel))
+        else if (result.NotPermitted)
             SendHaptic(evt.sessionId, evt.eventId, LimbFor(evt.actionLabel), "denied");
         // Gates 1-2 (not registered): no haptic.
     }
@@ -228,7 +228,7 @@ public class NetworkClient : MonoBehaviour
 
     private static string LimbFor(string action) => action switch
     {
-        "fireball" => "wrist",
+        "throw" or "punch" or "clap" => "wrist",
         "stomp" => "ankle",
         _ => "both",
     };

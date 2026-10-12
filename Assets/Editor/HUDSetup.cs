@@ -72,13 +72,42 @@ public static class HUDSetup
         var powerEmpty = Styled(root, "PowerEmpty (TMP)", new Vector2(0f, 1f), new Vector2(x + 36f, valueTop), new Vector2(120f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
         powerEmpty.text = "-";
 
+        x += 220f;
+        Label(root, "HeldLabel", "HELD", x, top, font, shadow);
+        var held = Icon(root, "HeldIcon", PixelArt.ShellIcon(), x + 20f, valueTop + 2f, 48f);
+        var heldEmpty = Styled(root, "HeldEmpty (TMP)", new Vector2(0f, 1f), new Vector2(x + 20f, valueTop), new Vector2(120f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
+        heldEmpty.text = "-";
+
         var connection = Styled(root, "Connection (TMP)", new Vector2(1f, 1f), new Vector2(-80f, top), new Vector2(600f, 40f), 22f, TextAlignmentOptions.TopRight, font, shadow);
 
         // ---- centre ----
         var banner = Styled(root, "Banner (TMP)", new Vector2(0.5f, 1f), new Vector2(0f, -150f), new Vector2(2000f, 60f), 30f, TextAlignmentOptions.Top, font, shadow);
         var title = Styled(root, "Title (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 40f), new Vector2(2000f, 140f), 96f, TextAlignmentOptions.Center, font, shadow);
         title.text = "";
-        var feedback = Styled(root, "Feedback (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -110f), new Vector2(2000f, 80f), 40f, TextAlignmentOptions.Center, font, shadow);
+        var subtitle = Styled(root, "Subtitle (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -95f), new Vector2(2000f, 110f), 44f, TextAlignmentOptions.Top, font, shadow);
+        subtitle.text = "";
+        subtitle.richText = true;
+        subtitle.lineSpacing = 40f;
+
+        // ---- boss bar: top centre, under the banner ----
+        var whiteBar = PixelArt.WhitePixel();
+        var bossPanel = EnsureChild(root, "BossBar");
+        var bossRect = (RectTransform)bossPanel.transform;
+        bossRect.anchorMin = bossRect.anchorMax = bossRect.pivot = new Vector2(0.5f, 1f);
+        bossRect.anchoredPosition = new Vector2(0f, -215f);
+        bossRect.sizeDelta = new Vector2(900f, 90f);
+        var bossLabel = Styled(bossPanel.transform, "BossLabel (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 24f), new Vector2(900f, 40f), 28f, TextAlignmentOptions.Center, font, shadow);
+        bossLabel.text = "BOWSER";
+        bossLabel.color = new Color(1f, 0.45f, 0.2f);
+        Bar(bossPanel.transform, "BossBorder", whiteBar, new Vector2(0f, -18f), new Vector2(612f, 36f), new Color(1f, 0.95f, 0.8f));
+        Bar(bossPanel.transform, "BossBack", whiteBar, new Vector2(0f, -18f), new Vector2(600f, 24f), new Color(0.08f, 0.06f, 0.05f, 0.85f));
+        var bossFill = Bar(bossPanel.transform, "BossFill", whiteBar, new Vector2(0f, -18f), new Vector2(600f, 24f), new Color(0.95f, 0.25f, 0.15f));
+        bossFill.type = Image.Type.Filled;
+        bossFill.fillMethod = Image.FillMethod.Horizontal;
+        bossFill.fillOrigin = (int)Image.OriginHorizontal.Left;
+        bossFill.fillAmount = 1f;
+        bossPanel.SetActive(false);
+        var feedback = Styled(root, "Feedback (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -200f), new Vector2(2000f, 80f), 40f, TextAlignmentOptions.Center, font, shadow);
         feedback.text = "";
 
         // ---- scan panel: title, progress bar, rotating hint ----
@@ -140,7 +169,9 @@ public static class HUDSetup
         var overTitle = Styled(panel.transform, "GameOverTitle (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 130f), new Vector2(2000f, 140f), 110f, TextAlignmentOptions.Center, font, shadow);
         overTitle.text = "GAME OVER";
         overTitle.color = new Color(1f, 0.3f, 0.25f);
-        var overStats = Styled(panel.transform, "GameOverStats (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -20f), new Vector2(2000f, 60f), 40f, TextAlignmentOptions.Center, font, shadow);
+        var overStats = Styled(panel.transform, "GameOverStats (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -25f), new Vector2(2000f, 130f), 40f, TextAlignmentOptions.Center, font, shadow);
+        overStats.richText = true;
+        overStats.lineSpacing = 50f;
         var overPrompt = Styled(panel.transform, "GameOverPrompt (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(2000f, 60f), 34f, TextAlignmentOptions.Center, font, shadow);
         overPrompt.text = "JUMP TO PLAY AGAIN";
         overPrompt.color = new Color(1f, 0.85f, 0.2f);
@@ -174,6 +205,12 @@ public static class HUDSetup
         so.FindProperty("scanHintText").objectReferenceValue = hint;
         so.FindProperty("powerIcon").objectReferenceValue = power;
         so.FindProperty("powerEmptyText").objectReferenceValue = powerEmpty;
+        so.FindProperty("heldIcon").objectReferenceValue = held;
+        so.FindProperty("heldEmptyText").objectReferenceValue = heldEmpty;
+        so.FindProperty("subtitleText").objectReferenceValue = subtitle;
+        so.FindProperty("bossPanel").objectReferenceValue = bossPanel;
+        so.FindProperty("bossFill").objectReferenceValue = bossFill;
+        so.FindProperty("gameOverTitleText").objectReferenceValue = overTitle;
         so.FindProperty("connectionText").objectReferenceValue = connection;
         so.FindProperty("bannerText").objectReferenceValue = banner;
         so.FindProperty("feedbackText").objectReferenceValue = feedback;
@@ -209,7 +246,7 @@ public static class HUDSetup
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log("[HUDSetup] Done. Styled HUD (Press Start 2P) with top bar, banner, title, feedback and game-over screen.");
+        Debug.Log("[HUDSetup] Done. Styled HUD (Press Start 2P) with top bar (incl. HELD), banner, boss bar, title + intro card, feedback and end screen.");
     }
 
     // ---- font ----

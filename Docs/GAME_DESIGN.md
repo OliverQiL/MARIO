@@ -1,11 +1,11 @@
 # Game Design — Actions, Stage Elements, Enemies
 
-Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". The warp pipe is a placeholder until real maps exist (see "Later passes"). All numbers are tunable in the Inspector. The values below are the defaults.
+Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". **v2 (2026-10-12):** the action set is now six discrete actions, World 2 and Bowser's castle end the game, and the HUD has new elements: see "v2: actions, World 2 and the ending" at the end, which supersedes the older notes on `stand`, `walk`, `fireball` and continuous actions. All numbers are tunable in the Inspector. The values below are the defaults.
 
 ## Constraints that shape the design
 - **Everything is physical.** The player can't really leap onto things or duck quickly, so all interaction happens around them at human scale.
 - **The latency budget is 275 ms, measured from when the action *finishes*.** Anything that asks "is the player ducking or airborne?" therefore uses a **grace window** (about 1 s) that starts when the event *arrives*. Threats are telegraphed well before they hit.
-- **Continuous vs discrete.** `stand`, `walk` and `stomp` are continuous: they are re-sent every classification window. `jump`, `squat` and `fireball` fire once per physical action. The gateway makes this distinction; the phone also deduplicates on `event_id`. Continuous actions never trigger "denied" haptics, which would otherwise repeat every window.
+- **Every action is discrete (v2).** `jump`, `stomp`, `squat`, `throw`, `punch` and `clap` each arrive once per physical action. The phone also deduplicates on `event_id`. (v1 had continuous `stand`, `walk` and `stomp`, re-sent every window.)
 - **No touch input, no markers.** Restarting after a game over is also done with an action.
 
 ## Action → outcome
@@ -13,14 +13,14 @@ Every action still passes the six-gate chain (session → validity → capabilit
 
 | Action | Outcome | Targeting (Gate 4) |
 |---|---|---|
-| `stand` / `walk` | Updates the player's movement state. No target, and no HUD feedback. | — |
 | `jump` | The player is **airborne** for 1.0 s: a Goomba reaching them does no damage and passes by. If a "?" block is overhead, the jump hits it. | Optional: a block **above eye level** within **0.5 m** horizontally |
 | `squat` | The player is **ducked** for 1.0 s: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
-| `fireball` **with** a fire flower | Throws a fireball in the direction the camera faces (aim by looking). It hits the first enemy or brick along its path. **Gate 3:** at most 2 fireballs can be in flight. | — (the projectile finds its own target) |
-| `fireball` **without** a flower | A **bare-handed strike**, per the report: it breaks a brick block. | A brick at chest height, within **0.8 m** and **±35°** of facing |
-| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two *separate* stomps (see Pass 2 details). | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
+| `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
+| `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
+| `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **0.8 m** and **±60°** of facing |
+| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
 
-Game over: the gate chain is suspended, and a `jump`, at least 2 s after the game over, restarts the game.
+Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
 
 ## Stage elements (pass 1)
 - **"?" block.** Floats **0.3 m above the player's eye height**, measured when the stage appears. A `jump` underneath hits it:
@@ -68,9 +68,9 @@ Each template's +Z axis points away from the player.
   | When | `pattern` | `target` |
   |---|---|---|
   | A hit or a projectile impact | `success` | the limb that did it |
-  | A rejection at gates 3–5 for a discrete action | `denied` | the limb that did it |
+  | A rejection at gates 3–5 | `denied` | the limb that did it |
   | The player takes damage | `damage` | `both` |
-  | State-only actions (stand, walk, squat, a jump that hits nothing) | none | — |
+  | State-only actions (a plain squat, a jump that hits nothing) | none | — |
 
 - **HUD:**
   - hits and score gains in green
@@ -179,3 +179,34 @@ Decided with Oliver: a hand-designed campaign, full-size stages of about 2.5 × 
   - entering it **teleports the player to a separate, temporary area** (a bonus room, for example), which has its own **exit pipe**
   - the exit pipe **returns the player to the main stage**, and play continues there
   - This needs a second placed layout (or a swap of the current one) and a return point on the main stage. That's why it waits for the map work.
+
+## v2: actions, World 2 and the ending (2026-10-12)
+Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Protocol version 2.
+- **Actions.** Six discrete actions; see the Action → outcome table above. Limbs for haptics: throw / punch / clap → wrist, stomp → ankle, others → both. Every refusal at gates 3–5 now gets a "denied" haptic, a bonk and a HUD reason ("Nothing to throw — clap to pick up a shell", "Hands full — throw it first", "Fireballs recharging").
+- **Koopa shells.** Stomp a Koopa once: it becomes a shell. Then either stomp again (+200) or **clap** to pick it up and **throw** it: it slides along the floor, hitting each enemy it touches once (Goombas and Koopas knocked out, +100 each plus a chain bonus of +100 × hits so far; Bowser takes 2 damage).
+- **The campaign** is now 8 stages and **ends**: completing the last stage (2-4) is **GAME CLEAR**, whether the castle or a fallback template was played for it.
+
+  | Stage | Size | Scenery | Theme |
+  |---|---|---|---|
+  | 1-1 to 1-3 | 2.5 × 4 m | overworld | as before |
+  | 1-4 | 2.5 × 4 m | castle | as before |
+  | **2-1** Shell Hills | 3 × 5 m | overworld | Koopas to shell and throw down a line of 3 Goombas; tall pipes; two staircases frame the flag |
+  | **2-2** Underground | 3 × 5 m | underground | Brick-and-? row to punch, stair pillars to weave through, a Goomba wave, a warp pipe, a coin line |
+  | **2-3** Sky Road | 3 × 5 m | sky | Cannons on both sides, tall pipes, a Koopa for a shell, coin arcs |
+  | **2-4** Bowser's Castle | 3 × 5 m | castle | Two ? blocks (flowers), a Koopa spawner for shells, Bowser guarding the axe |
+
+- **Height ("more 3D").** Stair-block columns (1–3 blocks), tall decorative pipes, coin **arcs** that rise up to 35 cm in the middle, and scenery overhead.
+- **Scenery** (decoration only: no targets, no colliders, kept to the stage edges and overhead):
+  - overworld: green hills, bushes, drifting clouds with eyes, and a small castle beyond the flag
+  - underground: blue-brick ceiling rows at 2.35 m and pillars along the sides
+  - sky: clouds overhead and along the edges, giant mushrooms
+  - castle: grey crenellated walls, lava strips outside them, flickering torches
+- **Bowser** (2-4). About 1 m tall, 5 health. He paces side to side, faces the player and touching him costs a life. Every 4.5 s (first after 3 s) he **roars** (mouth glow, warning sound, HUD "BOWSER'S FIRE - SQUAT!") for 1 s, then breathes a fireball at head height that flies like a Bullet Bill: squat or sidestep. Punch or fireball = 1 damage, a thrown shell = 2; he can't be stomped. Defeated: +5000, knocked out, and the **axe** unlocks (until then the banner says "BEAT BOWSER TO REACH THE AXE" and standing at the axe does nothing). Reaching the axe: the axe drops, confetti, the GAME CLEAR fanfare, and after 4 s the stage is cleared away.
+- **HUD and graphics.**
+  - HELD slot in the top bar (shell icon), and the held shell shown in the bottom-right of the 3D view.
+  - Boss health bar under the banner while Bowser is on the stage.
+  - Intro card when a stage starts: "WORLD 2-1", the stage's name and a one-line tip (3.2 s).
+  - "+100"-style score popups floating up in the world where points were scored.
+  - End screen: GAME OVER or GAME CLEAR!, with score, coins, enemies defeated, play time and accuracy (resolved ÷ recognised-but-refused actions).
+  - Soft blob shadows under enemies, shells and Bowser, to ground them on the real floor.
+

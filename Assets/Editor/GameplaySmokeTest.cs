@@ -59,13 +59,17 @@ public static class GameplaySmokeTest
         SetField(s_Resolver, "gameState", s_State);
         SetField(s_Resolver, "arCamera", s_Cam);
         SetField(s_Resolver, "fireballPrefab", Load<Fireball>(GameContentSetup.FireballPath));
+        SetField(s_Resolver, "thrownShellPrefab", Load<ThrownShell>(GameContentSetup.ThrownShellPath));
         s_State.BeginStage();
         s_Stage = new GameObject("StageRoot").transform; // floor at y = 0
 
-        // -- state-only actions
+        // -- state-only actions; retired v1 labels are unknown
         var r = Resolve("walk");
-        Check(r.Resolved && r.StateOnly, "walk resolves as state-only", r);
-        Check(s_State.MovementState == "walk", "walk sets movement state");
+        Check(r.Gate == 2, "v1 'walk' is an unknown action (Gate 2)", r);
+        r = Resolve("fireball");
+        Check(r.Gate == 2, "v1 'fireball' is an unknown action (Gate 2)", r);
+        r = Resolve("throw");
+        Check(r.Gate == 3 && r.Reason == "nothing to throw", "throw with no flower and nothing held is Gate 3", r);
         r = Resolve("squat");
         Check(r.Resolved && r.StateOnly && s_State.IsDucked, "squat ducks the player", r);
         r = Resolve("jump");
@@ -94,8 +98,8 @@ public static class GameplaySmokeTest
         int scoreBefore = s_State.Score;
         Component impacted = null;
         s_Resolver.OnImpact += (_, t) => impacted = t;
-        r = Resolve("fireball");
-        Check(r.LaunchedProjectile && Fireball.InFlight == 1, "fireball with flower launches a projectile", r);
+        r = Resolve("throw");
+        Check(r.LaunchedProjectile && !r.ThrewShell && Fireball.InFlight == 1, "throw with the flower launches a fireball", r);
         var fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
         InteractableBase hit = null;
         for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
@@ -104,9 +108,9 @@ public static class GameplaySmokeTest
         FaceForward();
 
         // -- Gate 3: at most 2 fireballs in flight
-        Resolve("fireball");
-        Resolve("fireball");
-        r = Resolve("fireball");
+        Resolve("throw");
+        Resolve("throw");
+        r = Resolve("throw");
         Check(r.Gate == 3, "third fireball in flight is Gate 3", r);
         foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>()) UnityEngine.Object.DestroyImmediate(f.gameObject);
 
@@ -132,42 +136,65 @@ public static class GameplaySmokeTest
         Check(s_State.Lives == 2 && g4 != null && g4.IsActionable, "an airborne player isn't hurt; the Goomba passes");
         UnityEngine.Object.DestroyImmediate(g4.gameObject);
 
-        // -- bare-handed strike: brick at chest height in reach; nothing in reach → Gate 4
+        // -- punch: brick at chest height in reach; nothing in reach → Gate 4
         var brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
         scoreBefore = s_State.Score;
-        r = Resolve("fireball");
-        Check(r.Resolved && r.Target == brick && s_State.Score == scoreBefore + 50, "fireball without flower strikes a brick (+50)", r);
-        r = Resolve("fireball");
-        Check(r.Gate == 4, "strike with no brick in reach is Gate 4", r);
+        r = Resolve("punch");
+        Check(r.Resolved && r.Target == brick && s_State.Score == scoreBefore + 50, "punch breaks a brick (+50)", r);
+        r = Resolve("punch");
+        Check(r.Gate == 4, "punch with no brick in reach is Gate 4", r);
         r = Resolve("stomp");
         Check(r.Gate == 4, "stomp with no enemy in range is Gate 4", r);
 
         // ==== pass 2 ====
 
-        // -- Koopa: stomp → shell (harmless); the same held stomp can't clear it; a new stomp does (+200)
+        // -- Koopa: stomp → shell (harmless); a second stomp clears it (+200)
         var k1 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 0.5f));
         scoreBefore = s_State.Score;
-        NewStomp();
         r = Resolve("stomp");
         Check(r.Resolved && r.Target == k1 && k1.InShell && s_State.Score == scoreBefore, "first stomp knocks a Koopa into its shell (no score)", r);
-        r = Resolve("stomp"); // next classifier window of the same stomp
-        Check(r.Gate == 5 && k1.InShell, "a held stomp doesn't clear the shell (Gate 5)", r);
         int livesBefore = s_State.Lives;
         k1.transform.position = new Vector3(0f, 0f, 0.1f);
         ClearAirborne();
         k1.Tick(0.02f, s_Cam.transform.position);
         Check(s_State.Lives == livesBefore && k1.transform.position.z == 0.1f, "a shell doesn't move or hurt");
-        SetField(k1, "_shelledAt", Time.time - 1f); // the shell appeared a moment ago...
-        NewStomp();                                  // ...and this is a new stomp motion
         r = Resolve("stomp");
-        Check(r.Resolved && r.Target == k1 && !k1.IsActionable && s_State.Score == scoreBefore + 200, "a second, separate stomp clears the shell (+200)", r);
+        Check(r.Resolved && r.Target == k1 && !k1.IsActionable && s_State.Score == scoreBefore + 200, "a second stomp clears the shell (+200)", r);
+
+        // -- clap picks up a shell; throw sends it sliding through a line of Goombas
+        s_State.SetFireFlower(false);
+        var k3 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 0.5f));
+        r = Resolve("clap");
+        Check(r.Gate == 4, "clap at a walking Koopa is Gate 4 (only shells can be picked up)", r);
+        Resolve("stomp");
+        r = Resolve("clap");
+        Check(r.Resolved && r.Target == k3 && s_State.Held == HeldItem.Shell, "clap picks up a Koopa shell", r);
+        r = Resolve("clap");
+        Check(r.Gate == 3 && r.Reason == "hands full", "clap while holding a shell is Gate 3", r);
+        var line1 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(0.05f, 0f, 1.2f));
+        var line2 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(-0.05f, 0f, 1.8f));
+        scoreBefore = s_State.Score;
+        impacted = null;
+        r = Resolve("throw");
+        Check(r.ThrewShell && r.LaunchedProjectile && s_State.Held == HeldItem.None && ThrownShell.InFlight == 1, "throw while holding a shell throws it", r);
+        var shell = UnityEngine.Object.FindObjectsByType<ThrownShell>().FirstOrDefault();
+        Check(shell != null && shell.transform.position.y < 0.2f, "the thrown shell starts on the floor");
+        for (int i = 0; i < 60 && shell != null; i++) shell.Tick(0.05f);
+        Check(!line1.IsActionable && !line2.IsActionable && s_State.Score == scoreBefore + 100 + 100 + 100 && impacted == line2,
+            "the shell knocks out both Goombas in its path (+100 each, +100 chain bonus)");
+        Check(ThrownShell.InFlight == 0, "the shell is gone after its lifetime");
+        s_State.PickUp(HeldItem.Shell);
+        s_State.TakeHit("test");
+        Check(s_State.Held == HeldItem.None, "taking a hit drops the held shell");
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        SetField(s_State, "lives", 2);
 
         // -- Koopa: a fireball defeats it outright
         s_State.SetFireFlower(true);
         var k2 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 2f));
         s_Cam.transform.LookAt(k2.HitPoint);
         scoreBefore = s_State.Score;
-        r = Resolve("fireball");
+        r = Resolve("throw");
         fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
         hit = null;
         for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
@@ -307,11 +334,14 @@ public static class GameplaySmokeTest
         // -- campaign: names, looping, and every stage is complete
         Check(GameStateManager.NameOf(1) == "1-1" && GameStateManager.NameOf(4) == "1-4" && GameStateManager.NameOf(5) == "2-1", "stages are named 1-1 ... 1-4, then 2-1");
         var campaignStages = StageDesigns.Campaign.Select(d => AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CampaignStagePath(d.Name))).ToList();
-        Check(campaignStages.All(c => c != null) && LevelGenerator.CampaignStageFor(campaignStages, 5) == campaignStages[0]
-              && LevelGenerator.CampaignStageFor(campaignStages, 3) == campaignStages[2], "the campaign plays in order and loops");
-        Check(campaignStages.All(c => c.GetComponent<StageFootprint>() is { } f && Mathf.Approximately(f.width, 2.5f) && Mathf.Approximately(f.depth, 4f)
-                                      && c.GetComponentInChildren<StageGoal>() != null && c.GetComponentsInChildren<Coin>().Length > 0),
-              "every campaign stage is 2.5 x 4 m with a flag and coins");
+        Check(campaignStages.All(c => c != null) && LevelGenerator.CampaignStageFor(campaignStages, 5) == campaignStages[4]
+              && LevelGenerator.CampaignStageFor(campaignStages, 3) == campaignStages[2], "the campaign plays in order");
+        Check(campaignStages.Take(4).All(c => c.GetComponent<StageFootprint>() is { } f && Mathf.Approximately(f.width, 2.5f) && Mathf.Approximately(f.depth, 4f))
+              && campaignStages.Skip(4).All(c => c.GetComponent<StageFootprint>() is { } f && Mathf.Approximately(f.width, 3f) && Mathf.Approximately(f.depth, 5f))
+              && campaignStages.All(c => c.GetComponentInChildren<StageGoal>() != null && c.GetComponentsInChildren<Coin>().Length > 0),
+              "World 1 stages are 2.5 x 4 m, World 2 3 x 5 m; every stage has a goal and coins");
+        Check(campaignStages.All(c => c.GetComponentsInChildren<Transform>().Any(t => t.name is "Hill" or "Cloud" or "Pillar" or "Wall")),
+              "every campaign stage has scenery");
         var squeezed = UnityEngine.Object.Instantiate(campaignStages[0], s_Stage);
         var goalBefore = squeezed.GetComponentInChildren<StageGoal>().transform.localPosition;
         LevelGenerator.CompressLayout(squeezed, 0.55f);
@@ -370,6 +400,82 @@ public static class GameplaySmokeTest
         Check(allAudible, "every sound effect is synthesised and audible");
         AudioManager.Play(Sfx.Coin); // must not throw
         UnityEngine.Object.DestroyImmediate(audioGO);
+
+        // ==== World 2: the campaign ends in Bowser's castle ====
+
+        int lastStage = StageDesigns.Campaign.Length;
+        bool onlyLastEnds = true;
+        for (int i = 0; i < lastStage; i++)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CampaignStagePath(StageDesigns.Campaign[i].Name));
+            var goal = prefab != null ? prefab.GetComponentInChildren<StageGoal>() : null;
+            if (goal == null || goal.EndsGame != (i == lastStage - 1)) onlyLastEnds = false;
+        }
+        Check(lastStage == 8 && onlyLastEnds, "8 campaign stages (1-1 to 2-4); only the last one's goal ends the game");
+
+        s_State.SetFireFlower(false);
+        var castle = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.CampaignStagePath("2-4")), s_Stage);
+        castle.transform.position = new Vector3(0f, 0f, 2f);
+        var bowser = castle.GetComponentInChildren<Bowser>();
+        var axe = castle.GetComponentInChildren<StageGoal>();
+        Register(bowser);
+        typeof(Bowser).GetMethod("Start", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(bowser, null);
+        Check(bowser != null && axe != null && axe.EndsGame && axe.Locked && bowser.Health == 5 && Bowser.Active == bowser, "2-4: Bowser (5 health) guards a locked axe");
+
+        // -- his fire: a roar (warning), then a flame at head height; squatting ducks it
+        var farPlayer = new Vector3(0f, 1.5f, 0.5f);
+        BulletBill flame = null;
+        bool roared = false;
+        for (int i = 0; i < 60 && flame == null; i++) { flame = bowser.Tick(0.1f, farPlayer); roared |= bowser.IsWarning; }
+        Check(roared && flame != null, "Bowser roars, then breathes fire");
+        livesBefore = s_State.Lives;
+        s_State.Duck(1f);
+        if (flame != null) FlyBill(flame, farPlayer);
+        Check(flame != null && !flame.HitPlayer && s_State.Lives == livesBefore, "squatting ducks Bowser's fire");
+        if (flame != null) UnityEngine.Object.DestroyImmediate(flame.gameObject);
+
+        // -- punch (1), thrown shell (2), fireball (1), punch (1): defeated, the axe unlocks
+        var bp = bowser.transform.position;
+        s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 0.7f);
+        FaceForward();
+        r = Resolve("stomp");
+        Check(r.Gate == 4, "Bowser can't be stomped", r);
+        r = Resolve("punch");
+        Check(r.Resolved && r.Target == bowser && bowser.Health == 4, "a punch hurts Bowser (1)", r);
+        s_State.PickUp(HeldItem.Shell);
+        s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 2f);
+        Resolve("throw");
+        shell = UnityEngine.Object.FindObjectsByType<ThrownShell>().FirstOrDefault();
+        for (int i = 0; i < 60 && shell != null; i++) shell.Tick(0.05f);
+        Check(bowser.Health == 2, "a thrown shell hits Bowser once, for 2");
+        s_State.SetFireFlower(true);
+        s_Cam.transform.LookAt(bowser.HitPoint);
+        Resolve("throw");
+        fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
+        hit = null;
+        for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
+        Check(hit == bowser && bowser.Health == 1, "a fireball hurts Bowser (1)");
+        s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 0.7f);
+        FaceForward();
+        scoreBefore = s_State.Score;
+        int defeatsBefore = s_State.GameStats.enemiesDefeated;
+        r = Resolve("punch");
+        Check(r.Resolved && !axe.Locked && s_State.Score == scoreBefore + 5000 && s_State.GameStats.enemiesDefeated == defeatsBefore + 1,
+            "the last hit defeats Bowser (+5000) and unlocks the axe", r);
+
+        // -- GAME CLEAR: play stops; a jump (after the grace period) starts a new game
+        s_State.ClearGame();
+        Check(s_State.IsGameClear && s_State.IsFinished && !s_State.IsSessionReady, "reaching the axe is GAME CLEAR");
+        r = Resolve("punch");
+        Check(r.Gate == 1 && r.Reason == "game clear", "actions are dropped after GAME CLEAR", r);
+        SetField(s_State, "_gameOverAt", float.NegativeInfinity);
+        r = Resolve("jump");
+        Check(r.Resolved && !s_State.IsGameClear && s_State.StageIndex == 1 && s_State.Score == 0 && s_State.Held == HeldItem.None && s_State.GameStats.enemiesDefeated == 0,
+            "a jump after GAME CLEAR starts a new game", r);
+        s_State.BeginStage();
+        UnityEngine.Object.DestroyImmediate(castle);
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
 
         // -- game over and restart
         SetField(s_State, "lives", 1);
@@ -434,8 +540,6 @@ public static class GameplaySmokeTest
 
     private static void FaceForward() => s_Cam.transform.rotation = Quaternion.LookRotation(Vector3.forward);
 
-    /// <summary>Makes the next stomp event start a new stomp motion (as after a pause between stomps).</summary>
-    private static void NewStomp() => SetField(s_State, "_lastStompAt", float.NegativeInfinity);
 
     /// <summary>Spawns a fresh ? block overhead with a fixed roll, jumps under it, and returns what it dropped (null for a coin).</summary>
     private static Pickup HitFreshBlock(float oneUpChance)

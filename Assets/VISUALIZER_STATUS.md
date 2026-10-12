@@ -706,14 +706,108 @@ These cost real debugging time once already — don't rediscover them:
 
 ---
 
-## 7. Suggested next steps, roughly in priority order
+## 7. Next steps
 
-1. **Prepare the live demo.** This is next: a run-through script, the demo space, fallback plans, and the device build with the headset.
-2. **Integrate John's real gateway.** Get his URL and certificate pin, get sign-off on `GATEWAY_PROTOCOL.md`, then investigate the ~100 ms Wi-Fi round trip.
-3. **Integrate Xavier's classifier.** Check `minConfidence` (0.6), Gate 2's duplicate handling and the Koopa's 0.3 s stomp gap against real traffic.
-4. **Headset comfort.** Mono passthrough on the VRG Pro is usable but not perfect: tune live with = / - and [ / ], and keep sessions short. A Release (non-development) build would lower overhead.
+### 7.1 Now (while comms integrates)
+1. ~~Prepare the live demo~~: done (`Docs/DEMO_GUIDE.md`, week 7 freeze, MD5 submitted).
+2. **Integrate John's gateway.** He works from `Docs/COMMS_INTEGRATION.md`.
+   - Get his URL and certificate fingerprint, and put them in `NetworkClient` (on GameManager).
+   - Sync with `tools/push_to_integration.sh`.
+   - Measure the send → ACK round trip on the lab Wi-Fi.
+3. **Integrate Xavier's classifier.** Check `minConfidence` (0.6) and duplicate handling against real traffic. With action set v2 (below), the stomp-gap logic goes away.
+4. **Keep the device build alive.** The free signing team expires installs every 7 days; re-sign as in memory/ios-resign-expired-app, or move to a paid or university team.
 5. **Before anything goes public:** remove the copyrighted theme music (`Assets/Audio/`).
-6. **Optional:** more campaign stages (`StageDesigns.cs`), and re-measuring the eye height for a new player after a game over.
+
+### 7.2 v2 (planned by Oliver 2026-10-08; implemented 2026-10-12, awaiting Editor playtest)
+
+**Status (2026-10-12):** A, B and C are built. All headless tests pass: `GameplaySmokeTest` (96 checks), `SimulationSmokeTest` and `-scan`, and `NetworkSmokeTest` against the mock gateway (gates 6,5,2,4,2,6). `ArtPreview` renders were checked. Still to do: an **Editor playtest**, then a device check at the end, and **confirming the six label strings with Xavier and John** (the protocol is now v2). The design as built is in `Docs/GAME_DESIGN.md` § "v2: actions, World 2 and the ending".
+
+What was built:
+- **A (actions):**
+  - `jump` `stomp` `squat` `throw` `punch` `clap`, all discrete; `IsContinuous`, `NoteStomp` and `SetMovementState` removed.
+  - `GameStateManager.Held` (`HeldItem.None`/`Shell`) with `PickUp`/`ThrowHeld`; taking a hit drops it.
+  - New `ThrownShell`: it slides along the floor, hits each target once, and adds a chain bonus. A Koopa takes two plain stomps.
+  - Gate 3 reasons: `nothing to throw`, `hands full`, `fireballs recharging`.
+  - `GatewayMessages.ProtocolVersion = 2`; keys, mock gateway, dummy packets and docs updated.
+- **B (maps):**
+  - World 2 (2-1 to 2-4) at 3 × 5 m: stair columns, tall pipes, coin arcs.
+  - Themed scenery per stage (overworld, underground, sky, castle; 1-4 is now castle-themed).
+  - **Bowser** (`Bowser.cs`): 5 health, fire breath you squat under, guards a locked axe (`StageGoal.Locked`/`EndsGame`).
+  - Finishing the last stage is **GAME CLEAR** (`GameStateManager.ClearGame`, `LevelGenerator.FinishAfterCelebration`); the campaign no longer loops.
+- **C (HUD and graphics):**
+  - HELD slot, boss bar, "WORLD x-y" intro card with stage name and tip (`StageInfo`).
+  - World-space score popups (`ScorePopup`).
+  - GAME OVER / GAME CLEAR end screen with stats (coins, enemies, time, accuracy).
+  - Held shell in view (`HeldItemView`), blob shadows, `Drift` clouds and `Flicker` torches, and a game-clear fanfare.
+
+Not done from the plan below (candidates for later): fitting layouts to the scanned floor polygon / chained segments; enemies from several sides and a Paratroopa; LiDAR occlusion; ground dressing; credits; imported models and walk cycles; iris-wipe transitions and a preview fly-over.
+
+The original plan, for reference:
+
+#### A. Action set v2: all actions discrete
+New list, **six discrete actions**, each sent once per physical movement. There are no continuous actions any more: `stand` and `walk` are dropped, since moving is real walking that AR tracking already follows.
+
+| v2 action | Replaces | Does |
+|---|---|---|
+| `jump` | `jump` | Hits ? blocks overhead; airborne window (Goombas pass under); starts/confirms the scan; restarts after game over |
+| `stomp` | `stomp` (was continuous) | Defeats an enemy at the feet; a Koopa takes two stomp events |
+| `squat` | `squat` | Ducks under Bullet Bills; enters warp pipes |
+| `throw` | `fireball` | Throws a fireball (with the flower), or **throws the held item** (e.g. a Koopa shell) |
+| `punch` | bare-handed `fireball` | Forward punch: breaks bricks in reach, and hits enemies at chest height |
+| `clap` | — (new) | **Picks up** an item from the ground within reach, e.g. a Koopa shell, which is then held until thrown |
+
+**Code that changes:**
+- **`EventResolver.RunGates`:** cases `throw`, `punch` and `clap`. Remove `stand`/`walk`. Delete `IsContinuous` and the continuous-action special cases in `NetworkClient` (denied haptics), `HUDController` (silent refusals) and `AudioManager`.
+- **`GameStateManager`:** a new `HeldItem` (none / shell, …), plus `PickUp` and `ThrowHeld`. Remove `NoteStomp`/`StompStartedAt`; `Koopa` takes simply two stomp events.
+- **New gameplay:**
+  - **Shell:** `Koopa` shell becomes `IsPickable` and is picked up by `clap`. When thrown, it slides along the floor and knocks out enemies in its path, as in Mario (a new `ThrownShell` projectile).
+  - **HUD:** shows the held item in the POWER slot.
+- **Haptics (`LimbFor`):** `throw`/`punch`/`clap` → `wrist`, `stomp` → `ankle`, others → `both`.
+- **Input and tooling:** `EditorActionInput` key bindings (1 jump, 2 stomp, 3 squat, 4 throw, 5 punch, 6 clap); `tools/mock_gateway.py` `ACTIONS` and `--keys`; `tools/dummy_packets.json`.
+- **Docs and protocol:**
+  - **Wire format:** `GATEWAY_PROTOCOL.md` → protocol v2 (new `action` enum; continuous rules removed).
+  - **Comms and design docs:** update `COMMS_INTEGRATION.md` §4.1, and `GAME_DESIGN.md`.
+  - **Agree the exact label strings with Xavier (classifier) and John (gateway)**, e.g. `punch` vs `forward_punch`.
+- **Tests:** `GameplaySmokeTest`; `NetworkSmokeTest` expected gates/script.
+
+#### B. Maps: more, bigger, more 3D, and an ending
+- **More stages:**
+  - **Worlds:** at least 2 worlds × 4 stages, with themes (overworld, underground, castle).
+  - **Mechanics:** each stage introduces one mechanic (clap and throw a shell, punch a brick wall, squat under cannon crossfire).
+- **Bigger scale:**
+  - **Use the floor actually scanned:** fit the layout to the scanned floor polygon instead of a fixed rectangle, or chain several anchored "segments" across the room.
+  - **Fewer fixed sizes:** with that, the 100/85/70/55 % compression and the fallback templates become less necessary.
+- **More 3D:**
+  - **Height:** use the vertical space, with blocks at several heights, coins in arcs and multi-level brick walls.
+  - **Enemies:** approach from several sides; a flying Paratroopa that needs a jump or throw.
+  - **Hazards:** pipes enemies emerge from.
+- **Background art / open-world feel:**
+  - **Distant scenery:** hills, clouds, a castle silhouette, placed beyond the stage edges at a distance, so the real room feels like part of the Mushroom Kingdom.
+  - **Occlusion:** use it where available (LiDAR), so real walls hide what's behind them.
+  - **Ground dressing:** grass patches and path tiles on the floor between pieces.
+- **Final stage and ending:**
+  - **Last stage:** a castle with a boss (e.g. a Bowser-like enemy defeated by thrown shells or fireballs).
+  - **Ending sequence:** "GAME CLEAR", the final score, stats and credits, then jump to play again.
+  - **State:** `GameStateManager` gains a `GameClear` state; `LevelGenerator` stops at the last campaign entry instead of looping.
+
+#### C. HUD and graphics
+- **Pixel-art sprites:** for HUD items (held item, power-ups), plus a clearer layout for the headset view.
+- **World-space popups:** "+100" floating at the hit point.
+- **Better models:** low-poly imported models or improved primitives for enemies and items; animated enemies (walk cycles, death animations).
+- **Stage transitions:** fade or iris wipe; a stage-intro card ("WORLD 1-2") with a short preview fly-over.
+
+### 7.3 Suggested improvements (Claude, 2026-10-08)
+Ordered by impact on how real and comfortable it feels:
+1. **Ground shadows and light estimation.** Blob shadows under every enemy, block and pickup, plus ARKit light estimation to match the room's brightness and colour. This is the biggest single realism win for AR: without shadows, objects look like they float.
+2. **Off-screen indicators.** Arrows at the screen edge pointing to the flag, approaching enemies and an incoming Bullet Bill, especially with the headset's narrow view.
+3. **Spatial (3D) audio.** Enemies, cannons and pickups heard from their direction; a cue as an enemy approaches from behind.
+4. **Tutorial stage 0.** Teaches each action with an on-screen prompt and waits for it. Doubles as a **classifier check** for the demo: shows each action being recognised, with its confidence.
+5. **Play-area safety.** Warn when the player nears the edge of the scanned floor or furniture (like a VR boundary); pause if they leave it.
+6. **End-of-game stats (exergame).** Reps per action, accuracy (recognised vs refused), active time, an estimated effort score. Useful for the report and for players.
+7. **Adaptive difficulty.** Scale enemy speed and density from the player's recent performance (hits taken, time per stage), not just the stage number.
+8. **Session robustness.** Save an ARKit world map after the scan, so a relaunch or tracking loss relocalises without rescanning. Re-measure eye height when a new player starts.
+9. **Latency and telemetry.** Log each event's gateway timestamp vs ACK time on the phone and gateway; show a small latency readout in a debug overlay for integration testing.
+10. **Build and release hygiene.** Bump `bundleVersion` per build; a paid or university Apple team (no 7-day expiry); profile on device (frame time, thermal) once the bigger maps and models land.
 
 ---
 

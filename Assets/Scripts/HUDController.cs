@@ -10,7 +10,8 @@ using TMPro;
 /// Styled after the classic Mario HUD (pixel font, drop shadows), laid out
 /// by HUDSetup:
 /// - top bar:            SCORE (6 digits) · COINS (coin ×NN) · STAGE ("1-2") · LIVES (heart ×N) · POWER
-///                       (fire-flower icon while held)
+///                       (fire-flower icon while held) · HELD (shell icon while carrying one)
+/// - boss bar (top):     BOWSER and his health, while he's on the stage
 /// - connection (top-right, small)
 /// - banner (top-centre): the current *state* — scanning, tracking lost, no
 ///                       room to place a stage, placing, distance to the flag.
@@ -20,11 +21,14 @@ using TMPro;
 ///                       (a meter against what a full-size stage likes), and
 ///                       "JUMP WHEN DONE" once enough is found — the player
 ///                       confirms the scan; "READY!" pops in when they do
-/// - title (centre):     big pop-in "STAGE 1-2" when a stage starts, "STAGE CLEAR!"
+/// - title (centre):     big pop-in intro card "WORLD 2-1" with the stage's name and
+///                       a tip underneath (StageInfo) when a stage starts, "STAGE CLEAR!"
 ///                       when it ends, "WARP!" through a pipe
 /// - feedback (centre):  transient *events* — action results from
 ///                       EventResolver.OnEventProcessed and score gains. Fades.
-/// - game-over screen:   dimmed overlay with the final score and the restart prompt
+/// - score popups:       "+100" floating up in the world where the points were scored
+/// - end screen:         dimmed overlay, GAME OVER or GAME CLEAR!, the game's stats
+///                       (score, coins, enemies, time, accuracy) and the restart prompt
 /// - damage:             a red screen flash when a life is lost, and the heart
 ///                       blinks while the player is invulnerable (the player is
 ///                       the camera, so there's no character to blink)
@@ -33,7 +37,7 @@ using TMPro;
 /// permitted") are shown prominently with the reason; Gate 2 low confidence
 /// ("not registered") is a quiet hint; duplicates and Gate 1 are silent (the
 /// banner already explains why nothing is being accepted). State-only actions
-/// (stand/walk/squat, a jump that hit nothing) are silent too. Damage and
+/// (a plain duck, a jump that hit nothing) are silent too. Damage and
 /// fireball impacts come from GameStateManager.OnLifeLost / EventResolver.OnImpact.
 /// </summary>
 public class HUDController : MonoBehaviour
@@ -54,12 +58,20 @@ public class HUDController : MonoBehaviour
     [SerializeField] private Image livesIcon;
     [SerializeField] private Image powerIcon;
     [SerializeField] private TMP_Text powerEmptyText;
+    [SerializeField] private Image heldIcon;
+    [SerializeField] private TMP_Text heldEmptyText;
     [SerializeField] private TMP_Text connectionText;
 
     [Header("Centre")]
     [SerializeField] private TMP_Text bannerText;
     [SerializeField] private TMP_Text feedbackText;
     [SerializeField] private TMP_Text titleText;
+    [Tooltip("Under the title: the stage's name and tip on its intro card.")]
+    [SerializeField] private TMP_Text subtitleText;
+
+    [Header("Boss")]
+    [SerializeField] private GameObject bossPanel;
+    [SerializeField] private Image bossFill;
 
     [Header("Scan")]
     [SerializeField] private GameObject scanPanel;
@@ -78,12 +90,15 @@ public class HUDController : MonoBehaviour
 
     [Header("Game over")]
     [SerializeField] private GameObject gameOverPanel;
+    [SerializeField] private TMP_Text gameOverTitleText;
     [SerializeField] private TMP_Text gameOverStatsText;
     [SerializeField] private TMP_Text gameOverPromptText;
 
     [Header("Title")]
     [SerializeField] private float titleSeconds = 1.8f;
     [SerializeField] private float titlePopSeconds = 0.18f;
+    [Tooltip("How long an intro card (stage name and tip) stays up; other titles use Title Seconds.")]
+    [SerializeField] private float introCardSeconds = 3.2f;
 
     [Header("Feedback")]
     [SerializeField] private float feedbackSeconds = 1.5f;
@@ -103,8 +118,11 @@ public class HUDController : MonoBehaviour
     private float _placementFailedAt = float.NegativeInfinity;
     private int _lastScore;
     private float _titleShownAt = float.NegativeInfinity;
+    private bool _introCard;
     private Color _titleColor;
     private float _damageAt = float.NegativeInfinity;
+    private Vector3 _popupAt;
+    private int _popupFrame = int.MinValue;
 
     private void Reset()
     {
@@ -165,6 +183,7 @@ public class HUDController : MonoBehaviour
         UpdateGameOver();
         UpdateDamage();
         UpdateScan();
+        UpdateBoss();
     }
 
     // ---- persistent state ----
@@ -176,7 +195,14 @@ public class HUDController : MonoBehaviour
         // Score gains (hits, stage-clear bonus) flash as feedback.
         int delta = gameState.Score - _lastScore;
         _lastScore = gameState.Score;
-        if (delta > 0) ShowFeedback(FeedbackPrefix() + $"+{delta}", goodColor);
+        if (delta > 0)
+        {
+            ShowFeedback(FeedbackPrefix() + $"+{delta}", goodColor);
+            // In the world too, where it was scored (if we know where).
+            if (Time.frameCount - _popupFrame <= 2 && feedbackText != null)
+                ScorePopup.Spawn($"+{delta}", _popupAt, titleColor, feedbackText.font, feedbackText.fontSharedMaterial);
+            _popupFrame = int.MinValue;
+        }
 
         if (scoreText != null) scoreText.text = Mathf.Min(gameState.Score, 999999).ToString("D6");
         if (coinsText != null) coinsText.text = $"x{gameState.Coins:D2}";
@@ -184,6 +210,20 @@ public class HUDController : MonoBehaviour
         if (livesText != null) livesText.text = $"x{Mathf.Max(0, gameState.Lives)}";
         if (powerIcon != null) powerIcon.enabled = gameState.HasFireFlower;
         if (powerEmptyText != null) powerEmptyText.enabled = !gameState.HasFireFlower;
+        bool holding = gameState.Held != HeldItem.None;
+        if (heldIcon != null) heldIcon.enabled = holding;
+        if (heldEmptyText != null) heldEmptyText.enabled = !holding;
+    }
+
+    private void UpdateBoss()
+    {
+        if (bossPanel == null) return;
+        var boss = Bowser.Active;
+        bool show = boss != null && !boss.IsDefeated && gameState != null && !gameState.IsFinished
+                    && levelGenerator != null && levelGenerator.CurrentStage != null && !levelGenerator.InBonusRoom;
+        if (bossPanel.activeSelf != show) bossPanel.SetActive(show);
+        if (show && bossFill != null)
+            bossFill.fillAmount = Mathf.MoveTowards(bossFill.fillAmount, (float)boss.Health / boss.MaxHealth, Time.deltaTime);
     }
 
     private void UpdateConnection()
@@ -212,9 +252,10 @@ public class HUDController : MonoBehaviour
         string message = null;
         Color color = Color.white;
 
-        if (gameState != null && gameState.IsGameOver)
+        var boss = Bowser.Active;
+        if (gameState != null && gameState.IsFinished)
         {
-            message = null; // the game-over screen says it all
+            message = null; // the end screen says it all
         }
         else if (sessionManager != null && !sessionManager.IsTracking)
         {
@@ -242,10 +283,20 @@ public class HUDController : MonoBehaviour
                     : "PLACING STAGE...";
             color = recentlyFailed ? warningColor : Color.white;
         }
+        else if (boss != null && !boss.IsDefeated && boss.IsWarning)
+        {
+            message = "BOWSER'S FIRE - SQUAT!";
+            color = warningColor;
+        }
+        else if (levelGenerator != null && levelGenerator.CurrentGoal != null && levelGenerator.CurrentGoal.Locked)
+        {
+            message = "BEAT BOWSER TO REACH THE AXE";
+            color = deniedColor;
+        }
         else if (levelGenerator != null && levelGenerator.CurrentGoal != null
                  && !float.IsInfinity(levelGenerator.CurrentGoal.PlayerDistance))
         {
-            message = $"FLAG {levelGenerator.CurrentGoal.PlayerDistance:F1} M";
+            message = $"{(levelGenerator.CurrentGoal.EndsGame ? "AXE" : "FLAG")} {levelGenerator.CurrentGoal.PlayerDistance:F1} M";
             color = quietColor;
         }
 
@@ -269,13 +320,15 @@ public class HUDController : MonoBehaviour
 
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
-        // Without a fire flower, "fireball" is a bare-handed punch on a brick in reach
-        // (a projectile, or "recharging" at Gate 3, only happens with the flower).
-        bool punch = evt.actionLabel == "fireball" && !result.LaunchedProjectile && result.Gate != 3;
-        string action = punch ? "Punch" : Capitalise(evt.actionLabel);
+        string action = Capitalise(evt.actionLabel);
 
         if (result.StateOnly) return;
 
+        if (result.ThrewShell)
+        {
+            ShowFeedback("Shell!", goodColor);
+            return;
+        }
         if (result.LaunchedProjectile)
         {
             ShowFeedback("Fireball!", deniedColor);
@@ -286,6 +339,12 @@ public class HUDController : MonoBehaviour
         {
             // The score change is picked up in UpdateStats; prefix it with the action.
             string label = result.Target is WarpPipe ? "Warp" : action;
+            if (result.Target is InteractableBase hitTarget) NotePopupAt(hitTarget.HitPoint);
+            if (evt.actionLabel == "clap")
+            {
+                ShowFeedback("Got a shell! Throw it", goodColor);
+                return;
+            }
             _pendingPrefix = $"{label}!  ";
             _pendingPrefixFrame = Time.frameCount;
             ShowFeedback($"{label}!", goodColor);
@@ -293,14 +352,16 @@ public class HUDController : MonoBehaviour
             return;
         }
 
-        // Held stomp/walk repeat every window: after a stomp lands, the next
-        // windows would flash "already used" then "nothing in range".
-        if (result.NotPermitted && EventResolver.IsContinuous(evt.actionLabel)) return;
-
         switch (result.Gate)
         {
             case 3:
-                ShowFeedback(evt.actionLabel == "fireball" ? "Fireballs recharging" : $"Can't {evt.actionLabel} right now", deniedColor);
+                ShowFeedback(result.Reason switch
+                {
+                    "fireballs recharging" => "Fireballs recharging",
+                    "nothing to throw" => "Nothing to throw — clap to pick up a shell",
+                    "hands full" => "Hands full — throw it first",
+                    _ => $"Can't {evt.actionLabel} right now",
+                }, deniedColor);
                 break;
             case 4:
                 ShowFeedback($"{action}: nothing in range", deniedColor);
@@ -317,9 +378,18 @@ public class HUDController : MonoBehaviour
 
     private void HandleImpact(GameEvent evt, Component target)
     {
-        _pendingPrefix = "Fireball hit!  ";
+        if (target is InteractableBase hitTarget) NotePopupAt(hitTarget.HitPoint);
+        string hit = evt.actionLabel == "throw" && gameState != null && !gameState.HasFireFlower ? "Shell hit!" : "Hit!";
+        _pendingPrefix = $"{hit}  ";
         _pendingPrefixFrame = Time.frameCount;
-        ShowFeedback("Fireball hit!", goodColor);
+        ShowFeedback(hit, goodColor);
+    }
+
+    /// <summary>Where the next score gain (within a couple of frames) pops up in the world.</summary>
+    private void NotePopupAt(Vector3 position)
+    {
+        _popupAt = position + Vector3.up * 0.15f;
+        _popupFrame = Time.frameCount;
     }
 
     private void HandleLifeLost(int livesLeft)
@@ -338,7 +408,7 @@ public class HUDController : MonoBehaviour
             damageFlash.enabled = t < 1f;
         }
         if (livesIcon != null && gameState != null)
-            livesIcon.enabled = !gameState.IsInvulnerable || gameState.IsGameOver || Mathf.Repeat(Time.time, 0.25f) < 0.13f;
+            livesIcon.enabled = !gameState.IsInvulnerable || gameState.IsFinished || Mathf.Repeat(Time.time, 0.25f) < 0.13f;
     }
 
     private void HandleHeadsetTuned(string text) => ShowFeedback(text, quietColor);
@@ -350,7 +420,13 @@ public class HUDController : MonoBehaviour
     private void HandleStageStarted()
     {
         _placementFailedAt = float.NegativeInfinity;
-        if (gameState != null) ShowTitle($"STAGE {gameState.StageName}", Color.white);
+        if (gameState == null) return;
+        // Intro card: WORLD 2-1, the stage's name, and a tip (campaign stages only).
+        ShowTitle($"WORLD {gameState.StageName}", Color.white);
+        var info = levelGenerator != null && levelGenerator.CurrentStage != null ? levelGenerator.CurrentStage.GetComponent<StageInfo>() : null;
+        _introCard = true;
+        if (info != null && subtitleText != null && !string.IsNullOrEmpty(info.Title))
+            subtitleText.text = string.IsNullOrEmpty(info.Tip) ? info.Title : $"{info.Title}\n<size=60%><color=#FFE08A>{info.Tip.ToUpperInvariant()}</color></size>";
     }
 
     private void HandleStageCompleted() => ShowTitle("STAGE CLEAR!", titleColor);
@@ -366,7 +442,7 @@ public class HUDController : MonoBehaviour
     private void UpdateScan()
     {
         if (scanPanel == null || sessionManager == null) return;
-        bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsGameOver);
+        bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsFinished);
         if (scanPanel.activeSelf != scanning) scanPanel.SetActive(scanning);
         if (!scanning) return;
 
@@ -432,6 +508,8 @@ public class HUDController : MonoBehaviour
     {
         if (titleText == null) return;
         titleText.text = message;
+        if (subtitleText != null) subtitleText.text = ""; // HandleStageStarted sets it for intro cards
+        _introCard = false;
         _titleColor = color;
         _titleShownAt = Time.time;
         UpdateTitle();
@@ -442,23 +520,40 @@ public class HUDController : MonoBehaviour
     {
         if (titleText == null) return;
         float age = Time.time - _titleShownAt;
-        float alpha = age <= titleSeconds ? 1f : 1f - Mathf.Clamp01((age - titleSeconds) / feedbackFadeSeconds);
+        float hold = _introCard ? introCardSeconds : titleSeconds;
+        float alpha = age <= hold ? 1f : 1f - Mathf.Clamp01((age - hold) / feedbackFadeSeconds);
         titleText.color = new Color(_titleColor.r, _titleColor.g, _titleColor.b, alpha);
         float pop = Mathf.Clamp01(age / titlePopSeconds);
         titleText.rectTransform.localScale = Vector3.one * Mathf.LerpUnclamped(1.6f, 1f, pop);
+        if (subtitleText != null) subtitleText.color = new Color(1f, 1f, 1f, alpha * Mathf.Clamp01((age - titlePopSeconds) / 0.25f));
     }
 
-    // ---- game over ----
+    // ---- end screen: game over or game clear ----
 
     private void UpdateGameOver()
     {
         if (gameOverPanel == null || gameState == null) return;
-        bool over = gameState.IsGameOver;
+        bool over = gameState.IsFinished;
         if (gameOverPanel.activeSelf != over) gameOverPanel.SetActive(over);
         if (!over) return;
 
+        bool won = gameState.IsGameClear;
+        if (gameOverTitleText != null)
+        {
+            gameOverTitleText.text = won ? "GAME CLEAR!" : "GAME OVER";
+            gameOverTitleText.color = won ? titleColor : new Color(1f, 0.3f, 0.25f);
+        }
         if (gameOverStatsText != null)
-            gameOverStatsText.text = $"SCORE {Mathf.Min(gameState.Score, 999999):D6}   STAGE {gameState.StageName}";
+        {
+            var st = gameState.GameStats;
+            int attempts = st.actionsResolved + st.actionsRefused;
+            int seconds = Mathf.RoundToInt(gameState.PlaySeconds);
+            string reached = won ? "ALL STAGES" : $"STAGE {gameState.StageName}";
+            gameOverStatsText.text =
+                $"SCORE {Mathf.Min(gameState.Score, 999999):D6}   {reached}\n" +
+                $"<size=75%>COINS {st.coinsCollected}   ENEMIES {st.enemiesDefeated}   TIME {seconds / 60}:{seconds % 60:D2}" +
+                (attempts > 0 ? $"   ACCURACY {Mathf.RoundToInt(100f * st.actionsResolved / attempts)}%" : "") + "</size>";
+        }
         if (gameOverPromptText != null)
         {
             // The restart prompt appears once a jump can actually restart, then blinks.

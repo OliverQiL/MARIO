@@ -31,6 +31,9 @@ public static class GameContentSetup
     private const string StageDir = "Assets/Stages";
 
     public const string FireballPath = PrefabDir + "/Fireball.prefab";
+    public const string ThrownShellPath = PrefabDir + "/ThrownShell.prefab";
+    public const string BowserPath = PrefabDir + "/Bowser.prefab";
+    public const string BossFlamePath = PrefabDir + "/BossFlame.prefab";
     public const string GoombaPath = PrefabDir + "/Goomba.prefab";
     public const string FireFlowerPath = PrefabDir + "/FireFlower.prefab";
     public const string OneUpPath = PrefabDir + "/OneUp.prefab";
@@ -70,13 +73,15 @@ public static class GameContentSetup
         var koopa = BuildKoopa(m);
         var bulletBill = BuildBulletBill(m);
         var fireball = BuildFireball(m);
+        var thrownShell = BuildThrownShell(m);
+        var bowser = BuildBowser(m, BuildBossFlame(m));
         var standard = BuildStandardStage(m, coinPop, pickups, goomba, koopa, bulletBill);
         var compact = BuildCompactStage(m, coinPop, pickups);
         var large = BuildLargeStage(m, coinPop, pickups, goomba, koopa, bulletBill);
         var bonusRoom = BuildBonusRoom(m);
         var campaign = new System.Collections.Generic.List<GameObject>();
         foreach (var design in StageDesigns.Campaign)
-            campaign.Add(BuildCampaignStage(design, m, coinPop, pickups, goomba, koopa, bulletBill));
+            campaign.Add(BuildCampaignStage(design, m, coinPop, pickups, goomba, koopa, bulletBill, bowser));
 
         var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
         var levelGenerator = Object.FindAnyObjectByType<LevelGenerator>();
@@ -104,6 +109,7 @@ public static class GameContentSetup
 
         var er = new SerializedObject(resolver);
         er.FindProperty("fireballPrefab").objectReferenceValue = fireball.GetComponent<Fireball>();
+        er.FindProperty("thrownShellPrefab").objectReferenceValue = thrownShell.GetComponent<ThrownShell>();
         er.ApplyModifiedPropertiesWithoutUndo();
 
         // The stage loop's events: LevelGenerator ⇄ GameStateManager (persistent listeners).
@@ -121,6 +127,8 @@ public static class GameContentSetup
         ss.FindProperty("minFloorArea").floatValue = 3f;
         ss.ApplyModifiedPropertiesWithoutUndo();
 
+        BuildHeldItemView(m);
+
         var manager = gameState.gameObject;
         if (manager.GetComponent<Difficulty>() == null) manager.AddComponent<Difficulty>();
         var audio = manager.GetComponent<AudioManager>();
@@ -134,7 +142,7 @@ public static class GameContentSetup
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log($"[GameContentSetup] Done. Built CoinPop, FireFlower, OneUp, Goomba, Koopa, BulletBill, Fireball, LargeStage, StandardStage, CompactStage, BonusRoom, {StageDesigns.Campaign.Length} campaign stages; scene wired.");
+        Debug.Log($"[GameContentSetup] Done. Built CoinPop, FireFlower, OneUp, Goomba, Koopa, BulletBill, Fireball, ThrownShell, Bowser, LargeStage, StandardStage, CompactStage, BonusRoom, {StageDesigns.Campaign.Length} campaign stages; scene wired.");
     }
 
     // ---- element prefabs ----
@@ -205,6 +213,7 @@ public static class GameContentSetup
         var root = new GameObject("Koopa");
         var k = root.AddComponent<Koopa>();
         Set(k, "stompEffect", Effect(PoofPath));
+        Shadow(root.transform, 0.36f, m);
         var model = Group("Model", root.transform, Vector3.zero);
         model.gameObject.AddComponent<EnemyWaddle>();
 
@@ -301,6 +310,7 @@ public static class GameContentSetup
     {
         var root = new GameObject("Goomba");
         Set(root.AddComponent<Goomba>(), "stompEffect", Effect(PoofPath));
+        Shadow(root.transform, 0.3f, m);
         var model = Group("Model", root.transform, Vector3.zero);
         model.gameObject.AddComponent<EnemyWaddle>();
 
@@ -330,6 +340,48 @@ public static class GameContentSetup
         foreach (var d in new[] { Vector3.up, Vector3.down, Vector3.left, Vector3.right })
             Visual(PrimitiveType.Sphere, "Lick", model, d * 0.035f, Vector3.one * 0.035f, m.FireCore);
         return Save(root, FireballPath);
+    }
+
+    /// <summary>Thrown Koopa shell: the green shell with its white rim, spinning about the vertical as it slides.</summary>
+    private static GameObject BuildThrownShell(Mats m)
+    {
+        var root = new GameObject("ThrownShell");
+        Set(root.AddComponent<ThrownShell>(), "impactEffect", Effect(PoofPath));
+        Shadow(root.transform, 0.32f, m);
+        var model = Group("Model", root.transform, Vector3.zero);
+        var spin = model.gameObject.AddComponent<Spinner>();
+        var so = new SerializedObject(spin);
+        so.FindProperty("axis").vector3Value = Vector3.up;
+        so.FindProperty("degreesPerSecond").floatValue = 900f;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        Visual(PrimitiveType.Sphere, "Shell", model, new Vector3(0f, 0.08f, 0f), new Vector3(0.26f, 0.16f, 0.28f), m.KoopaShell);
+        Visual(PrimitiveType.Cylinder, "Rim", model, new Vector3(0f, 0.04f, 0f), new Vector3(0.28f, 0.016f, 0.3f), m.White);
+        Visual(PrimitiveType.Cylinder, "Belly", model, new Vector3(0f, 0.025f, 0f), new Vector3(0.24f, 0.012f, 0.26f), m.KoopaBelly);
+        return Save(root, ThrownShellPath);
+    }
+
+    /// <summary>A small Koopa shell in the bottom-right of the player's view, shown while they hold one (HeldItemView on the AR camera).</summary>
+    private static void BuildHeldItemView(Mats m)
+    {
+        var cam = Camera.main;
+        if (cam == null) { Debug.LogWarning("[GameContentSetup] No MainCamera: held-item view not built."); return; }
+        var old = cam.transform.Find("HeldItemView");
+        if (old != null) Object.DestroyImmediate(old.gameObject);
+        var view = new GameObject("HeldItemView");
+        view.transform.SetParent(cam.transform, false);
+        var shell = Group("Shell", view.transform, new Vector3(0.11f, -0.13f, 0.38f));
+        shell.localRotation = Quaternion.Euler(-20f, 0f, 0f);
+        shell.localScale = Vector3.one * 0.45f;
+        Visual(PrimitiveType.Sphere, "Shell", shell, new Vector3(0f, 0.08f, 0f), new Vector3(0.26f, 0.16f, 0.28f), m.KoopaShell);
+        Visual(PrimitiveType.Cylinder, "Rim", shell, new Vector3(0f, 0.04f, 0f), new Vector3(0.28f, 0.016f, 0.3f), m.White);
+        Visual(PrimitiveType.Cylinder, "Belly", shell, new Vector3(0f, 0.025f, 0f), new Vector3(0.24f, 0.012f, 0.26f), m.KoopaBelly);
+        Set(view.AddComponent<HeldItemView>(), "shellModel", shell.gameObject);
+    }
+
+    /// <summary>A soft blob shadow on the floor under a character: grounds it on the real floor in AR.</summary>
+    private static void Shadow(Transform parent, float size, Mats m)
+    {
+        Visual(PrimitiveType.Quad, "Shadow", parent, new Vector3(0f, 0.004f, 0f), new Vector3(size, size, 1f), m.BlobShadow, new Vector3(90f, 0f, 0f));
     }
 
     // ---- stage templates ----
@@ -439,7 +491,7 @@ public static class GameContentSetup
     }
 
     /// <summary>A campaign stage from its StageDesigns entry.</summary>
-    private static GameObject BuildCampaignStage(StageDesigns.Design design, Mats m, GameObject coinPop, Pickups pickups, GameObject goomba, GameObject koopa, GameObject bulletBill)
+    private static GameObject BuildCampaignStage(StageDesigns.Design design, Mats m, GameObject coinPop, Pickups pickups, GameObject goomba, GameObject koopa, GameObject bulletBill, GameObject bowser)
     {
         Directory.CreateDirectory(CampaignDir);
         var root = StageRoot($"Stage {design.Name}", design.Width, design.Depth, 2.0f);
@@ -451,14 +503,290 @@ public static class GameContentSetup
             {
                 case StageDesigns.Kind.Question: QuestionBlock(root.transform, at + Vector3.up * 1.8f, m, coinPop, pickups, $"QuestionBlock{n++}"); break;
                 case StageDesigns.Kind.Brick: Brick(root.transform, at + Vector3.up * 1.2f, m, coinPop, $"BrickBlock{n++}"); break;
-                case StageDesigns.Kind.Coin: CoinObject(root.transform, at, m); break;
+                case StageDesigns.Kind.Coin:
+                    var coin = CoinObject(root.transform, at, m);
+                    if (piece.Count > 0) SetFloat(coin.GetComponent<EyeHeightPlacement>(), "extraHeight", piece.Count / 100f); // arcs
+                    break;
                 case StageDesigns.Kind.Spawner: Spawner(root.transform, at, piece.Enemies, piece.Count, goomba, koopa); break;
                 case StageDesigns.Kind.Cannon: Cannon(root.transform, at, m, bulletBill); break;
                 case StageDesigns.Kind.Pipe: WarpPipe(root.transform, at, m, piece.Chance); break;
                 case StageDesigns.Kind.Flag: Goal(root.transform, at, m); break;
+                case StageDesigns.Kind.Stairs: StairColumn(root.transform, at, piece.Count, m); break;
+                case StageDesigns.Kind.TallPipe: TallPipe(root.transform, at, piece.Count, m); break;
+                case StageDesigns.Kind.Boss:
+                    var boss = (GameObject)PrefabUtility.InstantiatePrefab(bowser, root.transform);
+                    boss.transform.localPosition = at;
+                    boss.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // facing the player's side
+                    break;
+                case StageDesigns.Kind.Axe: AxeGoal(root.transform, at, m); break;
             }
         }
+        Scenery(root.transform, design, m);
+        var info = new SerializedObject(root.AddComponent<StageInfo>());
+        info.FindProperty("title").stringValue = design.Title;
+        info.FindProperty("tip").stringValue = design.Tip;
+        info.ApplyModifiedPropertiesWithoutUndo();
         return Save(root, CampaignStagePath(design.Name));
+    }
+
+    // ---- height: stairs and tall pipes (walk round them) ----
+
+    /// <summary>A column of <paramref name="blocks"/> stair blocks (hard, bevelled, 0.25 m each).</summary>
+    private static void StairColumn(Transform parent, Vector3 at, int blocks, Mats m)
+    {
+        var column = Group("Stairs", parent, at);
+        for (int i = 0; i < Mathf.Max(1, blocks); i++)
+            Visual(PrimitiveType.Cube, "StairBlock", column, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.Stair)
+                .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+    }
+
+    /// <summary>A tall decorative green pipe (no warp), <paramref name="blocks"/> × 0.25 m high plus its lip.</summary>
+    private static void TallPipe(Transform parent, Vector3 at, int blocks, Mats m)
+    {
+        var pipe = Group("TallPipe", parent, at);
+        float h = 0.25f * Mathf.Max(1, blocks);
+        Visual(PrimitiveType.Cylinder, "Body", pipe, new Vector3(0f, h / 2f, 0f), new Vector3(0.36f, h / 2f, 0.36f), m.Pipe);
+        Visual(PrimitiveType.Cylinder, "Lip", pipe, new Vector3(0f, h + 0.045f, 0f), new Vector3(0.46f, 0.045f, 0.46f), m.Pipe);
+        Visual(PrimitiveType.Cylinder, "Opening", pipe, new Vector3(0f, h + 0.091f, 0f), new Vector3(0.36f, 0.002f, 0.36f), m.CannonBore);
+    }
+
+    // ---- scenery: decoration around and above the play area (never targets, no colliders) ----
+
+    /// <summary>
+    /// Background art for a campaign stage, by theme. Every piece is a direct
+    /// child of the stage root so CompressLayout moves it in with the rest.
+    /// Things on the floor sit on or just outside the stage edge; clouds and
+    /// ceilings are overhead, so nothing gets in the player's way.
+    /// </summary>
+    private static void Scenery(Transform root, StageDesigns.Design design, Mats m)
+    {
+        float hw = design.Width / 2f, hd = design.Depth / 2f;
+        switch (design.Scenery)
+        {
+            case StageDesigns.Scenery.Overworld:
+                Hill(root, new Vector3(-hw - 0.1f, 0f, hd - 0.2f), 0.5f, 0.6f, m);
+                Hill(root, new Vector3(hw + 0.15f, 0f, hd - 0.7f), 0.3f, 0.32f, m);
+                Hill(root, new Vector3(hw + 0.1f, 0f, -hd + 0.5f), 0.4f, 0.45f, m);
+                for (float z = -hd + 0.9f; z < hd - 0.5f; z += 1.3f)
+                {
+                    Bush(root, new Vector3(-hw - 0.05f, 0f, z), m);
+                    Bush(root, new Vector3(hw + 0.05f, 0f, z + 0.6f), m);
+                }
+                Cloud(root, new Vector3(-hw * 0.6f, 2.25f, -hd * 0.3f), 1f, m);
+                Cloud(root, new Vector3(hw * 0.5f, 2.4f, hd * 0.25f), 0.8f, m);
+                Cloud(root, new Vector3(-hw * 0.2f, 2.3f, hd * 0.85f), 1.2f, m);
+                CastleBackdrop(root, new Vector3(hw * 0.6f, 0f, hd + 0.25f), 0.7f, m);
+                break;
+
+            case StageDesigns.Scenery.Underground:
+                for (float z = -hd + 0.125f; z <= hd; z += 0.25f)
+                    foreach (int side in new[] { -1, 1 })
+                        Visual(PrimitiveType.Cube, "Ceiling", root, new Vector3(side * (hw - 0.125f), 2.35f, z), Vector3.one * 0.25f, m.UndergroundBrick)
+                            .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+                foreach (float z in new[] { -hd + 0.4f, 0f, hd - 0.4f })
+                    foreach (int side in new[] { -1, 1 })
+                    {
+                        var pillar = Group("Pillar", root, new Vector3(side * (hw + 0.13f), 0f, z));
+                        for (int i = 0; i < 9; i++)
+                            Visual(PrimitiveType.Cube, "Block", pillar, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.UndergroundBrick)
+                                .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+                    }
+                break;
+
+            case StageDesigns.Scenery.Sky:
+                Cloud(root, new Vector3(-hw * 0.7f, 2.2f, -hd * 0.6f), 1.1f, m);
+                Cloud(root, new Vector3(hw * 0.6f, 2.5f, -hd * 0.1f), 0.9f, m);
+                Cloud(root, new Vector3(-hw * 0.3f, 2.4f, hd * 0.4f), 1.3f, m);
+                Cloud(root, new Vector3(hw * 0.4f, 2.2f, hd * 0.9f), 1f, m);
+                foreach (int side in new[] { -1, 1 })
+                    for (float z = -hd + 0.4f; z < hd; z += 1.1f)
+                        Cloud(root, new Vector3(side * (hw + 0.2f), 0.15f, z + (side > 0 ? 0.5f : 0f)), 0.9f, m); // a cloud floor at the edges
+                Mushroom(root, new Vector3(-hw - 0.15f, 0f, hd * 0.2f), 0.75f, m);
+                Mushroom(root, new Vector3(hw + 0.15f, 0f, -hd * 0.45f), 0.55f, m);
+                break;
+
+            case StageDesigns.Scenery.Castle:
+                foreach (int side in new[] { -1, 1 })
+                {
+                    int n = 0;
+                    for (float z = -hd + 0.125f; z <= hd; z += 0.25f, n++)
+                    {
+                        var wall = Group("Wall", root, new Vector3(side * (hw + 0.13f), 0f, z));
+                        int height = n % 2 == 0 ? 3 : 2; // crenellations
+                        for (int i = 0; i < height; i++)
+                            Visual(PrimitiveType.Cube, "Stone", wall, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.CastleStone)
+                                .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+                    }
+                    Visual(PrimitiveType.Cube, "Lava", root, new Vector3(side * (hw + 0.5f), 0.01f, 0f), new Vector3(0.45f, 0.02f, design.Depth), m.Lava);
+                    foreach (float z in new[] { -hd * 0.5f, hd * 0.5f })
+                        Torch(root, new Vector3(side * (hw - 0.05f), 0f, z), m);
+                }
+                break;
+        }
+    }
+
+    /// <summary>A rounded green hill (a half-buried sphere) with a few dark spots, as in the 1985 backdrop.</summary>
+    private static void Hill(Transform parent, Vector3 at, float radius, float height, Mats m)
+    {
+        var hill = Group("Hill", parent, at);
+        Visual(PrimitiveType.Sphere, "Mound", hill, Vector3.zero, new Vector3(radius * 2f, height * 2f, radius * 2f), m.Hill);
+        foreach (var (x, y) in new[] { (-0.35f, 0.55f), (0.25f, 0.7f), (0f, 0.35f) })
+        {
+            var p = new Vector3(x * radius, y * height, 0f);
+            float zOnSurface = -Mathf.Sqrt(Mathf.Max(0.01f, 1f - (x * x) - (y * y))) * radius; // on the player's (-z) side
+            Visual(PrimitiveType.Sphere, "Spot", hill, new Vector3(p.x, p.y, zOnSurface), new Vector3(0.05f, 0.09f, 0.03f), m.HillDark);
+        }
+    }
+
+    /// <summary>A bush: three overlapping bright-green puffs on the floor.</summary>
+    private static void Bush(Transform parent, Vector3 at, Mats m)
+    {
+        var bush = Group("Bush", parent, at);
+        Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(-0.13f, 0.06f, 0f), new Vector3(0.2f, 0.17f, 0.18f), m.Bush);
+        Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(0f, 0.09f, 0f), new Vector3(0.26f, 0.22f, 0.22f), m.Bush);
+        Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(0.13f, 0.06f, 0f), new Vector3(0.2f, 0.17f, 0.18f), m.Bush);
+    }
+
+    /// <summary>A puffy white cloud with two eyes, drifting gently.</summary>
+    private static void Cloud(Transform parent, Vector3 at, float size, Mats m)
+    {
+        var cloud = Group("Cloud", parent, at);
+        cloud.localScale = Vector3.one * size;
+        cloud.gameObject.AddComponent<Drift>();
+        Visual(PrimitiveType.Sphere, "Puff", cloud, new Vector3(-0.16f, 0f, 0f), new Vector3(0.24f, 0.18f, 0.18f), m.Cloud);
+        Visual(PrimitiveType.Sphere, "Puff", cloud, new Vector3(0f, 0.05f, 0f), new Vector3(0.3f, 0.24f, 0.22f), m.Cloud);
+        Visual(PrimitiveType.Sphere, "Puff", cloud, new Vector3(0.16f, 0f, 0f), new Vector3(0.24f, 0.18f, 0.18f), m.Cloud);
+        foreach (int side in new[] { -1, 1 })
+            Visual(PrimitiveType.Sphere, "Eye", cloud, new Vector3(0.035f * side, 0.06f, -0.105f), new Vector3(0.022f, 0.045f, 0.01f), m.Black);
+    }
+
+    /// <summary>A small castle in the distance beyond the flag: brick keep, crenellations, a dark doorway and a tower.</summary>
+    private static void CastleBackdrop(Transform parent, Vector3 at, float size, Mats m)
+    {
+        var castle = Group("Castle", parent, at);
+        castle.localScale = Vector3.one * size;
+        Visual(PrimitiveType.Cube, "Keep", castle, new Vector3(0f, 0.25f, 0f), new Vector3(0.75f, 0.5f, 0.4f), m.CastleBrick);
+        Visual(PrimitiveType.Cube, "Tower", castle, new Vector3(0f, 0.65f, 0f), new Vector3(0.35f, 0.3f, 0.3f), m.CastleBrick);
+        Visual(PrimitiveType.Cube, "Door", castle, new Vector3(0f, 0.12f, -0.201f), new Vector3(0.14f, 0.24f, 0.01f), m.Black);
+        Visual(PrimitiveType.Cube, "Window", castle, new Vector3(0f, 0.68f, -0.151f), new Vector3(0.07f, 0.12f, 0.01f), m.Black);
+        for (int i = -3; i <= 3; i += 2)
+            Visual(PrimitiveType.Cube, "Crenel", castle, new Vector3(i * 0.1f, 0.55f, 0f), new Vector3(0.09f, 0.1f, 0.4f), m.CastleBrick);
+        for (int i = -1; i <= 1; i += 2)
+            Visual(PrimitiveType.Cube, "Crenel", castle, new Vector3(i * 0.12f, 0.85f, 0f), new Vector3(0.08f, 0.1f, 0.3f), m.CastleBrick);
+    }
+
+    /// <summary>A giant mushroom (stalk and red, white-spotted cap), as in the athletic levels.</summary>
+    private static void Mushroom(Transform parent, Vector3 at, float height, Mats m)
+    {
+        var mush = Group("Mushroom", parent, at);
+        Visual(PrimitiveType.Cylinder, "Stalk", mush, new Vector3(0f, height / 2f, 0f), new Vector3(0.12f, height / 2f, 0.12f), m.GoombaFace);
+        Visual(PrimitiveType.Sphere, "Cap", mush, new Vector3(0f, height, 0f), new Vector3(0.5f, 0.22f, 0.5f), m.MushroomCap);
+        foreach (var (x, z) in new[] { (-0.14f, -0.12f), (0.15f, -0.1f), (0f, -0.2f) })
+            Visual(PrimitiveType.Sphere, "Spot", mush, new Vector3(x, height + 0.05f, z), new Vector3(0.08f, 0.04f, 0.08f), m.White);
+    }
+
+    /// <summary>A wall torch: a dark post with a flickering flame on top.</summary>
+    private static void Torch(Transform parent, Vector3 at, Mats m)
+    {
+        var torch = Group("Torch", parent, at);
+        Visual(PrimitiveType.Cylinder, "Post", torch, new Vector3(0f, 0.55f, 0f), new Vector3(0.05f, 0.55f, 0.05f), m.Dark);
+        Visual(PrimitiveType.Cylinder, "Bowl", torch, new Vector3(0f, 1.12f, 0f), new Vector3(0.12f, 0.03f, 0.12f), m.CannonSteel);
+        var flame = Visual(PrimitiveType.Sphere, "Flame", torch, new Vector3(0f, 1.2f, 0f), new Vector3(0.09f, 0.14f, 0.09f), m.Fire);
+        flame.AddComponent<Flicker>();
+        Visual(PrimitiveType.Sphere, "Core", flame.transform, new Vector3(0f, -0.1f, 0f), Vector3.one * 0.6f, m.FireCore);
+    }
+
+    // ---- the final boss and the axe ----
+
+    /// <summary>Bowser's fire breath: a stretched fireball that flies like a Bullet Bill (squat or sidestep).</summary>
+    private static GameObject BuildBossFlame(Mats m)
+    {
+        var root = new GameObject("BossFlame");
+        var bill = root.AddComponent<BulletBill>();
+        SetFloat(bill, "speed", 1.6f);
+        SetFloat(bill, "hitRadius", 0.3f);
+        var model = Group("Model", root.transform, Vector3.zero);
+        var spin = model.gameObject.AddComponent<Spinner>();
+        var so = new SerializedObject(spin);
+        so.FindProperty("axis").vector3Value = Vector3.forward;
+        so.ApplyModifiedPropertiesWithoutUndo();
+        Visual(PrimitiveType.Sphere, "Flame", model, Vector3.zero, new Vector3(0.16f, 0.16f, 0.3f), m.Fire);
+        Visual(PrimitiveType.Sphere, "Core", model, new Vector3(0f, 0f, 0.05f), new Vector3(0.1f, 0.1f, 0.18f), m.FireCore);
+        Visual(PrimitiveType.Sphere, "Tail", model, new Vector3(0f, 0f, -0.18f), new Vector3(0.09f, 0.09f, 0.2f), m.Fire);
+        return Save(root, BossFlamePath);
+    }
+
+    /// <summary>Bowser: a spiked green shell on a big yellow body, horned head with a red mane, white-ringed shell; about 1 m tall.</summary>
+    private static GameObject BuildBowser(Mats m, GameObject flame)
+    {
+        var root = new GameObject("Bowser");
+        var boss = root.AddComponent<Bowser>();
+        Shadow(root.transform, 0.9f, m);
+        var model = Group("Model", root.transform, Vector3.zero);
+
+        Visual(PrimitiveType.Sphere, "Shell", model, new Vector3(0f, 0.52f, -0.14f), new Vector3(0.62f, 0.6f, 0.5f), m.KoopaShell);
+        Visual(PrimitiveType.Cylinder, "Rim", model, new Vector3(0f, 0.3f, -0.1f), new Vector3(0.64f, 0.025f, 0.56f), m.White);
+        foreach (var (x, y) in new[] { (-0.16f, 0.66f), (0.16f, 0.66f), (0f, 0.78f), (-0.2f, 0.45f), (0.2f, 0.45f), (0f, 0.52f) })
+            Visual(PrimitiveType.Capsule, "Spike", model, new Vector3(x, y, -0.4f), new Vector3(0.06f, 0.06f, 0.06f), m.White, new Vector3(90f, 0f, 0f));
+        Visual(PrimitiveType.Sphere, "Belly", model, new Vector3(0f, 0.45f, 0.06f), new Vector3(0.48f, 0.6f, 0.36f), m.KoopaBelly);
+        foreach (int side in new[] { -1, 1 })
+        {
+            Visual(PrimitiveType.Sphere, side < 0 ? "LegL" : "LegR", model, new Vector3(0.17f * side, 0.1f, 0.04f), new Vector3(0.2f, 0.22f, 0.24f), m.BowserSkin);
+            Visual(PrimitiveType.Sphere, side < 0 ? "ArmL" : "ArmR", model, new Vector3(0.28f * side, 0.55f, 0.08f), new Vector3(0.14f, 0.22f, 0.14f), m.BowserSkin, new Vector3(0f, 0f, -25f * side));
+            Visual(PrimitiveType.Cylinder, side < 0 ? "CuffL" : "CuffR", model, new Vector3(0.32f * side, 0.46f, 0.1f), new Vector3(0.13f, 0.02f, 0.13f), m.Black);
+        }
+
+        var head = Group("Head", model, new Vector3(0f, 0.88f, 0.12f));
+        Visual(PrimitiveType.Sphere, "Skull", head, Vector3.zero, new Vector3(0.32f, 0.28f, 0.3f), m.BowserSkin);
+        Visual(PrimitiveType.Sphere, "Snout", head, new Vector3(0f, -0.06f, 0.14f), new Vector3(0.26f, 0.15f, 0.2f), m.KoopaBelly);
+        foreach (int side in new[] { -1, 1 })
+        {
+            Visual(PrimitiveType.Sphere, side < 0 ? "EyeL" : "EyeR", head, new Vector3(0.07f * side, 0.05f, 0.13f), new Vector3(0.06f, 0.08f, 0.04f), m.White);
+            Visual(PrimitiveType.Sphere, side < 0 ? "PupilL" : "PupilR", head, new Vector3(0.065f * side, 0.045f, 0.15f), new Vector3(0.03f, 0.045f, 0.015f), m.Black);
+            Visual(PrimitiveType.Cube, side < 0 ? "BrowL" : "BrowR", head, new Vector3(0.07f * side, 0.1f, 0.13f), new Vector3(0.09f, 0.025f, 0.03f), m.BowserHair, new Vector3(0f, 0f, 25f * side));
+            Visual(PrimitiveType.Capsule, side < 0 ? "HornL" : "HornR", head, new Vector3(0.12f * side, 0.15f, -0.02f), new Vector3(0.05f, 0.08f, 0.05f), m.White, new Vector3(0f, 0f, -30f * side));
+            Visual(PrimitiveType.Cube, side < 0 ? "FangL" : "FangR", head, new Vector3(0.06f * side, -0.13f, 0.2f), new Vector3(0.025f, 0.035f, 0.015f), m.White);
+        }
+        Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.12f, -0.12f), new Vector3(0.22f, 0.18f, 0.2f), m.BowserHair);
+        Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.02f, -0.18f), new Vector3(0.2f, 0.18f, 0.16f), m.BowserHair);
+        var glow = Visual(PrimitiveType.Sphere, "MouthGlow", head, new Vector3(0f, -0.08f, 0.24f), new Vector3(0.12f, 0.08f, 0.06f), m.CannonGlow);
+
+        var so = new SerializedObject(boss);
+        so.FindProperty("flamePrefab").objectReferenceValue = flame.GetComponent<BulletBill>();
+        so.FindProperty("warningGlow").objectReferenceValue = glow;
+        so.FindProperty("model").objectReferenceValue = model;
+        so.FindProperty("hitEffect").objectReferenceValue = Effect(FireBurstPath);
+        so.FindProperty("defeatEffect").objectReferenceValue = Effect(ConfettiPath);
+        so.ApplyModifiedPropertiesWithoutUndo();
+        return Save(root, BowserPath);
+    }
+
+    /// <summary>The final goal: an axe on a stone pedestal. Locked while Bowser stands; reaching it ends the game (the axe drops).</summary>
+    private static void AxeGoal(Transform parent, Vector3 localPos, Mats m)
+    {
+        var goal = new GameObject("Goal");
+        goal.transform.SetParent(parent, false);
+        goal.transform.localPosition = localPos;
+        var sg = goal.AddComponent<StageGoal>();
+        SetFloat(sg, "reachRadius", 0.35f);
+        Visual(PrimitiveType.Cube, "Pedestal", goal.transform, new Vector3(0f, 0.25f, 0f), new Vector3(0.25f, 0.5f, 0.25f), m.CastleStone)
+            .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+        // A big double-bit axe standing on its handle, blades facing the player, as in the castle levels.
+        var axe = Group("Axe", goal.transform, new Vector3(0f, 0.85f, 0f));
+        Visual(PrimitiveType.Cylinder, "Handle", axe, Vector3.zero, new Vector3(0.04f, 0.32f, 0.04f), m.AxeHandle);
+        Visual(PrimitiveType.Sphere, "Knob", axe, new Vector3(0f, 0.33f, 0f), Vector3.one * 0.07f, m.CoinRim);
+        foreach (int side in new[] { -1, 1 })
+        {
+            // Each blade: a wide wedge (a cube turned 45°, squashed) with a bright edge.
+            Visual(PrimitiveType.Cube, side < 0 ? "BladeL" : "BladeR", axe, new Vector3(0.11f * side, 0.2f, 0f), new Vector3(0.17f, 0.17f, 0.035f), m.CannonRim, new Vector3(0f, 0f, 45f));
+            Visual(PrimitiveType.Cube, side < 0 ? "EdgeL" : "EdgeR", axe, new Vector3(0.21f * side, 0.2f, 0f), new Vector3(0.025f, 0.24f, 0.04f), m.White);
+        }
+        var gso = new SerializedObject(sg);
+        gso.FindProperty("endsGame").boolValue = true;
+        gso.FindProperty("pennant").objectReferenceValue = axe;
+        gso.FindProperty("pennantBottom").floatValue = 0.55f;
+        gso.FindProperty("celebrationEffect").objectReferenceValue = Effect(ConfettiPath);
+        gso.ApplyModifiedPropertiesWithoutUndo();
     }
 
     /// <summary>The bonus room and the pieces it lays out at runtime (coin, exit pipe, wall block).</summary>
@@ -780,6 +1108,45 @@ public static class GameContentSetup
         public readonly Material CannonRim = Mat("CannonRim", new Color(0.82f, 0.84f, 0.88f));
         public readonly Material CannonBore = Mat("CannonBore", new Color(0.05f, 0.05f, 0.05f));
         public readonly Material CannonGlow = Mat("CannonGlow", new Color(1f, 0.6f, 0.2f), emission: new Color(0.9f, 0.45f, 0.1f));
+        // World 2 and scenery
+        public readonly Material Stair = Mat("StairBlock", Color.white, texture: PixelArt.SpentBlock(), smoothness: 0.15f);
+        public readonly Material Hill = Mat("Hill", new Color(0.25f, 0.7f, 0.3f), smoothness: 0.2f);
+        public readonly Material HillDark = Mat("HillDark", new Color(0.08f, 0.35f, 0.12f));
+        public readonly Material Bush = Mat("Bush", new Color(0.45f, 0.85f, 0.3f), smoothness: 0.2f);
+        public readonly Material Cloud = Mat("Cloud", new Color(0.97f, 0.98f, 1f), emission: new Color(0.12f, 0.12f, 0.14f), smoothness: 0.1f);
+        public readonly Material CastleBrick = Mat("CastleBrick", Color.white, texture: PixelArt.Brick(), smoothness: 0.1f, tiling: new Vector2(2f, 2f));
+        public readonly Material CastleStone = Mat("CastleStone", Color.white, texture: PixelArt.CastleStone(), smoothness: 0.1f);
+        public readonly Material Lava = Mat("Lava", new Color(1f, 0.35f, 0.05f), emission: new Color(1f, 0.3f, 0.02f), smoothness: 0.8f);
+        public readonly Material MushroomCap = Mat("MushroomCap", new Color(0.9f, 0.2f, 0.15f), smoothness: 0.4f);
+        public readonly Material BowserSkin = Mat("BowserSkin", new Color(0.95f, 0.78f, 0.25f));
+        public readonly Material BowserHair = Mat("BowserHair", new Color(0.95f, 0.35f, 0.1f));
+        public readonly Material AxeHandle = Mat("AxeHandle", new Color(0.75f, 0.15f, 0.1f));
+        public readonly Material BlobShadow = TransparentMat("BlobShadow", PixelArt.BlobShadow());
+
+        /// <summary>Unlit, alpha-blended, no depth write: for soft shadows on the floor.</summary>
+        private static Material TransparentMat(string name, Texture2D texture)
+        {
+            var path = $"{MaterialDir}/{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(MaterialDir);
+                mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.SetTexture("_BaseMap", texture);
+            mat.SetColor("_BaseColor", Color.white);
+            mat.SetFloat("_Surface", 1f);
+            mat.SetFloat("_Blend", 0f);
+            mat.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            mat.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.OneMinusSrcAlpha);
+            mat.SetFloat("_ZWrite", 0f);
+            mat.SetOverrideTag("RenderType", "Transparent");
+            mat.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
 
         private static Material Mat(string name, Color color, Color? emission = null, Texture2D texture = null, float smoothness = 0.5f, Vector2? tiling = null)
         {

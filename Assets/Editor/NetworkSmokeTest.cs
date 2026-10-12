@@ -15,8 +15,8 @@ using UnityEngine;
 /// Run the mock gateway first, then (Unity closed):
 ///   Unity -batchmode -projectPath . -executeMethod NetworkSmokeTest.Run \
 ///         -gatewayUrl wss://127.0.0.1:8765/ -pin <sha256> [-expect 6,5,2,4,2,6]
-/// Default script "stomp,stomp,dup,fireball,low:jump,walk" → hit, spent, duplicate,
-/// bare-handed strike with no brick in reach, low confidence, state-only walk.
+/// Default script "stomp,stomp,dup,punch,low:jump,squat" → hit, spent, duplicate,
+/// punch with no brick in reach, low confidence, state-only duck.
 /// Note: no -quit — the editor loop has to keep running to pump async work.
 /// </summary>
 public static class NetworkSmokeTest

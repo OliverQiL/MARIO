@@ -22,6 +22,15 @@ public abstract class InteractableBase : MonoBehaviour, IInteractable
     /// <summary>The point used for range checks and projectile hits.</summary>
     public virtual Vector3 HitPoint => transform.position;
 
+    /// <summary>Whether something sliding along the floor at <paramref name="point"/> (a thrown shell) touches it.</summary>
+    public virtual bool TouchesFloorAt(Vector3 point, float radius)
+    {
+        var offset = HitPoint - point;
+        if (Mathf.Abs(offset.y) > 0.4f) return false; // only things on the floor
+        offset.y = 0f;
+        return offset.sqrMagnitude <= radius * radius;
+    }
+
     protected virtual void OnEnable()
     {
         s_All.RemoveAll(x => x == null); // destroyed without OnDisable (edit-mode tests)

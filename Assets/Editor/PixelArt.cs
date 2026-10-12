@@ -99,6 +99,12 @@ public static class PixelArt
         ['L'] = Hex("3A64B0"), ['S'] = Hex("0A1430"), ['Y'] = Hex("1E3C78"), ['R'] = Hex("0A1430"),
     });
 
+    /// <summary>Grey castle stone: the brick pattern in greys.</summary>
+    public static Texture2D CastleStone() => Save("CastleStone", BrickRows, new Dictionary<char, Color>
+    {
+        ['B'] = Hex("8C8C96"), ['M'] = Hex("3C3C46"), ['H'] = Hex("B4B4BE"),
+    });
+
     public static Texture2D Brick() => Save("Brick", BrickRows, new Dictionary<char, Color>
     {
         ['H'] = Hex("E0784A"), ['B'] = Hex("B8481E"), ['M'] = Hex("401C0C"),
@@ -196,6 +202,64 @@ public static class PixelArt
         ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['R'] = Hex("F0461E"), ['Y'] = Hex("FFC81E"),
         ['W'] = Hex("FFF7DC"), ['G'] = Hex("28A03C"),
     });
+
+    private static readonly string[] ShellIconRows =
+    {
+        "................",
+        "................",
+        "......KKKK......",
+        "....KKGGGGKK....",
+        "...KGGWGGGGGK...",
+        "..KGGWGGLLGGGK..",
+        "..KGWGGLLLLGGK..",
+        ".KGGGGGLLLLGGGK.",
+        ".KGGLLGGLLGGLGK.",
+        ".KGLLLLGGGGLLGK.",
+        ".KWWWWWWWWWWWWK.",
+        ".KYYYYYYYYYYYYK.",
+        "..KYYYYYYYYYYK..",
+        "...KKKKKKKKKK...",
+        "................",
+        "................",
+    };
+
+    /// <summary>HUD icon for a held Koopa shell: green plates, white rim, yellow belly.</summary>
+    public static Sprite ShellIcon() => SaveSprite("ShellIcon", ShellIconRows, new Dictionary<char, Color>
+    {
+        ['.'] = Color.clear, ['K'] = Hex("1A0A0A"), ['G'] = Hex("1E8C32"), ['L'] = Hex("3CB44A"),
+        ['W'] = Hex("FFFFFF"), ['Y'] = Hex("FFE6A0"),
+    });
+
+    /// <summary>
+    /// Soft round shadow (black, alpha falling off from the centre) for blob
+    /// shadows under characters, which ground them on the real floor in AR.
+    /// </summary>
+    public static Texture2D BlobShadow()
+    {
+        const int size = 32;
+        var rows = new string[size];
+        var palette = new Dictionary<char, Color>();
+        for (int i = 0; i <= 9; i++) palette[(char)('0' + i)] = new Color(0f, 0f, 0f, i / 9f * 0.55f);
+        for (int y = 0; y < size; y++)
+        {
+            var chars = new char[size];
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                float a = Mathf.Clamp01(1f - Mathf.Sqrt(dx * dx + dy * dy));
+                chars[x] = (char)('0' + Mathf.RoundToInt(Mathf.SmoothStep(0f, 1f, a) * 9f));
+            }
+            rows[y] = new string(chars);
+        }
+        var tex = Save("BlobShadow", rows, palette);
+        // Smooth and clamped, unlike the pixel art.
+        var importer = (TextureImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(tex));
+        importer.filterMode = FilterMode.Bilinear;
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.alphaIsTransparency = true;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
+    }
 
     /// <summary>
     /// Scan grid tile (white, tinted by the material): a one-pixel line along two

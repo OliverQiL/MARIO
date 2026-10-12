@@ -1,8 +1,8 @@
 using UnityEngine;
 
 /// <summary>
-/// Brick block at chest height. Broken by a bare-handed strike (fireball
-/// without a flower) or by a fireball projectile.
+/// Brick block at chest height. Broken by a forward punch or by a fireball
+/// projectile.
 /// </summary>
 public class BrickBlock : InteractableBase
 {
@@ -13,7 +13,7 @@ public class BrickBlock : InteractableBase
     private bool _broken;
 
     public override bool IsActionable => !_broken;
-    public override bool RespondsTo(string actionLabel) => actionLabel == "strike" || actionLabel == "fireball";
+    public override bool RespondsTo(string actionLabel) => actionLabel == "punch" || actionLabel == "fireball";
 
     public override void ResolveHit(string actionLabel, GameStateManager gameState)
     {

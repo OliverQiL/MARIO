@@ -156,6 +156,7 @@ MonoBehaviour:
   offsetFromEyes: 0.3
   fractionOfEyes: 0.6
   minHeightAboveFloor: 0.4
+  extraHeight: 0
 --- !u!1 &4703345740216712120
 GameObject:
   m_ObjectHideFlags: 0

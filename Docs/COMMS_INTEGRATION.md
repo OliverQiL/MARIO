@@ -57,20 +57,20 @@ I put both into the app (`NetworkClient` on `GameManager`) and rebuild.
 ## 3. Messages
 
 Every message is **one JSON object in one WebSocket *text* frame**, UTF-8.
-- Every message has `"type"` and `"protocol_version": 1`.
+- Every message has `"type"` and `"protocol_version": 2`.
 - Unknown fields are ignored on both sides, so you may add your own (e.g. debugging info).
 - Never batch several messages into one frame or a JSON array. **Binary frames are ignored.**
 
 ### 3.1 Phone → you: `VISUALIZER_READY`
 Sent right after every connect, including reconnects.
 ```json
-{"type":"VISUALIZER_READY","protocol_version":1,"app_version":"0.1.0"}
+{"type":"VISUALIZER_READY","protocol_version":2,"app_version":"0.1.0"}
 ```
 Use it to know the phone is live. Sending events before it arrives is harmless, but nothing will be listening to them.
 
 ### 3.2 You → phone: `GAME_EVENT`
 ```json
-{"type":"GAME_EVENT","protocol_version":1,"session_id":"s-1727170000",
+{"type":"GAME_EVENT","protocol_version":2,"session_id":"s-1727170000",
  "event_id":"e-000042","window_id":1337,"action":"stomp","confidence":0.93,
  "timestamp":1727170000.123}
 ```
@@ -80,7 +80,7 @@ Use it to know the phone is live. Sending events before it arrives is harmless, 
 | `session_id` | string | Pick a new one each time your gateway starts (e.g. `s-<unix time>`). |
 | `event_id` | string | **Unique within the session.** The phone de-duplicates on `(session_id, event_id)`, remembering the last 1024. |
 | `window_id` | integer | Your classifier window number. Logged only. |
-| `action` | string | Exactly one of `stand` `walk` `jump` `squat` `fireball` `stomp`: **lowercase, no spaces**. Anything else is rejected. |
+| `action` | string | Exactly one of `jump` `stomp` `squat` `throw` `punch` `clap`: **lowercase, no spaces**. Anything else is rejected (gate 2), including v1's `stand`, `walk` and `fireball`. |
 | `confidence` | number 0–1 | Below **0.6** the phone rejects it as "not recognised". |
 | `timestamp` | number | Unix seconds (float) on *your* clock. Logged only; the clocks aren't synced. |
 
@@ -88,7 +88,7 @@ Use it to know the phone is live. Sending events before it arrives is harmless, 
 
 ### 3.3 Phone → you: `EVENT_ACK` (one per `GAME_EVENT`, always)
 ```json
-{"type":"EVENT_ACK","protocol_version":1,"session_id":"s-1727170000",
+{"type":"EVENT_ACK","protocol_version":2,"session_id":"s-1727170000",
  "event_id":"e-000042","outcome":"resolved","gate":6,"reason":"resolved","processing_ms":0.31}
 ```
 - `outcome`: `resolved` or `rejected`.
@@ -96,32 +96,32 @@ Use it to know the phone is live. Sending events before it arrives is harmless, 
 
 | `gate` | Meaning | Example `reason` |
 |---|---|---|
-| 1 | Game not ready: scanning, stage changing, tracking lost, or game over | `session not ready`, `game over` |
+| 1 | Game not ready: scanning, stage changing, tracking lost, game over, or game clear | `session not ready`, `game over`, `game clear` |
 | 2 | Invalid: low confidence, or a duplicate `event_id` | `confidence 0.42 < 0.60`, `duplicate event_id 'e-000042'` |
-| 3 | Not allowed right now | `fireballs recharging` |
+| 3 | Not allowed right now | `fireballs recharging`, `nothing to throw`, `hands full` |
 | 4 | No target in range or facing | `no target in range/facing` |
 | 5 | Target already used | `target not actionable` |
-| 6 | **Resolved**: the action did something | `resolved`, `walk`, `airborne`, `projectile` |
+| 6 | **Resolved**: the action did something | `resolved`, `airborne`, `ducked`, `projectile` (fireball), `shell` (thrown shell) |
 
 - `processing_ms` is the phone's own processing time, usually under 1 ms. Your *send → ACK* time is the network round trip; please log it.
 - **Duplicates are ACKed too** (gate 2), so you can safely resend an event that wasn't ACKed with the **same `event_id`**. See §4.4.
 
 ### 3.4 Phone → you: `HAPTIC_CMD` (forward to the wearable over BLE)
 ```json
-{"type":"HAPTIC_CMD","protocol_version":1,"session_id":"s-1727170000",
+{"type":"HAPTIC_CMD","protocol_version":2,"session_id":"s-1727170000",
  "event_id":"e-000042","target":"ankle","pattern":"success"}
 ```
 
 | `target` | Strap |
 |---|---|
-| `wrist` | arm strap (fireball / punch) |
+| `wrist` | arm strap (throw / punch / clap) |
 | `ankle` | leg strap (stomp) |
 | `both` | both straps (everything else, and damage) |
 
 | `pattern` | When |
 |---|---|
-| `success` | an action hit something, or a fireball landed (it arrives *later*, when the projectile hits) |
-| `denied` | a jump, squat or fireball was recognised but not allowed (gates 3–5) |
+| `success` | an action hit something, or a thrown fireball or shell hit something (it arrives *later*, once per thing the projectile hits: a shell can hit several) |
+| `denied` | an action was recognised but not allowed (gates 3–5) |
 | `damage` | the player lost a life. `target` is `both`, and `session_id`/`event_id` are **empty strings**, because no single event caused it. |
 
 What each pattern feels like (pulse length and count) is up to the wearable firmware. A suggestion: `success` 1 short pulse, `denied` 2 short, `damage` 1 long.
@@ -130,13 +130,17 @@ What each pattern feels like (pulse length and count) is up to the wearable firm
 
 ## 4. Behaviour your gateway needs (the important part)
 
-### 4.1 Continuous vs discrete actions
-| Kind | Actions | What to send |
+### 4.1 Every action is discrete (protocol v2)
+| Action | Motion | What it does in the game |
 |---|---|---|
-| **Continuous** | `stand`, `walk`, `stomp` | One event **every classifier window** while the action continues. The phone expects repeats; refusals of these are silent and don't buzz. |
-| **Discrete** | `jump`, `squat`, `fireball` | **Exactly one event per physical action.** If the classifier labels 5 consecutive windows "jump", send **one** jump. Otherwise the phone sees 5 jumps. Simple rule: after sending a discrete action, ignore the same label until a different label (or ~0.5 s of no detection) has come in between. |
+| `jump` | jump | hits a ? block overhead; also starts the scan, confirms it, and restarts after game over / game clear |
+| `stomp` | stomp a foot | defeats an enemy at your feet (a Koopa takes two stomps) |
+| `squat` | squat | ducks Bullet Bills and Bowser's fire; enters a warp pipe you're standing on |
+| `throw` | throwing motion | throws the shell you're holding; otherwise a fireball if you have the fire flower |
+| `punch` | forward punch | breaks a brick (or hits Bowser) in front of you at chest height |
+| `clap` | clap | picks up a Koopa shell from the floor in front of you |
 
-**Stomp detail:** a Koopa needs two *separate* stomps. The phone counts a stomp as new when there's been **more than 0.3 s with no stomp events** since the previous one. So between two real stomps the stream needs that small gap: don't keep emitting `stomp` between them.
+Send **exactly one event per physical action.** If the classifier labels 5 consecutive windows "stomp", send **one** stomp; otherwise the phone sees 5 stomps (and a Koopa's two-stomp rule means nothing). Simple rule: after sending an action, ignore the same label until a different label (or ~0.5 s of no detection) has come in between. Two real stomps in a row are two events, with that gap between them.
 
 ### 4.2 Send jumps even before the game starts
 The phone has no touch input during play, so a **jump controls the setup**:
@@ -194,11 +198,11 @@ async def handle_phone(ws):
             phone = None
 
 async def send_action(action, confidence, window_id):
-    """Call this once per classified event (once per discrete action — see §4.1)."""
+    """Call this once per classified event (once per physical action — see §4.1)."""
     global next_id
     if phone is None:
         return                                                # not connected: drop it, don't queue
-    evt = {"type": "GAME_EVENT", "protocol_version": 1, "session_id": SESSION,
+    evt = {"type": "GAME_EVENT", "protocol_version": 2, "session_id": SESSION,
            "event_id": f"e-{next_id:06d}", "window_id": window_id,
            "action": action, "confidence": round(float(confidence), 3), "timestamp": time.time()}
     next_id += 1
@@ -232,7 +236,8 @@ asyncio.run(main())
    - [ ] Re-sending an `event_id` → ACK gate 2 `duplicate`.
    - [ ] `confidence` 0.3 → ACK gate 2.
    - [ ] One physical jump → **one** `GAME_EVENT` (§4.1).
-   - [ ] Holding a stomp → a stomp every window; two stomps separated by a pause.
+   - [ ] One physical stomp → **one** `stomp`; two stomps in a row → two events.
+   - [ ] All six labels arrive spelled exactly `jump` `stomp` `squat` `throw` `punch` `clap`.
    - [ ] A Goomba hits the player → `HAPTIC_CMD target=both pattern=damage` (empty IDs) reaches the wearable.
    - [ ] Kill the gateway and restart it → the phone reconnects within ~8 s without a restart.
    - [ ] Send → ACK round trip logged; under ~100 ms on the lab Wi-Fi.

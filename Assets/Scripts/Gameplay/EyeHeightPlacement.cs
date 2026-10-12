@@ -18,6 +18,8 @@ public class EyeHeightPlacement : MonoBehaviour
     [SerializeField] private float fractionOfEyes;
     [Tooltip("Never lower than this above the floor (metres).")]
     [SerializeField] private float minHeightAboveFloor = 0.3f;
+    [Tooltip("Extra metres on top of the body-relative height (coin arcs rise in the middle).")]
+    [SerializeField] private float extraHeight;
 
     private void Start() => Place();
 
@@ -28,7 +30,7 @@ public class EyeHeightPlacement : MonoBehaviour
         float floorY = transform.parent != null ? transform.parent.position.y : 0f;
         float live = cam != null ? cam.transform.position.y - floorY : 1.55f;
         float eyes = PlayerBody.EyeHeightOr(live);
-        float above = fractionOfEyes > 0f ? eyes * fractionOfEyes : eyes + offsetFromEyes;
+        float above = (fractionOfEyes > 0f ? eyes * fractionOfEyes : eyes + offsetFromEyes) + extraHeight;
         var p = transform.position;
         transform.position = new Vector3(p.x, floorY + Mathf.Max(above, minHeightAboveFloor), p.z);
     }

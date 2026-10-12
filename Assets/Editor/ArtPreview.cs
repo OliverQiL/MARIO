@@ -87,9 +87,25 @@ public static class ArtPreview
         Shoot(Path.Combine(outDir, "closeup.png"), new Vector3(0f, 0.2f, -0.6f), new Vector3(0f, 0.12f, 0f), 1400, 700);
         Object.DestroyImmediate(close.gameObject);
 
+        // World 2: Bowser, his flame, a thrown shell, the axe, and a score popup (for its size against them).
+        var boss = new GameObject("Boss").transform;
+        Place(Load(GameContentSetup.BowserPath), boss, new Vector3(-0.3f, 0f, 0f), 200f);
+        Place(Load(GameContentSetup.BossFlamePath), boss, new Vector3(0.25f, 0.9f, 0f), 250f);
+        Place(Load(GameContentSetup.ThrownShellPath), boss, new Vector3(0.3f, 0f, -0.2f), 200f);
+        var castle = Load(GameContentSetup.CampaignStagePath("2-4"));
+        Place(castle.transform.Find("Goal").gameObject, boss, new Vector3(0.75f, 0f, 0.1f), 180f);
+        var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P SDF.asset");
+        var popup = ScorePopup.Spawn("+1000", new Vector3(-0.3f, 1.25f, 0f), new Color(1f, 0.85f, 0.2f), font, null);
+        popup.transform.SetParent(boss, true);
+        popup.transform.rotation = Quaternion.identity;
+        popup.enabled = false;
+        popup.GetComponent<TMP_Text>().ForceMeshUpdate();
+        Shoot(Path.Combine(outDir, "boss.png"), new Vector3(0.1f, 0.85f, -2.6f), new Vector3(0.1f, 0.6f, 0f), 1800, 1000);
+        Object.DestroyImmediate(boss.gameObject);
+
         RenderStages(outDir);
         RenderHud(outDir);
-        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, stage_*.png, bonus_room.png, hud_scan.png, hud.png, hud_gameover.png to {Path.GetFullPath(outDir)}");
+        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, boss.png, stage_*.png, bonus_room.png, hud_scan.png, hud.png, hud_gameover.png, hud_gameclear.png to {Path.GetFullPath(outDir)}");
     }
 
     /// <summary>
@@ -103,7 +119,7 @@ public static class ArtPreview
         {
             EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
             var stage = Object.Instantiate(Load(GameContentSetup.CampaignStagePath(design.Name)));
-            ShootLayout(stage, Path.Combine(outDir, $"stage_{design.Name}.png"));
+            ShootLayout(stage, Path.Combine(outDir, $"stage_{design.Name}.png"), design.Depth / 4f);
         }
         EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
         var room = Object.Instantiate(Load(GameContentSetup.BonusRoomPath));
@@ -111,7 +127,7 @@ public static class ArtPreview
         ShootLayout(room, Path.Combine(outDir, "bonus_room.png"));
     }
 
-    private static void ShootLayout(GameObject layout, string path)
+    private static void ShootLayout(GameObject layout, string path, float zoom = 1f)
     {
         var eyes = Camera.main; // the default scene's camera stands in for the player's eyes
         eyes.transform.position = new Vector3(0f, 1.5f, -2.6f);
@@ -119,10 +135,10 @@ public static class ArtPreview
             typeof(EyeHeightPlacement).GetMethod("Start", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(eh, null);
         // A floor to stand the layout on.
         var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        floor.transform.localScale = new Vector3(0.4f, 1f, 0.6f);
+        floor.transform.localScale = new Vector3(0.4f, 1f, 0.6f) * zoom;
         var floorRenderer = floor.GetComponent<Renderer>();
         floorRenderer.sharedMaterial = new Material(floorRenderer.sharedMaterial) { color = new Color(0.72f, 0.66f, 0.58f) }; // a copy: never edit the built-in default
-        Shoot(path, new Vector3(0f, 3.4f, -3.9f), new Vector3(0f, 0.3f, 0.2f), 1600, 1200);
+        Shoot(path, new Vector3(0f, 3.4f * zoom, -3.9f * zoom), new Vector3(0f, 0.3f, 0.2f), 1600, 1200);
         Object.DestroyImmediate(floor);
     }
 
@@ -138,6 +154,8 @@ public static class ArtPreview
         var so = new SerializedObject(hud);
         TMP_Text T(string field) => (TMP_Text)so.FindProperty(field).objectReferenceValue;
 
+        var heldView = Camera.main != null ? Camera.main.transform.Find("HeldItemView") : null;
+        if (heldView != null) heldView.gameObject.SetActive(false); // in front of the scene camera, not part of the HUD
         var camGO = new GameObject("HudCamera", typeof(Camera));
         var cam = camGO.GetComponent<Camera>();
         cam.clearFlags = CameraClearFlags.SolidColor;
@@ -166,22 +184,35 @@ public static class ArtPreview
         ((Image)so.FindProperty("powerIcon").objectReferenceValue).enabled = true;
         T("powerEmptyText").enabled = false;
         T("connectionText").text = "<color=#FF5A4D>●</color> OFFLINE";
-        T("bannerText").text = "FLAG 2.6 M";
+        T("bannerText").text = "BEAT BOWSER TO REACH THE AXE";
         T("bannerText").color = new Color(0.8f, 0.8f, 0.8f);
-        T("titleText").text = "STAGE 4";
+        T("titleText").text = "WORLD 2-4";
         T("titleText").color = Color.white;
+        T("subtitleText").text = "BOWSER'S CASTLE\n<size=60%><color=#FFE08A>PUNCH, FIREBALL OR SHELL HIM (A SHELL COUNTS 2). SQUAT HIS FIRE!</color></size>";
+        T("subtitleText").color = Color.white;
+        ((Image)so.FindProperty("heldIcon").objectReferenceValue).enabled = true;
+        T("heldEmptyText").enabled = false;
+        var bossBar = (GameObject)so.FindProperty("bossPanel").objectReferenceValue;
+        bossBar.SetActive(true);
+        ((Image)so.FindProperty("bossFill").objectReferenceValue).fillAmount = 0.6f;
         T("feedbackText").text = "STOMP!  +100";
         T("feedbackText").color = new Color(0.3f, 1f, 0.4f);
         ShootCanvas(cam, Path.Combine(outDir, "hud.png"));
 
         var panel = (GameObject)so.FindProperty("gameOverPanel").objectReferenceValue;
         panel.SetActive(true);
-        T("gameOverStatsText").text = "SCORE 002150   STAGE 4";
+        bossBar.SetActive(false);
+        T("gameOverStatsText").text = "SCORE 002150   STAGE 1-4\n<size=75%>COINS 23   ENEMIES 9   TIME 4:12   ACCURACY 81%</size>";
         T("gameOverPromptText").enabled = true;
         T("titleText").text = "";
+        T("subtitleText").text = "";
         T("feedbackText").text = "";
         T("bannerText").text = "";
         ShootCanvas(cam, Path.Combine(outDir, "hud_gameover.png"));
+        T("gameOverTitleText").text = "GAME CLEAR!";
+        T("gameOverTitleText").color = new Color(1f, 0.85f, 0.2f);
+        T("gameOverStatsText").text = "SCORE 048650   ALL STAGES\n<size=75%>COINS 87   ENEMIES 31   TIME 14:05   ACCURACY 84%</size>";
+        ShootCanvas(cam, Path.Combine(outDir, "hud_gameclear.png"));
     }
 
     private static void ShootCanvas(Camera cam, string path)

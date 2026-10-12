@@ -2,7 +2,7 @@ using UnityEngine;
 
 /// <summary>
 /// Goomba (Docs/GAME_DESIGN.md): walks along the floor straight toward the
-/// player. Defeated by stomp or fireball. Touching a player who isn't
+/// player. Defeated by stomp, fireball or a thrown shell. Touching a player who isn't
 /// airborne costs a life (and the Goomba is removed); if the player is
 /// airborne from a jump it passes by, carries on briefly, then turns back.
 /// Frozen while the session isn't ready (tracking lost, game over, transitions).
@@ -32,7 +32,7 @@ public class Goomba : InteractableBase
     public float SpeedMultiplier { get; set; } = 1f;
 
     public override bool IsActionable => !_dead;
-    public override bool RespondsTo(string actionLabel) => actionLabel == "stomp" || actionLabel == "fireball";
+    public override bool RespondsTo(string actionLabel) => actionLabel == "stomp" || actionLabel == "fireball" || actionLabel == ThrownShell.HitLabel;
     public override Vector3 HitPoint => transform.position + Vector3.up * bodyHeight;
 
     /// <summary>Whether it walks and hurts on contact (a Koopa shell doesn't).</summary>
@@ -46,6 +46,7 @@ public class Goomba : InteractableBase
     {
         _dead = true;
         gameState.AddScore(scoreValue);
+        gameState.RecordDefeat();
         if (actionLabel == "stomp")
         {
             // Squashed flat with a puff of dust, then gone.

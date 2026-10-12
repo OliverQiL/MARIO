@@ -26,6 +26,8 @@ public class GameStateManager : MonoBehaviour
     [SerializeField] private int stageIndex = 1;
     [SerializeField] private bool hasFireFlower;
     [SerializeField] private int coins;
+    [Tooltip("What the player is carrying (picked up with clap, thrown with throw).")]
+    [SerializeField] private HeldItem heldItem;
 
     [Header("Scoring")]
     [SerializeField] private int stageClearBonus = 500;
@@ -45,8 +47,10 @@ public class GameStateManager : MonoBehaviour
     public UnityEvent<int> OnLifeLost = new();
     [Tooltip("Fired when the last life is lost. Wire to LevelGenerator.EndGame.")]
     public UnityEvent OnGameOver = new();
-    [Tooltip("Fired when a new game starts after a game over. Wire to LevelGenerator.RestartLoop.")]
+    [Tooltip("Fired when a new game starts after a game over or the game is cleared. Wire to LevelGenerator.RestartLoop.")]
     public UnityEvent OnGameRestarted = new();
+    [Tooltip("Fired when the final stage is cleared (the game is won).")]
+    public UnityEvent OnGameClear = new();
 
     [Header("Session (read-only at runtime)")]
     [Tooltip("Driven by ARSessionManager tracking events.")]
@@ -60,15 +64,16 @@ public class GameStateManager : MonoBehaviour
 
     [Header("Player (read-only at runtime)")]
     [SerializeField] private bool isGameOver;
-    [SerializeField] private string movementState = "stand";
+    [SerializeField] private bool isGameClear;
     private float _airborneUntil = float.NegativeInfinity;
     private float _duckedUntil = float.NegativeInfinity;
     private float _invulnerableUntil = float.NegativeInfinity;
     private float _gameOverAt = float.NegativeInfinity;
-    private float _lastStompAt = float.NegativeInfinity;
+    private float _gameStartedAt = float.NegativeInfinity;
 
-    [Tooltip("Stomp is re-sent every classification window; a pause this long between stomp events starts a new stomp.")]
-    [SerializeField] private float newStompGapSeconds = 0.3f;
+    /// <summary>End-of-game stats (GAME OVER / GAME CLEAR screens).</summary>
+    public struct Stats { public int actionsResolved, actionsRefused, enemiesDefeated, coinsCollected; }
+    private Stats _stats;
 
     public int Score => score;
     public int Lives => lives;
@@ -82,33 +87,57 @@ public class GameStateManager : MonoBehaviour
     public int Coins => coins;
     public bool IsTracking => isTracking;
     public bool IsStageActive => isStageActive;
-    /// <summary>EventResolver's Gate 1: tracking is good, a stage is live, and the game isn't over.</summary>
-    public bool IsSessionReady => isTracking && isStageActive && !isGameOver;
+    /// <summary>EventResolver's Gate 1: tracking is good, a stage is live, and the game isn't over or won.</summary>
+    public bool IsSessionReady => isTracking && isStageActive && !isGameOver && !isGameClear;
     public bool IsGameOver => isGameOver;
+    /// <summary>The final stage was cleared: the game is won (a jump starts a new game).</summary>
+    public bool IsGameClear => isGameClear;
+    /// <summary>Game over or game clear: play has ended until a jump restarts it.</summary>
+    public bool IsFinished => isGameOver || isGameClear;
+    /// <summary>Seconds since the game ended (over or cleared).</summary>
     public float SecondsSinceGameOver => Time.time - _gameOverAt;
-    public string MovementState => movementState;
+    public HeldItem Held => heldItem;
+    public Stats GameStats => _stats;
+    /// <summary>Seconds of play since the first stage of this game started.</summary>
+    public float PlaySeconds => float.IsInfinity(_gameStartedAt) ? 0f : (IsFinished ? _gameOverAt : Time.time) - _gameStartedAt;
     public bool IsAirborne => Time.time < _airborneUntil;
     public bool IsDucked => Time.time < _duckedUntil;
     public bool IsInvulnerable => Time.time < _invulnerableUntil;
     public int StartingLives => startingLives;
     public int MaxLives => maxLives;
-    /// <summary>When the current stomp motion began (its first event after a pause).</summary>
-    public float StompStartedAt { get; private set; } = float.NegativeInfinity;
 
     private void Awake() => s_Instance = this;
 
     // ---- player action states ----
 
-    public void SetMovementState(string state) => movementState = state;
     public void Jump(float seconds) => _airborneUntil = Time.time + seconds;
     public void Duck(float seconds) => _duckedUntil = Time.time + seconds;
 
-    /// <summary>Records a stomp event; one arriving after a pause of newStompGapSeconds starts a new stomp motion.</summary>
-    public void NoteStomp()
+    /// <summary>Picks up an item (clap). Returns false if the hands are already full.</summary>
+    public bool PickUp(HeldItem item)
     {
-        if (Time.time - _lastStompAt > newStompGapSeconds) StompStartedAt = Time.time;
-        _lastStompAt = Time.time;
+        if (heldItem != HeldItem.None || item == HeldItem.None) return false;
+        heldItem = item;
+        Debug.Log($"[GameStateManager] Holding {item}.");
+        return true;
     }
+
+    /// <summary>Lets go of the held item (throw) and returns what it was.</summary>
+    public HeldItem ThrowHeld()
+    {
+        var item = heldItem;
+        heldItem = HeldItem.None;
+        return item;
+    }
+
+    /// <summary>Counts an action's outcome for the end-of-game stats (EventResolver calls this).</summary>
+    public void RecordAction(bool resolved, bool refused)
+    {
+        if (resolved) _stats.actionsResolved++;
+        else if (refused) _stats.actionsRefused++;
+    }
+
+    public void RecordDefeat() => _stats.enemiesDefeated++;
 
     /// <summary>
     /// Damage from an enemy or hazard. Ignored while invulnerable. Costs a
@@ -121,6 +150,7 @@ public class GameStateManager : MonoBehaviour
 
         lives = Mathf.Max(0, lives - 1);
         hasFireFlower = false;
+        heldItem = HeldItem.None; // dropped, as in Mario
         _invulnerableUntil = Time.time + invulnerableSeconds;
         Debug.Log($"[GameStateManager] Hit by {source} — {lives} lives left.");
         OnLifeLost?.Invoke(lives);
@@ -136,18 +166,32 @@ public class GameStateManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>Starts a fresh game after a game over (EventResolver calls this on a jump).</summary>
+    /// <summary>The final stage is cleared: the game is won. LevelGenerator calls this after CompleteStage.</summary>
+    public void ClearGame()
+    {
+        if (isGameClear) return;
+        isGameClear = true;
+        isStageActive = false;
+        _gameOverAt = Time.time;
+        Debug.Log($"[GameStateManager] GAME CLEAR — score {score}, {_stats.enemiesDefeated} enemies, {PlaySeconds:F0}s.");
+        OnGameClear?.Invoke();
+    }
+
+    /// <summary>Starts a fresh game after a game over or game clear (EventResolver calls this on a jump).</summary>
     public void RestartGame()
     {
         score = 0;
         lives = startingLives;
         stageIndex = 1;
         hasFireFlower = false;
+        heldItem = HeldItem.None;
         coins = 0;
         isGameOver = false;
+        isGameClear = false;
         isStageActive = false;
-        _airborneUntil = _duckedUntil = _invulnerableUntil = _lastStompAt = float.NegativeInfinity;
-        StompStartedAt = float.NegativeInfinity;
+        _stats = default;
+        _gameStartedAt = float.NegativeInfinity;
+        _airborneUntil = _duckedUntil = _invulnerableUntil = float.NegativeInfinity;
         Debug.Log("[GameStateManager] New game.");
         OnGameRestarted?.Invoke();
     }
@@ -163,6 +207,7 @@ public class GameStateManager : MonoBehaviour
     {
         AddScore(coinValue);
         coins++;
+        _stats.coinsCollected++;
         if (coins < coinsPerLife) return;
         coins = 0;
         Debug.Log($"[GameStateManager] {coinsPerLife} coins!");
@@ -192,7 +237,8 @@ public class GameStateManager : MonoBehaviour
     public void BeginStage()
     {
         isStageActive = true;
-        Debug.Log($"[GameStateManager] Stage {stageIndex} started.");
+        if (float.IsInfinity(_gameStartedAt)) _gameStartedAt = Time.time;
+        Debug.Log($"[GameStateManager] Stage {StageName} started.");
     }
 
     /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter.</summary>
@@ -204,3 +250,6 @@ public class GameStateManager : MonoBehaviour
         stageIndex++;
     }
 }
+
+/// <summary>Things the player can carry (picked up with clap, thrown with throw).</summary>
+public enum HeldItem { None, Shell }

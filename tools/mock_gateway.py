@@ -8,7 +8,7 @@ fingerprint to paste into NetworkClient's "Pinned Cert Sha256" field.
 Usage:
   python3 tools/mock_gateway.py                 # interactive: type actions to send
   python3 tools/mock_gateway.py --auto 1.0      # send a random action every 1.0 s
-  python3 tools/mock_gateway.py --script "stomp,stomp,dup,fireball,low:jump" --exit-after-acks
+  python3 tools/mock_gateway.py --script "stomp,stomp,dup,throw,low:jump" --exit-after-acks
   python3 tools/mock_gateway.py --plain         # ws:// instead of wss:// (debug only)
   python3 tools/mock_gateway.py --command-file /tmp/gw.cmd
                                                 # also run commands appended to a file
@@ -26,16 +26,16 @@ Output: colour-coded (→ sent events cyan, ← ACK green if resolved / yellow i
 and the same lines without colours are appended to --log (default Logs/mock_gateway.log).
 
 Interactive commands:
-  stand | walk | jump | squat | fireball | stomp   send a GAME_EVENT (confidence 0.95)
+  jump | stomp | squat | throw | punch | clap      send a GAME_EVENT (confidence 0.95)
   low:<action>                                     send with confidence 0.3 (Gate 2 reject)
   dup                                              resend the last event (duplicate test)
   newsession                                       start a new session_id
   kick                                             close the connection (reconnect test)
   quit
 Keys (--keys):
-  1 stand  2 walk  3 jump  4 squat  5 fireball  6 stomp
-  Hold 1/2/6 to keep sending (every 0.1 s, like classifier windows); 3/4/5 send
-  once per press (a held key's auto-repeat is ignored).
+  1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap
+  Every action is discrete (protocol v2): one event per press (a held key's
+  auto-repeat is ignored).
   l = next action at low confidence   d = duplicate   k = kick   q = quit
   r = a random packet from the dummy file (tools/dummy_packets.json)
   Headset tuning (DEV_TUNE, development only): = / - window bigger/smaller,
@@ -57,8 +57,9 @@ import time
 
 import websockets
 
-ACTIONS = ["stand", "walk", "jump", "squat", "fireball", "stomp"]
-CONTINUOUS = {"stand", "walk", "stomp"}
+ACTIONS = ["jump", "stomp", "squat", "throw", "punch", "clap"]
+CONTINUOUS = set()  # protocol v2: every action is discrete
+PROTOCOL_VERSION = 2
 
 
 class KeyMapper:
@@ -69,7 +70,7 @@ class KeyMapper:
     auto-repeats arrive faster than `repeat_gap`, so a key seen again within it is
     still being held and is ignored.
     """
-    KEYS = {"r": "dummy", "1": "stand", "2": "walk", "3": "jump", "4": "squat", "5": "fireball", "6": "stomp",
+    KEYS = {"r": "dummy", "1": "jump", "2": "stomp", "3": "squat", "4": "throw", "5": "punch", "6": "clap",
             "d": "dup", "k": "kick", "q": "quit",
             # Headset tuning while wearing it (DEV_TUNE): window size, image separation, reset.
             "=": "tune:eyeImageScale:0.05", "+": "tune:eyeImageScale:0.05", "-": "tune:eyeImageScale:-0.05",
@@ -165,7 +166,7 @@ class Gateway:
         self.dummy_packets = []
 
     def make_event(self, action, confidence=0.95):
-        evt = {"type": "GAME_EVENT", "protocol_version": 1, "session_id": self.session,
+        evt = {"type": "GAME_EVENT", "protocol_version": PROTOCOL_VERSION, "session_id": self.session,
                "event_id": f"e-{self.next_id:06d}", "window_id": self.next_id * 10,
                "action": action, "confidence": confidence, "timestamp": time.time()}
         self.next_id += 1
@@ -300,7 +301,7 @@ class Gateway:
         loop = asyncio.get_running_loop()
         queue = asyncio.Queue()
         loop.add_reader(fd, lambda: queue.put_nowait(os.read(fd, 32).decode(errors="ignore")))
-        log("keys: 1 stand  2 walk  3 jump  4 squat  5 fireball  6 stomp  |  hold 1/2/6 to repeat  |  l low-conf  d dup  k kick  q quit")
+        log("keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap  |  l low-conf  d dup  k kick  q quit")
         log("headset: = / - window bigger/smaller   ] / [ image gap wider/narrower   0 reset")
         try:
             while True:

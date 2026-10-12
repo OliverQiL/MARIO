@@ -5,7 +5,7 @@ using UnityEngine;
 public enum Sfx
 {
     Jump, Coin, PowerUpAppear, PowerUp, OneUp, Stomp, Kick, BrickBreak, Fireball,
-    Damage, Warning, CannonFire, StageClear, Warp, GameOver, Denied,
+    Damage, Warning, CannonFire, StageClear, Warp, GameOver, Denied, GameClear,
 }
 
 /// <summary>
@@ -81,6 +81,7 @@ public class AudioManager : MonoBehaviour
         {
             gameState.OnLifeLost.AddListener(HandleLifeLost);
             gameState.OnGameOver.AddListener(HandleGameOver);
+            gameState.OnGameClear.AddListener(HandleGameClear);
         }
         if (levelGenerator != null)
         {
@@ -100,6 +101,7 @@ public class AudioManager : MonoBehaviour
         {
             gameState.OnLifeLost.RemoveListener(HandleLifeLost);
             gameState.OnGameOver.RemoveListener(HandleGameOver);
+            gameState.OnGameClear.RemoveListener(HandleGameClear);
         }
         if (levelGenerator != null)
         {
@@ -118,6 +120,7 @@ public class AudioManager : MonoBehaviour
 
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
+        if (result.ThrewShell) { PlayNow(Sfx.Kick); return; }
         if (result.LaunchedProjectile) { PlayNow(Sfx.Fireball); return; }
 
         if (result.Resolved)
@@ -126,14 +129,15 @@ public class AudioManager : MonoBehaviour
             {
                 case "jump": PlayNow(Sfx.Jump); break; // a ? block adds its own coin/power-up sound
                 case "stomp": PlayNow(Sfx.Stomp); break;
-                case "fireball": PlayNow(Sfx.BrickBreak); break; // bare-handed strike on a brick
+                case "punch": PlayNow(Sfx.BrickBreak); break;
+                case "clap": PlayNow(Sfx.PowerUp); break; // picked up a shell
                 // squat: a warp pipe plays Warp itself; a plain duck is silent
             }
             return;
         }
 
-        // "Not permitted" for a discrete action: a soft bonk (continuous ones would repeat every window).
-        if (result.NotPermitted && !EventResolver.IsContinuous(evt.actionLabel)) PlayNow(Sfx.Denied);
+        // "Not permitted": a soft bonk.
+        if (result.NotPermitted) PlayNow(Sfx.Denied);
     }
 
     private void HandleImpact(GameEvent evt, Component target) =>
@@ -148,6 +152,12 @@ public class AudioManager : MonoBehaviour
     {
         if (_musicSource != null) _musicSource.Stop();
         PlayNow(Sfx.GameOver);
+    }
+
+    private void HandleGameClear()
+    {
+        if (_musicSource != null) _musicSource.Stop();
+        PlayNow(Sfx.GameClear);
     }
 
     /// <summary>Starts the music with the first stage (and again after a game over); it keeps looping between stages.</summary>
@@ -183,6 +193,11 @@ public class AudioManager : MonoBehaviour
         Add(Sfx.Warp, Concat(Sweep(Wave.Square, 600f, 200f, 0.14f, 0.35f), Sweep(Wave.Square, 600f, 200f, 0.14f, 0.35f), Sweep(Wave.Square, 600f, 150f, 0.2f, 0.35f)));
         Add(Sfx.GameOver, Notes(Wave.Triangle, 0.5f, (523f, 0.18f), (392f, 0.18f), (330f, 0.18f), (262f, 0.5f)));
         Add(Sfx.Denied, Sweep(Wave.Triangle, 160f, 120f, 0.1f, 0.35f));
+        // A longer victory fanfare: rising arpeggios, then a held high chord tone.
+        Add(Sfx.GameClear, Notes(Wave.Square, 0.3f,
+            (392f, 0.1f), (523f, 0.1f), (659f, 0.1f), (784f, 0.2f), (659f, 0.1f), (784f, 0.3f),
+            (415f, 0.1f), (523f, 0.1f), (622f, 0.1f), (831f, 0.2f), (622f, 0.1f), (831f, 0.3f),
+            (466f, 0.1f), (587f, 0.1f), (698f, 0.1f), (932f, 0.2f), (932f, 0.1f), (932f, 0.1f), (1047f, 0.6f)));
     }
 
     private void Add(Sfx sfx, float[] samples)

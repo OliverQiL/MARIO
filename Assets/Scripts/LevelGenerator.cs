@@ -44,7 +44,9 @@ using UnityEngine.XR.ARSubsystems;
 /// Campaign (Docs/GAME_DESIGN.md, maps): stage N plays campaignStages[(N-1) %
 /// count] if it fits the room — at full size, or compressed (campaignScales:
 /// pieces closer together, same sizes) — otherwise the largest stageTemplates
-/// fallback that does. Warp pipes: entering one hides the stage and puts the bonus room
+/// fallback that does. Completing the last campaign stage (Bowser's castle)
+/// clears the game: GameStateManager.ClearGame, a celebration, then the loop
+/// halts until a jump restarts it (RestartLoop). Warp pipes: entering one hides the stage and puts the bonus room
 /// in the same place; its exit pipe removes the bonus room and brings the
 /// stage back as it was.
 /// </summary>
@@ -106,6 +108,8 @@ public class LevelGenerator : MonoBehaviour
     [Header("Stage Loop")]
     [Tooltip("Seconds between reaching a goal and the next stage appearing, so the player registers the completion.")]
     [SerializeField] private float transitionDelaySeconds = 1.5f;
+    [Tooltip("After the final stage's goal: seconds the stage stays up for the celebration before it's cleared away.")]
+    [SerializeField] private float finalCelebrationSeconds = 4f;
 
     [Header("Events")]
     [Tooltip("Fired each time a full search (all templates, all candidates) fails to find a placement.")]
@@ -425,8 +429,27 @@ public class LevelGenerator : MonoBehaviour
         IsTransitioning = true;
         StagesCompleted++;
         Debug.Log($"[LevelGenerator] Stage complete ({StagesCompleted} so far) — next stage in {transitionDelaySeconds:F1}s.");
+        // The last campaign stage ends the game, even if a fallback template stood in for it.
+        var gs = GameStateManager.Instance;
+        bool final = goal.EndsGame || (campaignStages != null && campaignStages.Count > 0 && gs != null && gs.StageIndex >= campaignStages.Count);
         OnStageCompleted?.Invoke();
+        if (final)
+        {
+            // The final stage: the game is won. Keep the stage up for the celebration, then clear it.
+            Debug.Log("[LevelGenerator] Final stage cleared — GAME CLEAR.");
+            if (gs != null) gs.ClearGame();
+            StartCoroutine(FinishAfterCelebration());
+            return;
+        }
         StartCoroutine(TransitionToNextStage());
+    }
+
+    private IEnumerator FinishAfterCelebration()
+    {
+        yield return new WaitForSeconds(finalCelebrationSeconds);
+        _halted = true;
+        IsTransitioning = false;
+        TearDownStage();
     }
 
     private IEnumerator TransitionToNextStage()

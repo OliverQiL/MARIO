@@ -24,15 +24,16 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 ## 2. Live demo runbook (about 8 minutes)
 
 1. **Launch on the phone** (handheld first; the headset is optional, see §8). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
-2. **Start the scan with a jump (key 3).** Walk round looking at the floor.
+2. **Start the scan with a jump (key 1).** Walk round looking at the floor.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
-3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). "STAGE 1-1" pops in and the stage is **anchored to the floor**.
+3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The "WORLD 1-1 / FIRST STEPS" intro card pops in and the stage is **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
 4. **Play with keys 1–6, each one a real `GAME_EVENT` over TLS/WebSocket:**
-   - jump under a ? block → power-up
-   - 5 → fireball (with the flower) or punch (without)
-   - 6 held → stomp a Goomba, then a Koopa (it needs a separate second stomp)
-   - 4 → squat to dodge a Bullet Bill
+   - 1 → jump under a ? block → power-up
+   - 2 → stomp a Goomba; stomp a Koopa into its shell
+   - 6 → clap to pick up the shell (HELD on the HUD), then 4 → throw it at enemies
+   - 4 → throw a fireball (with the flower); 5 → punch a brick
+   - 3 → squat to dodge a Bullet Bill
    - Walk to the flag → STAGE CLEAR, and the next stage is re-anchored.
 5. **Dummy data, randomised:** quit the keys gateway (`q`) and run `python3 tools/mock_gateway.py --dummy --every 2`. Random packets arrive and the HUD shows each outcome: accepted (green), refused with a reason (orange), low confidence (grey), duplicates silent. The terminal shows the matching ACK colour and the gate that decided it.
 6. **"Change the dummy packets":** edit `tools/dummy_packets.json` (for example add `{ "action": "squat", "confidence": 0.3 }` or change an action). The gateway **re-reads it on the next pick**, with no restart, and logs `loaded N dummy packets`. Restarting the gateway also works.
@@ -229,7 +230,7 @@ sequenceDiagram
 - **Why a queue?** Unity objects may only be touched on the main thread. The receive task never touches game state; it enqueues complete messages.
 - **Why ACK every event, even duplicates?** So the gateway sees an outcome for every `event_id`, whichever gate decided it.
 - **How is a duplicate detected?** Gate 2 keeps a bounded set of recent `session_id/event_id` keys (1024, FIFO).
-- **What if the classifier sends stomp continuously?** Continuous actions (stand, walk, stomp) are re-sent each window. Refusals of continuous actions get no haptics or HUD message. A Koopa shell needs a *new* stomp: a gap of more than 0.3 s.
+- **What if the classifier sends the same action every window?** Protocol v2 makes every action discrete: the gateway sends one event per physical motion. The phone also drops repeated `event_id`s (gate 2).
 - **How do you avoid placing a stage on a table?** Semantic classification (Floor only), a floor-height tolerance, floor required under all 4 corners and the flag, and on LiDAR devices, room-mesh overlap tests.
 - **What if tracking is lost?** Gate 1 closes, enemies freeze, and the banner says "look around slowly". The stage stays anchored and resumes when ARKit relocalises.
 - **How is the project structured?** See `VISUALIZER_STATUS.md` §3: `Scripts/` (runtime), `Scripts/Gameplay/` (elements), `Editor/` (one-click setup, content builders, headless tests).

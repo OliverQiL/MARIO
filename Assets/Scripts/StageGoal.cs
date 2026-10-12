@@ -31,7 +31,15 @@ public class StageGoal : MonoBehaviour
     [SerializeField] private float slideSeconds = 1f;
     [SerializeField] private GameObject celebrationEffect;
 
+    [Header("Final stage")]
+    [Tooltip("Reaching this goal ends the game (GAME CLEAR) instead of moving on to the next stage.")]
+    [SerializeField] private bool endsGame;
+
     public event Action<StageGoal> OnReached;
+
+    public bool EndsGame => endsGame;
+    /// <summary>Locked goals can't be reached (a boss guards it). Bowser sets and clears this.</summary>
+    public bool Locked { get; set; }
 
     public float ReachRadius => reachRadius;
     public bool IsReached { get; private set; }
@@ -73,7 +81,7 @@ public class StageGoal : MonoBehaviour
             return;
         }
 
-        _dwellTimer = PlayerDistance <= reachRadius ? _dwellTimer + Time.deltaTime : 0f;
+        _dwellTimer = PlayerDistance <= reachRadius && !Locked ? _dwellTimer + Time.deltaTime : 0f;
         if (_dwellTimer < dwellSeconds) return;
 
         Reach();

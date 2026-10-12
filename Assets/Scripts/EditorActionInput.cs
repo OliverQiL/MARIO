@@ -6,11 +6,10 @@ using UnityEngine.InputSystem;
 /// Play Mode with XR Simulation: number keys become classified actions fed
 /// straight into EventResolver (no network), so responses are instant.
 ///
-///   1 stand   2 walk   3 jump   4 squat   5 fireball   6 stomp
+///   1 jump   2 stomp   3 squat   4 throw   5 punch   6 clap
 ///
-/// Mirrors the real event stream (Docs/GAME_DESIGN.md): continuous actions
-/// (stand, walk, stomp) repeat every classification window while the key is
-/// held; discrete actions (jump, squat, fireball) fire once per press.
+/// Every action is discrete (protocol v2): one event per key press, as the
+/// classifier sends one event per motion.
 /// Disables itself outside the Editor, so it's inert in device builds.
 /// Uses the Input System package (the XR Simulation camera does too).
 /// </summary>
@@ -18,22 +17,19 @@ public class EditorActionInput : MonoBehaviour
 {
     [SerializeField] private EventResolver eventResolver;
     [SerializeField] private float confidence = 0.95f;
-    [Tooltip("Repeat interval for held continuous actions — the classifier's hop (~100 ms).")]
-    [SerializeField] private float continuousInterval = 0.1f;
     [SerializeField] private bool showKeyLegend = true;
 
-    private static readonly (Key key, string action, bool continuous)[] Bindings =
+    private static readonly (Key key, string action)[] Bindings =
     {
-        (Key.Digit1, "stand", true),
-        (Key.Digit2, "walk", true),
-        (Key.Digit3, "jump", false),
-        (Key.Digit4, "squat", false),
-        (Key.Digit5, "fireball", false),
-        (Key.Digit6, "stomp", true),
+        (Key.Digit1, "jump"),
+        (Key.Digit2, "stomp"),
+        (Key.Digit3, "squat"),
+        (Key.Digit4, "throw"),
+        (Key.Digit5, "punch"),
+        (Key.Digit6, "clap"),
     };
 
     private int _nextId;
-    private float _nextRepeat;
     private string _last = "";
 
     private void Awake()
@@ -47,23 +43,18 @@ public class EditorActionInput : MonoBehaviour
         var keyboard = Keyboard.current;
         if (keyboard == null || eventResolver == null) return;
 
-        bool repeatDue = Time.time >= _nextRepeat;
-        foreach (var (key, action, continuous) in Bindings)
+        foreach (var (key, action) in Bindings)
         {
-            var control = keyboard[key];
-            if (control.wasPressedThisFrame || (continuous && control.isPressed && repeatDue))
-            {
-                var result = eventResolver.Resolve(new GameEvent(action, confidence, $"kb-{_nextId++}", "editor"));
-                _last = $"{action} → {(result.Resolved ? "ok" : $"gate {result.Gate}")}";
-                if (continuous) _nextRepeat = Time.time + continuousInterval;
-            }
+            if (!keyboard[key].wasPressedThisFrame) continue;
+            var result = eventResolver.Resolve(new GameEvent(action, confidence, $"kb-{_nextId++}", "editor"));
+            _last = $"{action} → {(result.Resolved ? "ok" : $"gate {result.Gate} ({result.Reason})")}";
         }
     }
 
     private void OnGUI()
     {
         if (!showKeyLegend) return;
-        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 stand  2 walk  3 jump  4 squat  5 fireball  6 stomp (hold)   |   right-drag look, WASD move");
+        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap   |   right-drag look, WASD move");
         GUI.Label(new Rect(12, Screen.height - 24, 900, 22), $"Last: {_last}");
     }
 }

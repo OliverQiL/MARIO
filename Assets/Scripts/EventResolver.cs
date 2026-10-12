@@ -37,7 +37,7 @@ public readonly struct ResolutionResult
     public readonly int Gate;
     public readonly string Reason;
     public readonly Component Target;
-    /// <summary>Resolved as a player-state change only (stand/walk/squat, a jump that hit nothing): no target, no feedback, no haptic.</summary>
+    /// <summary>Resolved as a player-state change only (a duck, a jump that hit nothing): no target, no feedback, no haptic.</summary>
     public readonly bool StateOnly;
 
     public bool Resolved => Gate == 6;
@@ -45,8 +45,10 @@ public readonly struct ResolutionResult
     public bool NotRegistered => Gate <= 2;
     /// <summary>Gates 3-5: the action was recognised but isn't permitted right now.</summary>
     public bool NotPermitted => Gate >= 3 && Gate <= 5;
-    /// <summary>A fireball projectile was launched; its impact (if any) arrives later via OnImpact.</summary>
-    public bool LaunchedProjectile => Resolved && Reason == EventResolver.ProjectileReason;
+    /// <summary>A projectile (fireball or shell) was launched; its impacts (if any) arrive later via OnImpact.</summary>
+    public bool LaunchedProjectile => Resolved && (Reason == EventResolver.ProjectileReason || Reason == EventResolver.ShellReason);
+    /// <summary>A held shell was thrown.</summary>
+    public bool ThrewShell => Resolved && Reason == EventResolver.ShellReason;
 
     public ResolutionResult(int gate, string reason, Component target = null, bool stateOnly = false)
     {
@@ -64,16 +66,18 @@ public readonly struct ResolutionResult
 /// ordered six-gate chain. Rejection at any gate stops processing there, so
 /// "not registered" (Gates 1-2) is distinguishable from "not permitted" (3-5).
 ///
-/// Per-action outcomes and targeting follow Docs/GAME_DESIGN.md:
-/// - stand/walk: player-state changes (no target)
-/// - squat: ducked window; enters a warp pipe if the player is standing on one
+/// Per-action outcomes and targeting follow Docs/GAME_DESIGN.md. Every action
+/// is discrete (one event per motion; protocol v2):
 /// - jump: airborne window; hits an overhead block if there is one
-/// - fireball: with a fire flower, launches a projectile (Gate 3 caps how many
-///   are in flight); without, a bare-handed "strike" on a brick in reach
-/// - stomp: attack on an enemy at the player's feet (a Koopa takes two
-///   separate stomps: held stomp windows count as one)
-/// During game over everything is dropped at Gate 1, except a jump (after a
-/// short grace period), which restarts the game.
+/// - stomp: attack on an enemy at the player's feet (a Koopa takes two)
+/// - squat: ducked window; enters a warp pipe if the player is standing on one
+/// - throw: throws the held item (a shell) if there is one, else a fireball
+///   with the fire flower (Gate 3 caps how many are in flight); else Gate 3
+/// - punch: forward punch on a brick (or the boss) in reach at chest height
+/// - clap: picks up a Koopa shell from the floor in front (Gate 3 if the
+///   hands are already full)
+/// During game over or game clear everything is dropped at Gate 1, except a
+/// jump (after a short grace period), which starts a new game.
 ///
 /// Targets come from InteractableBase's registry (no physics). Resolve()
 /// returns the outcome and raises OnEventProcessed; projectile hits land
@@ -84,13 +88,10 @@ public readonly struct ResolutionResult
 public class EventResolver : MonoBehaviour
 {
     public const string ProjectileReason = "projectile";
+    public const string ShellReason = "shell";
 
-    /// <summary>
-    /// stand/walk/stomp are re-sent every classification window, so their
-    /// "not permitted" outcomes get no haptic or HUD feedback (it would repeat).
-    /// </summary>
-    public static bool IsContinuous(string actionLabel) =>
-        actionLabel == "stand" || actionLabel == "walk" || actionLabel == "stomp";
+    /// <summary>The v2 action labels the classifier sends (Docs/GATEWAY_PROTOCOL.md).</summary>
+    public static readonly string[] Actions = { "jump", "stomp", "squat", "throw", "punch", "clap" };
 
     [Header("References")]
     [SerializeField] private GameStateManager gameState;
@@ -108,6 +109,9 @@ public class EventResolver : MonoBehaviour
     [SerializeField] private float stompHalfAngle = 70f;
     [SerializeField] private float strikeRange = 0.8f;
     [SerializeField] private float strikeHalfAngle = 35f;
+    [Tooltip("Clap: how far in front a shell on the floor can be picked up from.")]
+    [SerializeField] private float clapRange = 0.8f;
+    [SerializeField] private float clapHalfAngle = 60f;
     [Tooltip("Max horizontal offset of an overhead block for a jump to hit it.")]
     [SerializeField] private float jumpBlockRadius = 0.5f;
     [Tooltip("Max horizontal distance from a warp pipe's centre for a squat to enter it.")]
@@ -121,6 +125,9 @@ public class EventResolver : MonoBehaviour
     [SerializeField] private Fireball fireballPrefab;
     [Tooltip("Gate 3: fireballs allowed in flight at once.")]
     [SerializeField] private int maxFireballsInFlight = 2;
+
+    [Header("Thrown Shell")]
+    [SerializeField] private ThrownShell thrownShellPrefab;
 
     [Header("Game Over")]
     [Tooltip("Seconds after game over before a jump can restart, so the jump that was in progress doesn't.")]
@@ -140,6 +147,7 @@ public class EventResolver : MonoBehaviour
     public ResolutionResult Resolve(GameEvent evt)
     {
         var result = RunGates(evt);
+        gameState.RecordAction(result.Resolved && !result.StateOnly, result.NotPermitted);
 
         if (result.Resolved)
             Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}' ({(result.Target != null ? "on " + result.Target.name : result.Reason)})");
@@ -152,8 +160,8 @@ public class EventResolver : MonoBehaviour
 
     private ResolutionResult RunGates(GameEvent evt)
     {
-        // Game over: only a (deliberate, later) jump does anything — it restarts.
-        if (gameState.IsGameOver)
+        // Game over / game clear: only a (deliberate, later) jump does anything — it restarts.
+        if (gameState.IsFinished)
         {
             if (evt.actionLabel == "jump" && evt.confidence >= minConfidence
                 && gameState.SecondsSinceGameOver >= restartGraceSeconds && MarkSeen(Key(evt)))
@@ -161,7 +169,7 @@ public class EventResolver : MonoBehaviour
                 gameState.RestartGame();
                 return ResolutionResult.State("restart");
             }
-            return new ResolutionResult(1, "game over");
+            return new ResolutionResult(1, gameState.IsGameClear ? "game clear" : "game over");
         }
 
         // Gate 1 — Session state
@@ -177,11 +185,6 @@ public class EventResolver : MonoBehaviour
         // Gates 3-6, per action.
         switch (evt.actionLabel)
         {
-            case "stand":
-            case "walk":
-                gameState.SetMovementState(evt.actionLabel);
-                return ResolutionResult.State(evt.actionLabel);
-
             case "squat":
             {
                 gameState.Duck(duckSeconds);
@@ -199,20 +202,32 @@ public class EventResolver : MonoBehaviour
                 return Hit(block, "jump");
             }
 
-            case "fireball":
-                if (gameState.HasFireFlower)
+            case "throw":
+                // A held item goes first: throwing a shell you're carrying.
+                if (gameState.Held == HeldItem.Shell)
                 {
-                    // Gate 3 — capability: fire flower, and not too many fireballs already out.
-                    if (Fireball.InFlight >= maxFireballsInFlight)
-                        return new ResolutionResult(3, "fireballs recharging");
-                    LaunchFireball(evt);
-                    return new ResolutionResult(6, ProjectileReason);
+                    gameState.ThrowHeld();
+                    LaunchShell(evt);
+                    return new ResolutionResult(6, ShellReason);
                 }
-                // No flower: a bare-handed strike on a brick in reach (design report §6.4).
-                return Hit(FindTarget("strike", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f), "strike");
+                // Gate 3 — capability: nothing to throw without a fire flower.
+                if (!gameState.HasFireFlower)
+                    return new ResolutionResult(3, "nothing to throw");
+                if (Fireball.InFlight >= maxFireballsInFlight)
+                    return new ResolutionResult(3, "fireballs recharging");
+                LaunchFireball(evt);
+                return new ResolutionResult(6, ProjectileReason);
+
+            case "punch":
+                return Hit(FindTarget("punch", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f), "punch");
+
+            case "clap":
+                // Gate 3 — capability: one item at a time.
+                if (gameState.Held != HeldItem.None)
+                    return new ResolutionResult(3, "hands full");
+                return Hit(FindTarget("clap", clapRange, clapHalfAngle, dy => dy < -0.5f), "clap");
 
             case "stomp":
-                gameState.NoteStomp(); // a Koopa shell needs a *new* stomp, not the next window of this one
                 return Hit(FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f), "stomp");
 
             default:
@@ -243,6 +258,24 @@ public class EventResolver : MonoBehaviour
         var origin = cam.position + cam.forward * 0.3f - Vector3.up * 0.2f;
         var fireball = Instantiate(fireballPrefab, origin, Quaternion.identity);
         fireball.Launch(cam.forward, target => OnImpact?.Invoke(evt, target));
+    }
+
+    private void LaunchShell(GameEvent evt)
+    {
+        if (thrownShellPrefab == null)
+        {
+            Debug.LogWarning("[EventResolver] No thrown shell prefab assigned.");
+            return;
+        }
+        var cam = arCamera.transform;
+        var facing = Vector3.ProjectOnPlane(cam.forward, Vector3.up);
+        if (facing.sqrMagnitude < 1e-4f) facing = Vector3.ProjectOnPlane(cam.up, Vector3.up);
+        facing.Normalize();
+        // Dropped at the player's feet, just in front, and sent sliding along the floor.
+        float floorY = cam.position.y - PlayerBody.EyeHeightOr(1.55f); // calibrated eye height above the floor
+        var origin = new Vector3(cam.position.x, floorY + 0.06f, cam.position.z) + facing * 0.35f;
+        var shell = Instantiate(thrownShellPrefab, origin, Quaternion.identity);
+        shell.Launch(facing, target => OnImpact?.Invoke(evt, target));
     }
 
     /// <summary>
