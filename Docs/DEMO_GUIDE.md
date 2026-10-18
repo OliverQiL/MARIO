@@ -13,7 +13,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 
 ## 1. Before the lab (checklist)
 
-- [ ] **Latest build on the iPhone:** Unity closed, then *Tools ▸ MARIO ▸ Build iOS* → `xcodebuild` → `devicectl install`; see `VISUALIZER_STATUS.md`, "Device testing".
+- [ ] **Latest build on the iPhone:** Unity closed, then *Tools ▸ MARIO ▸ Build iOS (John, Release)* for the integrated demo, or *(Local)* for the mock gateway → `xcodebuild` → `devicectl install`; see `VISUALIZER_STATUS.md`, "Device testing".
 - [ ] **Phone and Mac on the same Wi-Fi.** On the phone, Local Network access must be allowed (Settings ▸ Privacy ▸ Local Network ▸ MARIO).
 - [ ] **Mock gateway runs:** `python3 tools/mock_gateway.py --keys`, then check the phone's HUD shows **● ONLINE**.
 - [ ] **Dummy file ready:** `tools/dummy_packets.json`, open in an editor for the "change the dummy packets" request.

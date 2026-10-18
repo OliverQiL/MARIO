@@ -133,7 +133,7 @@ Canvas               HUDController, HeadsetView; the HUD's text/icons/panels (bu
 - **Configure Scan** (`ScanSetup`): the scan plane, with development visuals off.
 - **Configure Network** (`NetworkSetup`), **Configure LiDAR** (`LidarSetup`) and **Mesh Debug View ▸ On/Off**.
 - **Configure Simulation** (`SimulationSetup`) and **List Simulation Environments**.
-- **Render Art Preview** (`ArtPreview`) and **Build iOS** (`BuildScript`).
+- **Render Art Preview** (`ArtPreview`) and **Build iOS (Local | John) [Release]** (`BuildScript`).
 
 ### Sharing with the team's integration repo
 `tools/push_to_integration.sh` copies this repo's committed `main` into `visualizer/` of https://github.com/icknee/CG4002-G15 (git subtree, squashed: one commit per sync, naming the MARIO commit), then pushes to its `main`.
@@ -247,14 +247,21 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
   - sets iOS signing (team U5T7NBV8MB, automatic)
 
   Also **Tools ▸ MARIO ▸ Mesh Debug View ▸ On/Off**.
-- `BuildScript.cs` — **Tools ▸ MARIO ▸ Build iOS** (or `-executeMethod BuildScript.BuildIOS`). Writes a development build of the Xcode project to `ios-build/`, which is now gitignored.
-- Headless build → device loop (Unity must be closed):
+- `BuildScript.cs` — two gateway profiles, each a separate app so both can be installed at once:
+
+  | Profile | App (bundle ID) | Gateway | Pin | Output |
+  |---|---|---|---|---|
+  | **Local** | "MARIO Local" (`com.cg4002.mario.local`) | this Mac's `tools/mock_gateway.py`, `wss://Olis-MacBook-Pro.local:8765/` | read from `tools/certs/gateway.crt` | `ios-build-local/` |
+  | **John** | "MARIO" (`com.cg4002.mario`) | John's laptop (`integrated/laptop`, visualizer mode) on its hotspot, `wss://192.168.137.1:8765/` | `John.Pin` in `BuildScript.cs`, from his gateway's startup line `VISUALIZER GATEWAY: certificate SHA-256 ...`; the build refuses to run without one | `ios-build-john/` |
+
+  Menu **Tools ▸ MARIO ▸ Build iOS (Local)** / **(John)**, plus **Release** variants; headless `BuildIOSLocal`, `BuildIOSLocalRelease`, `BuildIOSJohn`, `BuildIOSJohnRelease`, with optional `-gatewayUrl` / `-pin` overrides for one build. The profile's URL, pin, product name and bundle ID apply only during the build; the scene and Player Settings are restored afterwards, so Editor Play still uses the scene's NetworkClient settings. John gets the pin with `openssl x509 -in comms/security/server.pem -noout -fingerprint -sha256` (integrated `SECURITY.md` §2); the whole output line can be pasted. The app checks only the fingerprint, not the certificate's 90-day expiry or hostname, so the pin holds until he creates a new certificate, which needs a rebuild. The phone must be on John's hotspot (his gateway refuses other networks unless he sets `VISUALIZER_ALLOW`).
+- Headless build → device loop (Unity must be closed; `<profile>` is `local` or `john`):
   ```
-  Unity -batchmode -quit -projectPath . -buildTarget iOS -executeMethod BuildScript.BuildIOS
-  xcodebuild -project ios-build/Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Debug \
-    -destination generic/platform=iOS -derivedDataPath <dd> -allowProvisioningUpdates build
-  xcrun devicectl device install app --device <id> <dd>/Build/Products/Debug-iphoneos/MARIO.app
-  xcrun devicectl device process launch --device <id> --console com.cg4002.mario
+  Unity -batchmode -quit -projectPath . -buildTarget iOS -executeMethod BuildScript.BuildIOSLocal   # or BuildIOSJohn
+  xcodebuild -project ios-build-<profile>/Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Debug \
+    -destination "id=00008150-001259891EF8401C" -derivedDataPath <dd> -allowProvisioningUpdates build
+  xcrun devicectl device install app --device <id> <dd>/Build/Products/Debug-iphoneos/<App>.app
+  xcrun devicectl device process launch --device <id> --console com.cg4002.mario.local   # or com.cg4002.mario
   ```
 
 ### Gameplay (pass 1) — 🟡 built; headless tests pass; on-device check pending (2026-09-29)
@@ -551,7 +558,7 @@ The design is in `Docs/GAME_DESIGN.md`, "Maps and layouts".
     - Builds are still Unity development builds with the Xcode Debug configuration; a Release build would lower overhead further.
   - `SimulationSmokeTest -scan -headset` saves the side-by-side frame to `Logs/headset_view.png`.
 - **Build and install** (Unity closed):
-  1. `BuildScript.BuildIOS`
+  1. `BuildScript.BuildIOSLocal` (or `BuildIOSJohn`)
   2. `xcodebuild … -allowProvisioningUpdates build`
   3. `xcrun devicectl device install app --device <id> …/MARIO.app`
 

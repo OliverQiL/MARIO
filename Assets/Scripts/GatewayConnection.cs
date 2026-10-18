@@ -191,8 +191,14 @@ public sealed class GatewayConnection : IDisposable
         return ToHex(sha.ComputeHash(cert.GetRawCertData()));
     }
 
-    internal static string NormaliseFingerprint(string fp) =>
-        string.IsNullOrWhiteSpace(fp) ? "" : fp.Replace(":", "").Replace(" ", "").Trim().ToUpperInvariant();
+    /// <summary>Accepts bare hex, colon-separated hex, or openssl's whole line ("sha256 Fingerprint=0F:BB:...").</summary>
+    public static string NormaliseFingerprint(string fp)
+    {
+        if (string.IsNullOrWhiteSpace(fp)) return "";
+        int eq = fp.LastIndexOf('=');
+        if (eq >= 0) fp = fp.Substring(eq + 1);
+        return fp.Replace(":", "").Replace(" ", "").Trim().ToUpperInvariant();
+    }
 
     // ---- RFC 6455 opening handshake ----
 
