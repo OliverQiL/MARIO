@@ -47,6 +47,8 @@ public readonly struct ResolutionResult
     public bool NotPermitted => Gate >= 3 && Gate <= 5;
     /// <summary>A projectile (fireball or shell) was launched; its impacts (if any) arrive later via OnImpact.</summary>
     public bool LaunchedProjectile => Resolved && (Reason == EventResolver.ProjectileReason || Reason == EventResolver.ShellReason);
+    /// <summary>Gate 2: another report of a motion that was already resolved (the gateway forwards every classification).</summary>
+    public bool IsRepeat => Gate == 2 && Reason == EventResolver.RepeatReason;
     /// <summary>A held shell was thrown.</summary>
     public bool ThrewShell => Resolved && Reason == EventResolver.ShellReason;
 
@@ -79,6 +81,9 @@ public readonly struct ResolutionResult
 ///   hands are already full)
 /// - idle: the classifier's catch-all for other movement; resolved state-only
 ///   in any state and otherwise ignored
+/// The gateway forwards every classification, so one motion arrives as a run
+/// of events with the same action: only the first is processed, the rest are
+/// dropped at Gate 2 ("repeat of the same motion"), in every state.
 /// During game over or game clear everything is dropped at Gate 1, except a
 /// jump (after a short grace period), which starts a new game.
 ///
@@ -95,6 +100,7 @@ public class EventResolver : MonoBehaviour
     public const string GoalReason = "goal";
     /// <summary>The classifier's "none of the six" class: movement that isn't a game action. Resolved quietly, ignored.</summary>
     public const string IdleAction = "idle";
+    public const string RepeatReason = "repeat of the same motion";
 
     /// <summary>The v2 action labels the classifier sends (Docs/GATEWAY_PROTOCOL.md).</summary>
     public static readonly string[] Actions = { "jump", "stomp", "squat", "throw", "punch", "clap" };
@@ -109,6 +115,17 @@ public class EventResolver : MonoBehaviour
     [SerializeField] private int dedupHistorySize = 1024;
     private readonly HashSet<string> _seenEventIds = new();
     private readonly Queue<string> _seenOrder = new();
+
+    [Header("Gate 2 - Repeats (one event per motion)")]
+    [Tooltip("The gateway forwards every classification, so one motion arrives as several events with the same action. " +
+             "A report within this many seconds of the previous report of that action is the same motion.")]
+    [SerializeField] private float repeatReleaseSeconds = 0.5f;
+    [Tooltip("A run of reports of one action lasting longer than this counts as a new motion " +
+             "(e.g. two stomps back to back). Longer than the classifier's 1 s window.")]
+    [SerializeField] private float repeatMaxRunSeconds = 1.2f;
+    private readonly Dictionary<string, (double start, double last)> _runs = new();
+    /// <summary>Seconds, for the repeat filter. Tests replace it with a controlled clock.</summary>
+    public Func<double> Clock = () => Time.realtimeSinceStartupAsDouble;
 
     [Header("Gate 4 - Targeting (metres / degrees, horizontal)")]
     [SerializeField] private float stompRange = 0.7f;
@@ -170,6 +187,12 @@ public class EventResolver : MonoBehaviour
         // Idle: the player moved, but not one of the six actions. Acknowledged and ignored in every
         // state — no gates, no haptic, no HUD feedback, not counted towards accuracy.
         if (evt.actionLabel == IdleAction) return ResolutionResult.State(IdleAction);
+
+        // Gate 2 (first, in every state) — repeats: the gateway sends every classification, so one
+        // motion arrives as several events. Only the first of a run is processed; the rest are
+        // ACKed and ignored. Low-confidence reports don't count (they're rejected below as usual).
+        if (evt.confidence >= minConfidence && IsRepeat(evt.actionLabel))
+            return new ResolutionResult(2, RepeatReason);
 
         // Game over / game clear: only a (deliberate, later) jump does anything — it restarts.
         if (gameState.IsFinished)
@@ -322,6 +345,23 @@ public class EventResolver : MonoBehaviour
             if (score < bestScore) { bestScore = score; best = t; }
         }
         return best;
+    }
+
+    /// <summary>
+    /// Records a report of <paramref name="action"/> and says whether it continues a run already
+    /// processed: the previous report was under repeatReleaseSeconds ago and the run has lasted
+    /// under repeatMaxRunSeconds. Otherwise it starts a new run (a new motion).
+    /// </summary>
+    private bool IsRepeat(string action)
+    {
+        double now = Clock();
+        if (_runs.TryGetValue(action, out var run) && now - run.last < repeatReleaseSeconds && now - run.start < repeatMaxRunSeconds)
+        {
+            _runs[action] = (run.start, now);
+            return true;
+        }
+        _runs[action] = (now, now);
+        return false;
     }
 
     private static string Key(GameEvent evt) => $"{evt.sessionId}/{evt.eventId}";

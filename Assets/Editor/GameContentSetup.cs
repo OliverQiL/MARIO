@@ -570,14 +570,14 @@ public static class GameContentSetup
         {
             case StageDesigns.Scenery.Overworld:
                 // Rolling hills either side, a big castle beyond the flag (taller than the pole), bushes along the edges.
-                Hill(root, new Vector3(-hw - 1.15f, 0f, hd - 0.4f), 1.1f, 1.4f, m); // each hill stays just outside the edge
-                Hill(root, new Vector3(-hw - 0.75f, 0f, -hd + 1.2f), 0.7f, 0.8f, m);
-                Hill(root, new Vector3(hw + 0.85f, 0f, hd - 1.6f), 0.8f, 0.95f, m);
-                Hill(root, new Vector3(hw + 1.05f, 0f, -hd + 0.6f), 1.0f, 1.2f, m);
+                Hill(root, new Vector3(-hw - 0.65f, 0f, hd - 0.5f), 0.6f, 0.75f, m); // each hill stays just outside the edge
+                Hill(root, new Vector3(-hw - 0.45f, 0f, -hd + 1.2f), 0.4f, 0.45f, m);
+                Hill(root, new Vector3(hw + 0.5f, 0f, hd - 1.6f), 0.45f, 0.55f, m);
+                Hill(root, new Vector3(hw + 0.6f, 0f, -hd + 0.6f), 0.55f, 0.65f, m);
                 for (float z = -hd + 0.7f; z < hd - 0.3f; z += 1.1f)
                 {
-                    Bush(root, new Vector3(-hw - 0.4f, 0f, z), 1.6f, m);
-                    Bush(root, new Vector3(hw + 0.35f, 0f, z + 0.55f), 1.4f, m);
+                    Bush(root, new Vector3(-hw - 0.25f, 0f, z), 1.0f, m);
+                    Bush(root, new Vector3(hw + 0.25f, 0f, z + 0.55f), 0.9f, m);
                 }
                 Cloud(root, new Vector3(-hw * 0.7f, 2.4f, -hd * 0.3f), 2f, m);
                 Cloud(root, new Vector3(hw * 0.6f, 2.55f, hd * 0.2f), 1.7f, m);

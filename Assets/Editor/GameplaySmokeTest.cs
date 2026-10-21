@@ -60,6 +60,7 @@ public static class GameplaySmokeTest
         SetField(s_Resolver, "arCamera", s_Cam);
         SetField(s_Resolver, "fireballPrefab", Load<Fireball>(GameContentSetup.FireballPath));
         SetField(s_Resolver, "thrownShellPrefab", Load<ThrownShell>(GameContentSetup.ThrownShellPath));
+        s_Resolver.Clock = () => s_Now;
         s_State.BeginStage();
         s_Stage = new GameObject("StageRoot").transform; // floor at y = 0
 
@@ -76,6 +77,24 @@ public static class GameplaySmokeTest
               && s_State.GameStats.actionsRefused == statsBefore.actionsRefused, "idle resolves quietly (state-only, not counted)", r);
         r = Resolve("squat");
         Check(r.Resolved && r.StateOnly && s_State.IsDucked, "squat ducks the player", r);
+
+        // -- repeats: the gateway forwards every classification, so one motion is a run of events
+        var reps = new List<ResolutionResult> { ResolveAfter(0.25, "squat"), ResolveAfter(0.25, "squat"), ResolveAfter(0.25, "squat") };
+        Check(reps.All(x => x.IsRepeat && !x.Resolved), "more reports of the same squat (0.25 s apart) are repeats (Gate 2)", reps[0]);
+        Check(statsBefore.actionsRefused == s_State.GameStats.actionsRefused, "repeats don't count as refused actions");
+        r = ResolveAfter(0.1, "jump");
+        Check(r.Resolved && !r.IsRepeat, "a different action during the run is processed", r);
+        r = ResolveAfter(0.25, "squat");
+        Check(r.IsRepeat, "the squat run continues past the jump", r);
+        r = ResolveAfter(0.25, "squat");
+        Check(r.Resolved && !r.IsRepeat, "a run longer than 1.2 s counts as a new motion (back-to-back moves)", r);
+        r = ResolveAfter(0.6, "squat");
+        Check(r.Resolved && !r.IsRepeat, "after a 0.6 s gap the same action is a new motion", r);
+        r = ResolveAfter(0.2, "squat", 0.3f);
+        Check(r.Gate == 2 && !r.IsRepeat, "a low-confidence report is rejected as usual, not as a repeat", r);
+        r = ResolveAfter(0.6, "jump", 0.3f);
+        r = ResolveAfter(0.2, "jump");
+        Check(r.Resolved && !r.IsRepeat, "a low-confidence report doesn't start a run", r);
         r = Resolve("jump");
         Check(r.Resolved && r.StateOnly && s_State.IsAirborne, "jump with no block is airborne, state-only", r);
 
@@ -570,8 +589,21 @@ public static class GameplaySmokeTest
 
     // ---- helpers ----
 
-    private static ResolutionResult Resolve(string action, float confidence = 0.95f) =>
-        s_Resolver.Resolve(new GameEvent(action, confidence, $"t-{s_NextId++}", "test"));
+    /// <summary>The repeat filter's clock: each Resolve is a separate motion (1 s later) unless a check sets it.</summary>
+    private static double s_Now;
+
+    private static ResolutionResult Resolve(string action, float confidence = 0.95f)
+    {
+        s_Now += 1.0;
+        return s_Resolver.Resolve(new GameEvent(action, confidence, $"t-{s_NextId++}", "test"));
+    }
+
+    /// <summary>A report <paramref name="secondsLater"/> after the previous one (several reports of one motion).</summary>
+    private static ResolutionResult ResolveAfter(double secondsLater, string action, float confidence = 0.95f)
+    {
+        s_Now += secondsLater;
+        return s_Resolver.Resolve(new GameEvent(action, confidence, $"t-{s_NextId++}", "test"));
+    }
 
     private static void Check(bool ok, string what, ResolutionResult? r = null)
     {

@@ -172,7 +172,7 @@ public class ARSessionManager : MonoBehaviour
     /// <summary>Before and during the scan every action is dropped at Gate 1; a jump starts the scan, and a later one confirms it.</summary>
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
-        if (_scanComplete || evt.actionLabel != "jump" || evt.confidence < confirmMinConfidence) return;
+        if (_scanComplete || evt.actionLabel != "jump" || evt.confidence < confirmMinConfidence || result.IsRepeat) return; // one jump, one step
         if (!_scanStarted) StartScan();
         else ConfirmScan();
     }

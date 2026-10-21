@@ -754,6 +754,8 @@ Not done from the plan below (candidates for later): fitting layouts to the scan
 - **Iris wipe** (`ScreenTransition`, added to the HUD canvas by `HUDSetup`): `ScreenTransition.Run(atBlack, readyToOpen)` closes, runs the change, waits for the next scene (max 1.2 s), opens. Used by `LevelGenerator` between stages (opens when the next stage is placed) and for warp pipes in and out. Without a live instance (edit mode, tests) the change runs at once.
 - **Sizes:** `GameContentSetup.ObjectScale` = 0.87 on every gameplay object's root (prefabs and stage pieces); `BulletBillCannon` sizes its column for a scaled cannon. Scenery rebuilt larger, outside the play area or overhead (`BlockWall` for cave and castle walls).
 - Tests: `GameplaySmokeTest` 103 checks (goal jump, locked axe, 87 % scale, castle taller than the flag, wipe in edit mode), `SimulationSmokeTest` and `-scan` pass; `ArtPreview` renders checked.
+- **`idle`** (the classifier's catch-all) is resolved state-only in every state and otherwise ignored.
+- **Repeat filter** (after the full-integration playtest: the gateway forwards every inference): `EventResolver.IsRepeat` keeps one run per action (`repeatReleaseSeconds` 0.5, `repeatMaxRunSeconds` 1.2, injectable `Clock` for tests); repeats are Gate 2 `RepeatReason`, `ResolutionResult.IsRepeat`; `ARSessionManager` and the HUD ignore them. Mock gateway: scripted commands 0.6 s apart, `rep` sends a repeat at once. Tests: `GameplaySmokeTest` 113 checks; `NetworkSmokeTest` with `stomp,rep,rep,stomp,dup,punch,low:jump,squat,rep,idle` → `6,2,2,5,2,4,2,6,2,6`.
 
 The original plan, for reference:
 

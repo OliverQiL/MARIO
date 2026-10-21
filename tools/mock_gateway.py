@@ -29,6 +29,7 @@ Interactive commands:
   jump | stomp | squat | throw | punch | clap      send a GAME_EVENT (confidence 0.95)
   low:<action>                                     send with confidence 0.3 (Gate 2 reject)
   dup                                              resend the last event (duplicate test)
+  rep                                              the last action again, new event_id (a repeat of one motion)
   newsession                                       start a new session_id
   kick                                             close the connection (reconnect test)
   quit
@@ -222,6 +223,10 @@ class Gateway:
         elif line == "dup":
             if self.last_event:
                 await self.send(self.last_event)
+        elif line == "rep":
+            # Another classification of the same motion: a new event_id, the same action.
+            if self.last_event:
+                await self.send(self.make_event(self.last_event["action"], float(self.last_event["confidence"])))
         elif line == "newsession":
             self.session = f"s-{int(time.time())}"
             log(f"new session {self.session}")
@@ -277,10 +282,13 @@ class Gateway:
             log("disconnected", "status", tag)
 
     async def run_script(self):
+        # Commands are separate motions: 0.6 s apart, past the phone's 0.5 s repeat window.
+        # "rep" goes out at once, as the real gateway forwards each classification of one motion.
         await asyncio.sleep(0.5)
-        for cmd in self.args.script.split(","):
+        for i, cmd in enumerate(self.args.script.split(",")):
+            if i > 0 and cmd.strip() != "rep":
+                await asyncio.sleep(0.6)
             await self.command(cmd)
-            await asyncio.sleep(0.3)
 
     async def stdin_loop(self):
         loop = asyncio.get_running_loop()

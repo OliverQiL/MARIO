@@ -32,7 +32,7 @@ One classified action.
 | `session_id` | string | Owned by the gateway. The phone treats `(session_id, event_id)` as the unique key, so the gateway can restart numbering in a new session. |
 | `event_id` | string | Unique within a session. |
 | `window_id` | int | Classifier window. The phone only logs it. |
-| `action` | string | One of `jump` `stomp` `squat` `throw` `punch` `clap` (v2). One event per physical motion. Also `idle`, the classifier's class for any other movement: the phone ACKs it as resolved (gate 6, reason `idle`) in every state and otherwise ignores it (no haptic, no HUD, not logged, not counted). |
+| `action` | string | One of `jump` `stomp` `squat` `throw` `punch` `clap` (v2). The gateway may forward **every** classification: the phone processes only the first event of a run of the same action and ACKs the rest as gate 2, reason `repeat of the same motion` (a report within 0.5 s of the previous one of that action; a run longer than 1.2 s counts as a new motion). Also `idle`, the classifier's class for any other movement: the phone ACKs it as resolved (gate 6, reason `idle`) in every state and otherwise ignores it (no haptic, no HUD, not logged, not counted). |
 | `confidence` | float 0–1 | The phone rejects events below its threshold (currently 0.6). |
 | `timestamp` | float, Unix seconds | Gateway clock. Used only for logging, since the clocks aren't synchronised. |
 
@@ -45,7 +45,7 @@ Sent for **every** `GAME_EVENT` received, including duplicates. The gateway can 
 ```
 `outcome` is `resolved` or `rejected`. `gate` is 1–5 on a rejection and 6 on success. The gates are:
 1. session not ready (scanning, relocalising, stage transition)
-2. invalid (low confidence or duplicate)
+2. invalid (low confidence, duplicate `event_id`, or a repeat of the same motion)
 3. not permitted (for example `throw` with nothing to throw: no shell held and no fire flower)
 4. no target in range or facing
 5. target not actionable

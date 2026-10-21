@@ -376,10 +376,10 @@ public class HUDController : MonoBehaviour
             case 5:
                 ShowFeedback($"{action}: already used", deniedColor);
                 break;
-            case 2 when !result.Reason.StartsWith("duplicate", StringComparison.Ordinal):
+            case 2 when !result.Reason.StartsWith("duplicate", StringComparison.Ordinal) && !result.IsRepeat:
                 ShowFeedback("Move not recognised — try again", quietColor);
                 break;
-            // Gate 1 (session not ready) and duplicates: silent.
+            // Gate 1 (session not ready), duplicates and repeats: silent.
         }
     }
 
