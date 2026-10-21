@@ -903,6 +903,8 @@ MonoBehaviour:
   arCamera: {fileID: 93323756}
   minConfidence: 0.6
   dedupHistorySize: 1024
+  repeatReleaseSeconds: 0.5
+  repeatMaxRunSeconds: 1.2
   stompRange: 0.7
   stompHalfAngle: 70
   strikeRange: 0.8
