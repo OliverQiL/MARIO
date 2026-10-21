@@ -68,7 +68,8 @@ public readonly struct ResolutionResult
 ///
 /// Per-action outcomes and targeting follow Docs/GAME_DESIGN.md. Every action
 /// is discrete (one event per motion; protocol v2):
-/// - jump: airborne window; hits an overhead block if there is one
+/// - jump: airborne window; grabs the stage goal (flag or axe) if the player
+///   is at it, else hits an overhead block if there is one
 /// - stomp: attack on an enemy at the player's feet (a Koopa takes two)
 /// - squat: ducked window; enters a warp pipe if the player is standing on one
 /// - throw: throws the held item (a shell) if there is one, else a fireball
@@ -76,6 +77,8 @@ public readonly struct ResolutionResult
 /// - punch: forward punch on a brick (or the boss) in reach at chest height
 /// - clap: picks up a Koopa shell from the floor in front (Gate 3 if the
 ///   hands are already full)
+/// - idle: the classifier's catch-all for other movement; resolved state-only
+///   in any state and otherwise ignored
 /// During game over or game clear everything is dropped at Gate 1, except a
 /// jump (after a short grace period), which starts a new game.
 ///
@@ -89,6 +92,9 @@ public class EventResolver : MonoBehaviour
 {
     public const string ProjectileReason = "projectile";
     public const string ShellReason = "shell";
+    public const string GoalReason = "goal";
+    /// <summary>The classifier's "none of the six" class: movement that isn't a game action. Resolved quietly, ignored.</summary>
+    public const string IdleAction = "idle";
 
     /// <summary>The v2 action labels the classifier sends (Docs/GATEWAY_PROTOCOL.md).</summary>
     public static readonly string[] Actions = { "jump", "stomp", "squat", "throw", "punch", "clap" };
@@ -149,7 +155,8 @@ public class EventResolver : MonoBehaviour
         var result = RunGates(evt);
         gameState.RecordAction(result.Resolved && !result.StateOnly, result.NotPermitted);
 
-        if (result.Resolved)
+        if (evt.actionLabel == IdleAction) { } // several a second: not logged
+        else if (result.Resolved)
             Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}' ({(result.Target != null ? "on " + result.Target.name : result.Reason)})");
         else
             Debug.Log($"[EventResolver] REJECTED @ Gate {result.Gate} ({result.Reason}): '{evt.actionLabel}'");
@@ -160,6 +167,10 @@ public class EventResolver : MonoBehaviour
 
     private ResolutionResult RunGates(GameEvent evt)
     {
+        // Idle: the player moved, but not one of the six actions. Acknowledged and ignored in every
+        // state — no gates, no haptic, no HUD feedback, not counted towards accuracy.
+        if (evt.actionLabel == IdleAction) return ResolutionResult.State(IdleAction);
+
         // Game over / game clear: only a (deliberate, later) jump does anything — it restarts.
         if (gameState.IsFinished)
         {
@@ -197,6 +208,9 @@ public class EventResolver : MonoBehaviour
             case "jump":
             {
                 gameState.Jump(airborneSeconds);
+                // At the flag (or the axe): the jump grabs it and clears the stage.
+                var goal = StageGoal.Current;
+                if (goal != null && goal.TryJump()) return new ResolutionResult(6, GoalReason, goal);
                 var block = FindTarget("jump", jumpBlockRadius, 180f, dy => dy > -0.1f);
                 if (block == null) return ResolutionResult.State("airborne"); // a jump needs no target
                 return Hit(block, "jump");

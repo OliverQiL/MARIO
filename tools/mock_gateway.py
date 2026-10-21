@@ -57,7 +57,7 @@ import time
 
 import websockets
 
-ACTIONS = ["jump", "stomp", "squat", "throw", "punch", "clap"]
+ACTIONS = ["jump", "stomp", "squat", "throw", "punch", "clap", "idle"]  # idle: the classifier's catch-all; the phone ignores it
 CONTINUOUS = set()  # protocol v2: every action is discrete
 PROTOCOL_VERSION = 2
 

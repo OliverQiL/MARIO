@@ -32,7 +32,7 @@ Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 
   It then becomes spent: brown, and it can't be hit again (Gate 5, "already used").
 - **Brick block.** Sits at **chest height** (eye height − 0.35 m). A bare-handed strike or a fireball breaks it for +50.
 - **Fire flower.** Collected by walking to it (within 0.45 m). It enables fireball projectiles and is **lost when the player takes damage**.
-- **Flag.** Each stage ends at a flag, whatever state the enemies are in (report §6.4). The player reaches it by standing within 0.35 m of it for 0.5 s.
+- **Flag.** Each stage ends at a flag, whatever state the enemies are in (report §6.4). The player grabs it by **jumping within 0.5 m of it** (since 2026-10-21; walking up to it isn't enough). The HUD shows "JUMP TO GRAB THE FLAG!" while they're in reach.
 
 ## Enemies
 Enemies spawn from a spawner on the stage, within a bounded distance of the player, and walk straight towards the player (report §6.4). They freeze while the session isn't ready, for example when tracking is lost.
@@ -209,4 +209,10 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
   - "+100"-style score popups floating up in the world where points were scored.
   - End screen: GAME OVER or GAME CLEAR!, with score, coins, enemies defeated, play time and accuracy (resolved ÷ recognised-but-refused actions).
   - Soft blob shadows under enemies, shells and Bowser, to ground them on the real floor.
+
+## Gameplay polish (2026-10-21, after the first integration test)
+
+- **Clearing a stage needs a jump.** At the flag (or the axe in 2-4, once Bowser is beaten), a `jump` within 0.5 m grabs it: Gate 6, reason `goal`, a success haptic, then the usual stage clear. Standing there does nothing; the banner prompts "JUMP TO GRAB THE FLAG!" / "AXE!".
+- **Scene changes iris out and in.** Between stages and through warp pipes, the view closes to black in a circle, the scene changes, and it opens again (`ScreenTransition`, about 1 s in all). For safety in a real room it's never black for more than about 1.2 s; the HUD text stays on top.
+- **Sizes.** Gameplay objects (blocks, pipes, cannons, enemies, pickups, coins, the flag and the axe) are 13 % smaller than before, for comfort; reach and hit distances are unchanged. Scenery is sized to fill the space round the stage, outside the play area or overhead: the 1-1 castle is about 2.3 m tall, behind the flag; hills, bushes, giant mushrooms, cloud banks, cave pillars and walls, and castle walls with lava moats.
 

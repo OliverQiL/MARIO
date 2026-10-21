@@ -34,7 +34,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - 6 → clap to pick up the shell (HELD on the HUD), then 4 → throw it at enemies
    - 4 → throw a fireball (with the flower); 5 → punch a brick
    - 3 → squat to dodge a Bullet Bill
-   - Walk to the flag → STAGE CLEAR, and the next stage is re-anchored.
+   - Walk to the flag and **jump** → STAGE CLEAR; the view irises out, the next stage is re-anchored and irises in.
 5. **Dummy data, randomised:** quit the keys gateway (`q`) and run `python3 tools/mock_gateway.py --dummy --every 2`. Random packets arrive and the HUD shows each outcome: accepted (green), refused with a reason (orange), low confidence (grey), duplicates silent. The terminal shows the matching ACK colour and the gate that decided it.
 6. **"Change the dummy packets":** edit `tools/dummy_packets.json` (for example add `{ "action": "squat", "confidence": 0.3 }` or change an action). The gateway **re-reads it on the next pick**, with no restart, and logs `loaded N dummy packets`. Restarting the gateway also works.
 7. **Show robustness:**
@@ -185,7 +185,7 @@ stateDiagram-v2
   Placing --> Placing: no fit, retry every 2 s
   Playing --> BonusRoom: squat on a warp pipe
   BonusRoom --> Playing: squat on the exit pipe
-  Playing --> StageClear: reach the flag
+  Playing --> StageClear: jump at the flag
   StageClear --> Placing: 1.5 s, re-anchor at the player
   Playing --> Paused: tracking lost
   Paused --> Playing: tracking restored

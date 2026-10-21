@@ -139,6 +139,7 @@ What each pattern feels like (pulse length and count) is up to the wearable firm
 | `throw` | throwing motion | throws the shell you're holding; otherwise a fireball if you have the fire flower |
 | `punch` | forward punch | breaks a brick (or hits Bowser) in front of you at chest height |
 | `clap` | clap | picks up a Koopa shell from the floor in front of you |
+| `idle` | any other movement (the classifier's catch-all class) | nothing: the phone ACKs it as resolved (gate 6, reason `idle`) in every state and ignores it. Sending it is optional; it also counts as "a different label" for the repeat rule below |
 
 Send **exactly one event per physical action.** If the classifier labels 5 consecutive windows "stomp", send **one** stomp; otherwise the phone sees 5 stomps (and a Koopa's two-stomp rule means nothing). Simple rule: after sending an action, ignore the same label until a different label (or ~0.5 s of no detection) has come in between. Two real stomps in a row are two events, with that gap between them.
 

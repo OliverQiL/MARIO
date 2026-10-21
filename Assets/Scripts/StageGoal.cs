@@ -6,10 +6,11 @@ using UnityEngine;
 /// prefab; LevelGenerator finds it when the stage is placed and hands it the
 /// player's transform (the AR camera).
 ///
-/// Markerless and touch-free: the goal is "reached" when the player
-/// physically stands within reachRadius of it (horizontal distance only —
-/// phone height doesn't matter) continuously for dwellSeconds, so briefly
-/// brushing past doesn't count. Fires OnReached once.
+/// Markerless and touch-free: the goal is "reached" when the player jumps
+/// while within reachRadius of it (horizontal distance only — phone height
+/// doesn't matter): grabbing the flag (or the axe), as in the original. Just
+/// walking up to it isn't enough. EventResolver's jump calls TryJump on
+/// <see cref="Current"/>. Fires OnReached once.
 ///
 /// Safety net: the goal only arms once the player has been outside its
 /// reach, so a stage that happens to appear with its goal on the player can't
@@ -18,10 +19,8 @@ using UnityEngine;
 public class StageGoal : MonoBehaviour
 {
     [Header("Reach")]
-    [Tooltip("Horizontal distance (metres) from this transform within which the player counts as at the goal.")]
+    [Tooltip("Horizontal distance (metres) from this transform within which a jump grabs the goal.")]
     [SerializeField] private float reachRadius = 0.6f;
-    [Tooltip("Seconds the player must stay within reach before the goal triggers.")]
-    [SerializeField] private float dwellSeconds = 0.5f;
 
     [Header("Celebration (visual)")]
     [Tooltip("The flag, which slides down the pole when the goal is reached.")]
@@ -37,6 +36,9 @@ public class StageGoal : MonoBehaviour
 
     public event Action<StageGoal> OnReached;
 
+    /// <summary>The live stage's goal (the last one initialised), for EventResolver's jump.</summary>
+    public static StageGoal Current { get; private set; }
+
     public bool EndsGame => endsGame;
     /// <summary>Locked goals can't be reached (a boss guards it). Bowser sets and clears this.</summary>
     public bool Locked { get; set; }
@@ -45,9 +47,10 @@ public class StageGoal : MonoBehaviour
     public bool IsReached { get; private set; }
     /// <summary>Current horizontal distance to the player, for HUD/debugging. Infinity until initialised.</summary>
     public float PlayerDistance { get; private set; } = float.PositiveInfinity;
+    /// <summary>A jump now would grab the goal: armed, unlocked, not yet reached, and the player within reach.</summary>
+    public bool InReach => _armed && !Locked && !IsReached && PlayerDistance <= reachRadius;
 
     private Transform _player;
-    private float _dwellTimer;
     private bool _armed;
     private float _slideAge = float.PositiveInfinity;
     private float _pennantTop;
@@ -56,8 +59,32 @@ public class StageGoal : MonoBehaviour
     {
         _player = player;
         IsReached = false;
-        _dwellTimer = 0f;
         _armed = false;
+        PlayerDistance = float.PositiveInfinity;
+        Current = this;
+    }
+
+    private void OnDestroy()
+    {
+        if (Current == this) Current = null;
+    }
+
+    /// <summary>The player jumped: grabs the goal if they're within reach. Returns whether it did.</summary>
+    public bool TryJump()
+    {
+        UpdateDistance();
+        if (!InReach) return false;
+        Reach();
+        return true;
+    }
+
+    private void UpdateDistance()
+    {
+        if (_player == null) return;
+        var offset = _player.position - transform.position;
+        offset.y = 0f;
+        PlayerDistance = offset.magnitude;
+        if (!_armed) _armed = PlayerDistance > reachRadius;
     }
 
     private void Update()
@@ -69,22 +96,7 @@ public class StageGoal : MonoBehaviour
             var p = pennant.localPosition;
             pennant.localPosition = new Vector3(p.x, Mathf.Lerp(_pennantTop, pennantBottom, t * t * (3f - 2f * t)), p.z);
         }
-        if (IsReached || _player == null) return;
-
-        var offset = _player.position - transform.position;
-        offset.y = 0f;
-        PlayerDistance = offset.magnitude;
-
-        if (!_armed)
-        {
-            _armed = PlayerDistance > reachRadius;
-            return;
-        }
-
-        _dwellTimer = PlayerDistance <= reachRadius && !Locked ? _dwellTimer + Time.deltaTime : 0f;
-        if (_dwellTimer < dwellSeconds) return;
-
-        Reach();
+        if (!IsReached) UpdateDistance();
     }
 
     /// <summary>Completes the stage now (the flag, or a warp pipe). Fires OnReached once.</summary>

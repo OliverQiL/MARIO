@@ -32,7 +32,7 @@ One classified action.
 | `session_id` | string | Owned by the gateway. The phone treats `(session_id, event_id)` as the unique key, so the gateway can restart numbering in a new session. |
 | `event_id` | string | Unique within a session. |
 | `window_id` | int | Classifier window. The phone only logs it. |
-| `action` | string | One of `jump` `stomp` `squat` `throw` `punch` `clap` (v2). One event per physical motion. |
+| `action` | string | One of `jump` `stomp` `squat` `throw` `punch` `clap` (v2). One event per physical motion. Also `idle`, the classifier's class for any other movement: the phone ACKs it as resolved (gate 6, reason `idle`) in every state and otherwise ignores it (no haptic, no HUD, not logged, not counted). |
 | `confidence` | float 0–1 | The phone rejects events below its threshold (currently 0.6). |
 | `timestamp` | float, Unix seconds | Gateway clock. Used only for logging, since the clocks aren't synchronised. |
 

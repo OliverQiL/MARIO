@@ -67,7 +67,8 @@ public class BulletBillCannon : MonoBehaviour
         if (column != null)
         {
             float h = y - floorY;
-            column.localScale = new Vector3(column.localScale.x, h / 2f, column.localScale.z); // Unity cylinders are 2 units tall
+            float parentScale = column.parent != null ? Mathf.Max(0.01f, column.parent.lossyScale.y) : 1f; // the cannon is built scaled down
+            column.localScale = new Vector3(column.localScale.x, h / 2f / parentScale, column.localScale.z); // Unity cylinders are 2 units tall
             column.position = new Vector3(column.position.x, floorY + h / 2f, column.position.z);
         }
     }

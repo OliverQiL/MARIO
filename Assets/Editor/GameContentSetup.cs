@@ -155,7 +155,7 @@ public static class GameContentSetup
         Visual(PrimitiveType.Cylinder, "Rim", root.transform, Vector3.zero, new Vector3(0.13f, 0.007f, 0.13f), m.CoinRim, new Vector3(90f, 0f, 0f));
         Visual(PrimitiveType.Cylinder, "Face", root.transform, Vector3.zero, new Vector3(0.11f, 0.009f, 0.11f), m.Coin, new Vector3(90f, 0f, 0f));
         Visual(PrimitiveType.Cube, "Bar", root.transform, Vector3.zero, new Vector3(0.022f, 0.065f, 0.026f), m.CoinShine);
-        return Save(root, CoinPopPath);
+        return Save(Shrink(root), CoinPopPath);
     }
 
     /// <summary>Fire flower: red outer petals, a yellow ring and a cream centre with eyes, on a stem with two leaves.</summary>
@@ -173,7 +173,7 @@ public static class GameContentSetup
         foreach (int side in new[] { -1, 1 })
             foreach (int face in new[] { -1, 1 }) // eyes on both faces: it spins
                 Visual(PrimitiveType.Sphere, "Eye", head, new Vector3(0.012f * side, 0.004f, 0.034f * face), new Vector3(0.01f, 0.022f, 0.008f), m.Black);
-        return Save(root, FireFlowerPath);
+        return Save(Shrink(root), FireFlowerPath);
     }
 
     /// <summary>1-Up mushroom: green cap dotted with white spots all round, cream stalk with eyes.</summary>
@@ -204,7 +204,7 @@ public static class GameContentSetup
             var spot = Visual(PrimitiveType.Sphere, "Spot", root.transform, pos, new Vector3(size, size, 0.02f), m.White);
             spot.transform.localRotation = Quaternion.LookRotation(normal, Mathf.Abs(normal.y) > 0.99f ? Vector3.forward : Vector3.up);
         }
-        return Save(root, OneUpPath);
+        return Save(Shrink(root), OneUpPath);
     }
 
     /// <summary>Koopa: patterned green shell with a white rim, yellow head with a snout, big eyes, yellow feet.</summary>
@@ -243,7 +243,7 @@ public static class GameContentSetup
         hide.GetArrayElementAtIndex(0).objectReferenceValue = head.gameObject;
         hide.GetArrayElementAtIndex(1).objectReferenceValue = feet.gameObject;
         so.ApplyModifiedPropertiesWithoutUndo();
-        return Save(root, KoopaPath);
+        return Save(Shrink(root), KoopaPath);
     }
 
     /// <summary>Bullet Bill: glossy black bullet, round nose, flared tail, big white eyes and white gloves.</summary>
@@ -264,7 +264,7 @@ public static class GameContentSetup
             Visual(PrimitiveType.Cube, side < 0 ? "LidL" : "LidR", root.transform, new Vector3(0.05f * side, 0.088f, 0.18f), new Vector3(0.085f, 0.03f, 0.06f), m.BillBody, new Vector3(0f, 0f, 22f * side));
             Visual(PrimitiveType.Sphere, side < 0 ? "GloveL" : "GloveR", root.transform, new Vector3(0.125f * side, -0.03f, 0.0f), new Vector3(0.06f, 0.055f, 0.07f), m.White);
         }
-        return Save(root, BulletBillPath);
+        return Save(Shrink(root), BulletBillPath);
     }
 
     /// <summary>A Bill Blaster tower: column from the floor to a turning head at head height (both resized at runtime).</summary>
@@ -273,6 +273,7 @@ public static class GameContentSetup
         var root = new GameObject("BulletBillCannon");
         root.transform.SetParent(parent, false);
         root.transform.localPosition = localPos;
+        Shrink(root);
         var cannon = root.AddComponent<BulletBillCannon>();
 
         // Steel column on a wider base (the column is stretched to the head's height at runtime).
@@ -326,7 +327,7 @@ public static class GameContentSetup
             Visual(PrimitiveType.Cube, side < 0 ? "FangL" : "FangR", model, new Vector3(0.032f * side, 0.115f, 0.108f), new Vector3(0.02f, 0.024f, 0.012f), m.White);
             Visual(PrimitiveType.Sphere, side < 0 ? "FootL" : "FootR", model, new Vector3(0.06f * side, 0.022f, 0.02f), new Vector3(0.09f, 0.045f, 0.13f), m.GoombaFeet);
         }
-        return Save(root, GoombaPath);
+        return Save(Shrink(root), GoombaPath);
     }
 
     /// <summary>Fireball: a glowing orange ball with flame licks, spinning as it flies.</summary>
@@ -339,7 +340,7 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Ball", model, Vector3.zero, Vector3.one * 0.075f, m.Fire);
         foreach (var d in new[] { Vector3.up, Vector3.down, Vector3.left, Vector3.right })
             Visual(PrimitiveType.Sphere, "Lick", model, d * 0.035f, Vector3.one * 0.035f, m.FireCore);
-        return Save(root, FireballPath);
+        return Save(Shrink(root), FireballPath);
     }
 
     /// <summary>Thrown Koopa shell: the green shell with its white rim, spinning about the vertical as it slides.</summary>
@@ -357,7 +358,7 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Shell", model, new Vector3(0f, 0.08f, 0f), new Vector3(0.26f, 0.16f, 0.28f), m.KoopaShell);
         Visual(PrimitiveType.Cylinder, "Rim", model, new Vector3(0f, 0.04f, 0f), new Vector3(0.28f, 0.016f, 0.3f), m.White);
         Visual(PrimitiveType.Cylinder, "Belly", model, new Vector3(0f, 0.025f, 0f), new Vector3(0.24f, 0.012f, 0.26f), m.KoopaBelly);
-        return Save(root, ThrownShellPath);
+        return Save(Shrink(root), ThrownShellPath);
     }
 
     /// <summary>A small Koopa shell in the bottom-right of the player's view, shown while they hold one (HeldItemView on the AR camera).</summary>
@@ -446,6 +447,7 @@ public static class GameContentSetup
         var root = new GameObject(isExit ? "ExitPipe" : "WarpPipe");
         if (parent != null) root.transform.SetParent(parent, false);
         root.transform.localPosition = localPos;
+        Shrink(root);
         var pipe = root.AddComponent<WarpPipe>();
         var so = new SerializedObject(pipe);
         so.FindProperty("appearChance").floatValue = appearChance;
@@ -465,6 +467,7 @@ public static class GameContentSetup
         var root = new GameObject("Coin");
         if (parent != null) root.transform.SetParent(parent, false);
         root.transform.localPosition = localPos;
+        Shrink(root);
         Set(root.AddComponent<Coin>(), "collectEffect", Effect(SparklePath));
         var eh = root.AddComponent<EyeHeightPlacement>();
         SetFloat(eh, "fractionOfEyes", 0.6f); // waist height, scaled to the player
@@ -534,7 +537,7 @@ public static class GameContentSetup
     /// <summary>A column of <paramref name="blocks"/> stair blocks (hard, bevelled, 0.25 m each).</summary>
     private static void StairColumn(Transform parent, Vector3 at, int blocks, Mats m)
     {
-        var column = Group("Stairs", parent, at);
+        var column = Shrink(Group("Stairs", parent, at));
         for (int i = 0; i < Mathf.Max(1, blocks); i++)
             Visual(PrimitiveType.Cube, "StairBlock", column, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.Stair)
                 .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
@@ -543,7 +546,7 @@ public static class GameContentSetup
     /// <summary>A tall decorative green pipe (no warp), <paramref name="blocks"/> × 0.25 m high plus its lip.</summary>
     private static void TallPipe(Transform parent, Vector3 at, int blocks, Mats m)
     {
-        var pipe = Group("TallPipe", parent, at);
+        var pipe = Shrink(Group("TallPipe", parent, at));
         float h = 0.25f * Mathf.Max(1, blocks);
         Visual(PrimitiveType.Cylinder, "Body", pipe, new Vector3(0f, h / 2f, 0f), new Vector3(0.36f, h / 2f, 0.36f), m.Pipe);
         Visual(PrimitiveType.Cylinder, "Lip", pipe, new Vector3(0f, h + 0.045f, 0f), new Vector3(0.46f, 0.045f, 0.46f), m.Pipe);
@@ -553,10 +556,12 @@ public static class GameContentSetup
     // ---- scenery: decoration around and above the play area (never targets, no colliders) ----
 
     /// <summary>
-    /// Background art for a campaign stage, by theme. Every piece is a direct
-    /// child of the stage root so CompressLayout moves it in with the rest.
-    /// Things on the floor sit on or just outside the stage edge; clouds and
-    /// ceilings are overhead, so nothing gets in the player's way.
+    /// Background art for a campaign stage, by theme, sized to fill the space
+    /// round the play area as a backdrop (Oliver 2026-10-21: the castle was
+    /// smaller than the flagpole). Every piece is a direct child of the stage
+    /// root so CompressLayout moves it in with the rest. Big pieces stand
+    /// beyond the stage's sides and far end; clouds and ceilings are overhead,
+    /// so nothing gets in the player's way.
     /// </summary>
     private static void Scenery(Transform root, StageDesigns.Design design, Mats m)
     {
@@ -564,65 +569,88 @@ public static class GameContentSetup
         switch (design.Scenery)
         {
             case StageDesigns.Scenery.Overworld:
-                Hill(root, new Vector3(-hw - 0.1f, 0f, hd - 0.2f), 0.5f, 0.6f, m);
-                Hill(root, new Vector3(hw + 0.15f, 0f, hd - 0.7f), 0.3f, 0.32f, m);
-                Hill(root, new Vector3(hw + 0.1f, 0f, -hd + 0.5f), 0.4f, 0.45f, m);
-                for (float z = -hd + 0.9f; z < hd - 0.5f; z += 1.3f)
+                // Rolling hills either side, a big castle beyond the flag (taller than the pole), bushes along the edges.
+                Hill(root, new Vector3(-hw - 1.15f, 0f, hd - 0.4f), 1.1f, 1.4f, m); // each hill stays just outside the edge
+                Hill(root, new Vector3(-hw - 0.75f, 0f, -hd + 1.2f), 0.7f, 0.8f, m);
+                Hill(root, new Vector3(hw + 0.85f, 0f, hd - 1.6f), 0.8f, 0.95f, m);
+                Hill(root, new Vector3(hw + 1.05f, 0f, -hd + 0.6f), 1.0f, 1.2f, m);
+                for (float z = -hd + 0.7f; z < hd - 0.3f; z += 1.1f)
                 {
-                    Bush(root, new Vector3(-hw - 0.05f, 0f, z), m);
-                    Bush(root, new Vector3(hw + 0.05f, 0f, z + 0.6f), m);
+                    Bush(root, new Vector3(-hw - 0.4f, 0f, z), 1.6f, m);
+                    Bush(root, new Vector3(hw + 0.35f, 0f, z + 0.55f), 1.4f, m);
                 }
-                Cloud(root, new Vector3(-hw * 0.6f, 2.25f, -hd * 0.3f), 1f, m);
-                Cloud(root, new Vector3(hw * 0.5f, 2.4f, hd * 0.25f), 0.8f, m);
-                Cloud(root, new Vector3(-hw * 0.2f, 2.3f, hd * 0.85f), 1.2f, m);
-                CastleBackdrop(root, new Vector3(hw * 0.6f, 0f, hd + 0.25f), 0.7f, m);
+                Cloud(root, new Vector3(-hw * 0.7f, 2.4f, -hd * 0.3f), 2f, m);
+                Cloud(root, new Vector3(hw * 0.6f, 2.55f, hd * 0.2f), 1.7f, m);
+                Cloud(root, new Vector3(-hw * 0.2f, 2.5f, hd * 0.9f), 2.3f, m);
+                Cloud(root, new Vector3(hw + 0.6f, 2.3f, -hd * 0.7f), 1.8f, m);
+                CastleBackdrop(root, new Vector3(hw * 0.35f, 0f, hd + 1.0f), 2.6f, m); // ~2.3 m tall
                 break;
 
             case StageDesigns.Scenery.Underground:
+                // A cave: brick ceiling beams along both sides, thick pillars, and a brick wall at the far end.
                 for (float z = -hd + 0.125f; z <= hd; z += 0.25f)
                     foreach (int side in new[] { -1, 1 })
                         Visual(PrimitiveType.Cube, "Ceiling", root, new Vector3(side * (hw - 0.125f), 2.35f, z), Vector3.one * 0.25f, m.UndergroundBrick)
                             .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
-                foreach (float z in new[] { -hd + 0.4f, 0f, hd - 0.4f })
+                foreach (float z in new[] { -hd + 0.4f, -hd * 0.35f, hd * 0.35f, hd - 0.4f })
                     foreach (int side in new[] { -1, 1 })
                     {
-                        var pillar = Group("Pillar", root, new Vector3(side * (hw + 0.13f), 0f, z));
-                        for (int i = 0; i < 9; i++)
-                            Visual(PrimitiveType.Cube, "Block", pillar, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.UndergroundBrick)
+                        var pillar = Group("Pillar", root, new Vector3(side * (hw + 0.3f), 0f, z));
+                        for (int i = 0; i < 5; i++)
+                            Visual(PrimitiveType.Cube, "Block", pillar, new Vector3(0f, 0.25f + 0.5f * i, 0f), Vector3.one * 0.5f, m.UndergroundBrick)
                                 .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
                     }
+                BlockWall(root, "BackWall", new Vector3(0f, 0f, hd + 0.5f), design.Width + 1.2f, 5, 0.5f, m.UndergroundBrick, crenellated: false);
                 break;
 
             case StageDesigns.Scenery.Sky:
-                Cloud(root, new Vector3(-hw * 0.7f, 2.2f, -hd * 0.6f), 1.1f, m);
-                Cloud(root, new Vector3(hw * 0.6f, 2.5f, -hd * 0.1f), 0.9f, m);
-                Cloud(root, new Vector3(-hw * 0.3f, 2.4f, hd * 0.4f), 1.3f, m);
-                Cloud(root, new Vector3(hw * 0.4f, 2.2f, hd * 0.9f), 1f, m);
+                // High above the clouds: big clouds overhead, a cloud floor at the edges, giant mushrooms.
+                Cloud(root, new Vector3(-hw * 0.7f, 2.35f, -hd * 0.6f), 2f, m);
+                Cloud(root, new Vector3(hw * 0.6f, 2.6f, -hd * 0.1f), 1.7f, m);
+                Cloud(root, new Vector3(-hw * 0.3f, 2.5f, hd * 0.4f), 2.4f, m);
+                Cloud(root, new Vector3(hw * 0.4f, 2.4f, hd * 0.9f), 1.9f, m);
+                Cloud(root, new Vector3(0f, 1.2f, hd + 1.4f), 3.2f, m); // a big one on the horizon
                 foreach (int side in new[] { -1, 1 })
-                    for (float z = -hd + 0.4f; z < hd; z += 1.1f)
-                        Cloud(root, new Vector3(side * (hw + 0.2f), 0.15f, z + (side > 0 ? 0.5f : 0f)), 0.9f, m); // a cloud floor at the edges
-                Mushroom(root, new Vector3(-hw - 0.15f, 0f, hd * 0.2f), 0.75f, m);
-                Mushroom(root, new Vector3(hw + 0.15f, 0f, -hd * 0.45f), 0.55f, m);
+                    for (float z = -hd + 0.4f; z < hd; z += 0.9f)
+                        Cloud(root, new Vector3(side * (hw + 0.45f), 0.15f, z + (side > 0 ? 0.45f : 0f)), 1.6f, m); // the cloud floor at the edges
+                Mushroom(root, new Vector3(-hw - 0.6f, 0f, hd * 0.25f), 1.6f, 1.6f, m);
+                Mushroom(root, new Vector3(hw + 0.55f, 0f, -hd * 0.4f), 1.1f, 1.3f, m);
+                Mushroom(root, new Vector3(hw + 0.7f, 0f, hd * 0.7f), 1.9f, 1.8f, m);
                 break;
 
             case StageDesigns.Scenery.Castle:
+                // Inside the castle: crenellated stone walls with lava moats either side, a high wall behind Bowser, torches.
                 foreach (int side in new[] { -1, 1 })
                 {
-                    int n = 0;
-                    for (float z = -hd + 0.125f; z <= hd; z += 0.25f, n++)
-                    {
-                        var wall = Group("Wall", root, new Vector3(side * (hw + 0.13f), 0f, z));
-                        int height = n % 2 == 0 ? 3 : 2; // crenellations
-                        for (int i = 0; i < height; i++)
-                            Visual(PrimitiveType.Cube, "Stone", wall, new Vector3(0f, 0.125f + 0.25f * i, 0f), Vector3.one * 0.25f, m.CastleStone)
-                                .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
-                    }
-                    Visual(PrimitiveType.Cube, "Lava", root, new Vector3(side * (hw + 0.5f), 0.01f, 0f), new Vector3(0.45f, 0.02f, design.Depth), m.Lava);
-                    foreach (float z in new[] { -hd * 0.5f, hd * 0.5f })
+                    // Lava moat just outside the edge, then the wall beyond it.
+                    Visual(PrimitiveType.Cube, "Lava", root, new Vector3(side * (hw + 0.35f), 0.01f, 0f), new Vector3(0.6f, 0.02f, design.Depth + 0.5f), m.Lava);
+                    var wall = BlockWall(root, "Wall", new Vector3(side * (hw + 0.9f), 0f, 0f), design.Depth + 1f, 3, 0.5f, m.CastleStone, crenellated: true);
+                    wall.localRotation = Quaternion.Euler(0f, 90f, 0f);
+                    foreach (float z in new[] { -hd * 0.6f, 0f, hd * 0.6f })
                         Torch(root, new Vector3(side * (hw - 0.05f), 0f, z), m);
                 }
+                BlockWall(root, "BackWall", new Vector3(0f, 0f, hd + 0.5f), design.Width + 2.3f, 4, 0.5f, m.CastleStone, crenellated: true);
                 break;
         }
+    }
+
+    /// <summary>
+    /// A wall of <paramref name="rows"/> × block-sized stone blocks, <paramref name="length"/> long along
+    /// its local X, standing on the floor (crenellated: every other block on top).
+    /// </summary>
+    private static Transform BlockWall(Transform parent, string name, Vector3 at, float length, int rows, float block, Material mat, bool crenellated)
+    {
+        var wall = Group(name, parent, at);
+        int columns = Mathf.Max(1, Mathf.RoundToInt(length / block));
+        float x0 = -(columns - 1) * block / 2f;
+        for (int c = 0; c < columns; c++)
+        {
+            int height = rows + (crenellated && c % 2 == 0 ? 1 : 0);
+            for (int r = 0; r < height; r++)
+                Visual(PrimitiveType.Cube, "Block", wall, new Vector3(x0 + c * block, block / 2f + r * block, 0f), Vector3.one * block, mat)
+                    .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
+        }
+        return wall;
     }
 
     /// <summary>A rounded green hill (a half-buried sphere) with a few dark spots, as in the 1985 backdrop.</summary>
@@ -634,14 +662,15 @@ public static class GameContentSetup
         {
             var p = new Vector3(x * radius, y * height, 0f);
             float zOnSurface = -Mathf.Sqrt(Mathf.Max(0.01f, 1f - (x * x) - (y * y))) * radius; // on the player's (-z) side
-            Visual(PrimitiveType.Sphere, "Spot", hill, new Vector3(p.x, p.y, zOnSurface), new Vector3(0.05f, 0.09f, 0.03f), m.HillDark);
+            Visual(PrimitiveType.Sphere, "Spot", hill, new Vector3(p.x, p.y, zOnSurface), new Vector3(0.1f, 0.18f, 0.06f) * radius, m.HillDark);
         }
     }
 
     /// <summary>A bush: three overlapping bright-green puffs on the floor.</summary>
-    private static void Bush(Transform parent, Vector3 at, Mats m)
+    private static void Bush(Transform parent, Vector3 at, float size, Mats m)
     {
         var bush = Group("Bush", parent, at);
+        bush.localScale = Vector3.one * size;
         Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(-0.13f, 0.06f, 0f), new Vector3(0.2f, 0.17f, 0.18f), m.Bush);
         Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(0f, 0.09f, 0f), new Vector3(0.26f, 0.22f, 0.22f), m.Bush);
         Visual(PrimitiveType.Sphere, "Puff", bush, new Vector3(0.13f, 0.06f, 0f), new Vector3(0.2f, 0.17f, 0.18f), m.Bush);
@@ -660,7 +689,7 @@ public static class GameContentSetup
             Visual(PrimitiveType.Sphere, "Eye", cloud, new Vector3(0.035f * side, 0.06f, -0.105f), new Vector3(0.022f, 0.045f, 0.01f), m.Black);
     }
 
-    /// <summary>A small castle in the distance beyond the flag: brick keep, crenellations, a dark doorway and a tower.</summary>
+    /// <summary>A castle in the distance beyond the flag: brick keep, crenellations, a dark doorway and a tower (≈0.9 m × size tall).</summary>
     private static void CastleBackdrop(Transform parent, Vector3 at, float size, Mats m)
     {
         var castle = Group("Castle", parent, at);
@@ -675,14 +704,16 @@ public static class GameContentSetup
             Visual(PrimitiveType.Cube, "Crenel", castle, new Vector3(i * 0.12f, 0.85f, 0f), new Vector3(0.08f, 0.1f, 0.3f), m.CastleBrick);
     }
 
-    /// <summary>A giant mushroom (stalk and red, white-spotted cap), as in the athletic levels.</summary>
-    private static void Mushroom(Transform parent, Vector3 at, float height, Mats m)
+    /// <summary>A giant mushroom (stalk and red, white-spotted cap), as in the athletic levels; <paramref name="capSize"/> scales the cap.</summary>
+    private static void Mushroom(Transform parent, Vector3 at, float height, float capSize, Mats m)
     {
         var mush = Group("Mushroom", parent, at);
-        Visual(PrimitiveType.Cylinder, "Stalk", mush, new Vector3(0f, height / 2f, 0f), new Vector3(0.12f, height / 2f, 0.12f), m.GoombaFace);
-        Visual(PrimitiveType.Sphere, "Cap", mush, new Vector3(0f, height, 0f), new Vector3(0.5f, 0.22f, 0.5f), m.MushroomCap);
+        Visual(PrimitiveType.Cylinder, "Stalk", mush, new Vector3(0f, height / 2f, 0f), new Vector3(0.12f, height / 2f, 0.12f) * Mathf.Max(1f, capSize * 0.8f), m.GoombaFace);
+        var cap = Group("Cap", mush, new Vector3(0f, height, 0f));
+        cap.localScale = Vector3.one * capSize;
+        Visual(PrimitiveType.Sphere, "Cap", cap, Vector3.zero, new Vector3(0.5f, 0.22f, 0.5f), m.MushroomCap);
         foreach (var (x, z) in new[] { (-0.14f, -0.12f), (0.15f, -0.1f), (0f, -0.2f) })
-            Visual(PrimitiveType.Sphere, "Spot", mush, new Vector3(x, height + 0.05f, z), new Vector3(0.08f, 0.04f, 0.08f), m.White);
+            Visual(PrimitiveType.Sphere, "Spot", cap, new Vector3(x, 0.05f, z), new Vector3(0.08f, 0.04f, 0.08f), m.White);
     }
 
     /// <summary>A wall torch: a dark post with a flickering flame on top.</summary>
@@ -713,7 +744,7 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Flame", model, Vector3.zero, new Vector3(0.16f, 0.16f, 0.3f), m.Fire);
         Visual(PrimitiveType.Sphere, "Core", model, new Vector3(0f, 0f, 0.05f), new Vector3(0.1f, 0.1f, 0.18f), m.FireCore);
         Visual(PrimitiveType.Sphere, "Tail", model, new Vector3(0f, 0f, -0.18f), new Vector3(0.09f, 0.09f, 0.2f), m.Fire);
-        return Save(root, BossFlamePath);
+        return Save(Shrink(root), BossFlamePath);
     }
 
     /// <summary>Bowser: a spiked green shell on a big yellow body, horned head with a red mane, white-ringed shell; about 1 m tall.</summary>
@@ -758,7 +789,7 @@ public static class GameContentSetup
         so.FindProperty("hitEffect").objectReferenceValue = Effect(FireBurstPath);
         so.FindProperty("defeatEffect").objectReferenceValue = Effect(ConfettiPath);
         so.ApplyModifiedPropertiesWithoutUndo();
-        return Save(root, BowserPath);
+        return Save(Shrink(root), BowserPath);
     }
 
     /// <summary>The final goal: an axe on a stone pedestal. Locked while Bowser stands; reaching it ends the game (the axe drops).</summary>
@@ -767,8 +798,9 @@ public static class GameContentSetup
         var goal = new GameObject("Goal");
         goal.transform.SetParent(parent, false);
         goal.transform.localPosition = localPos;
+        Shrink(goal);
         var sg = goal.AddComponent<StageGoal>();
-        SetFloat(sg, "reachRadius", 0.35f);
+        SetFloat(sg, "reachRadius", 0.5f); // jump within reach to grab it
         Visual(PrimitiveType.Cube, "Pedestal", goal.transform, new Vector3(0f, 0.25f, 0f), new Vector3(0.25f, 0.5f, 0.25f), m.CastleStone)
             .GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         // A big double-bit axe standing on its handle, blades facing the player, as in the castle levels.
@@ -829,7 +861,7 @@ public static class GameContentSetup
 
     private static void QuestionBlock(Transform parent, Vector3 localPos, Mats m, GameObject coinPop, Pickups pickups, string name = "QuestionBlock")
     {
-        var block = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f, m.Question);
+        var block = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f * ObjectScale, m.Question);
         block.GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         var qb = block.AddComponent<QuestionBlock>();
         Set(qb, "coinPopPrefab", coinPop);
@@ -902,7 +934,7 @@ public static class GameContentSetup
 
     private static void Brick(Transform parent, Vector3 localPos, Mats m, GameObject coinPop, string name = "BrickBlock")
     {
-        var brick = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f, m.Brick);
+        var brick = Visual(PrimitiveType.Cube, name, parent, localPos, Vector3.one * 0.25f * ObjectScale, m.Brick);
         brick.GetComponent<MeshFilter>().sharedMesh = BlockMesh();
         var bb = brick.AddComponent<BrickBlock>();
         Set(bb, "coinPopPrefab", coinPop);
@@ -918,8 +950,9 @@ public static class GameContentSetup
         var goal = new GameObject("Goal");
         goal.transform.SetParent(parent, false);
         goal.transform.localPosition = localPos;
+        Shrink(goal);
         var sg = goal.AddComponent<StageGoal>();
-        SetFloat(sg, "reachRadius", 0.35f);
+        SetFloat(sg, "reachRadius", 0.5f); // jump within reach to grab the flag
         const float poleHeight = 1.8f; // prominent across a room
         const float flagScale = 1.6f;
         Visual(PrimitiveType.Cube, "Base", goal.transform, new Vector3(0f, 0.06f, 0f), Vector3.one * 0.12f, m.Spent)
@@ -1007,6 +1040,20 @@ public static class GameContentSetup
         mesh.RecalculateBounds();
         EditorUtility.SetDirty(mesh);
         return mesh;
+    }
+
+    /// <summary>
+    /// Gameplay objects (blocks, pipes, enemies, pickups, the goal) are built at this size:
+    /// Oliver found them a little large for comfort (2026-10-21). Scenery is sized separately, to fill the space.
+    /// Only the visuals shrink; reach and hit distances are in world metres and stay the same.
+    /// </summary>
+    private const float ObjectScale = 0.87f;
+
+    private static T Shrink<T>(T obj) where T : Object
+    {
+        var t = obj is GameObject go ? go.transform : obj as Transform;
+        if (t != null) t.localScale *= ObjectScale;
+        return obj;
     }
 
     private static Transform Group(string name, Transform parent, Vector3 localPos)

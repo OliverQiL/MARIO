@@ -185,6 +185,8 @@ public static class HUDSetup
 
         var hud = canvas.GetComponent<HUDController>();
         if (hud == null) hud = canvas.gameObject.AddComponent<HUDController>();
+        // The iris wipe between stages and through warp pipes (builds its own UI at runtime).
+        if (canvas.GetComponent<ScreenTransition>() == null) canvas.gameObject.AddComponent<ScreenTransition>();
         var so = new SerializedObject(hud);
         so.FindProperty("sessionManager").objectReferenceValue = Object.FindAnyObjectByType<ARSessionManager>();
         so.FindProperty("levelGenerator").objectReferenceValue = Object.FindAnyObjectByType<LevelGenerator>();

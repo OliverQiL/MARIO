@@ -293,6 +293,11 @@ public class HUDController : MonoBehaviour
             message = "BEAT BOWSER TO REACH THE AXE";
             color = deniedColor;
         }
+        else if (levelGenerator != null && levelGenerator.CurrentGoal != null && levelGenerator.CurrentGoal.InReach)
+        {
+            message = $"JUMP TO GRAB THE {(levelGenerator.CurrentGoal.EndsGame ? "AXE" : "FLAG")}!";
+            color = goodColor;
+        }
         else if (levelGenerator != null && levelGenerator.CurrentGoal != null
                  && !float.IsInfinity(levelGenerator.CurrentGoal.PlayerDistance))
         {
@@ -338,7 +343,9 @@ public class HUDController : MonoBehaviour
         if (result.Resolved)
         {
             // The score change is picked up in UpdateStats; prefix it with the action.
-            string label = result.Target is WarpPipe ? "Warp" : action;
+            string label = result.Target is WarpPipe ? "Warp"
+                         : result.Target is StageGoal goal ? (goal.EndsGame ? "Axe" : "Flag")
+                         : action;
             if (result.Target is InteractableBase hitTarget) NotePopupAt(hitTarget.HitPoint);
             if (evt.actionLabel == "clap")
             {

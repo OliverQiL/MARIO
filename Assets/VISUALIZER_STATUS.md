@@ -747,7 +747,13 @@ What was built:
   - GAME OVER / GAME CLEAR end screen with stats (coins, enemies, time, accuracy).
   - Held shell in view (`HeldItemView`), blob shadows, `Drift` clouds and `Flicker` torches, and a game-clear fanfare.
 
-Not done from the plan below (candidates for later): fitting layouts to the scanned floor polygon / chained segments; enemies from several sides and a Paratroopa; LiDAR occlusion; ground dressing; credits; imported models and walk cycles; iris-wipe transitions and a preview fly-over.
+Not done from the plan below (candidates for later): fitting layouts to the scanned floor polygon / chained segments; enemies from several sides and a Paratroopa; LiDAR occlusion; ground dressing; credits; imported models and walk cycles; a preview fly-over.
+
+**Gameplay polish (2026-10-21, after the comms integration test passed):**
+- **Goal needs a jump:** `StageGoal` no longer dwells; `StageGoal.Current.TryJump()` from `EventResolver`'s jump grabs it within `reachRadius` (now 0.5 m for the flag and the axe). Result: Gate 6, reason `EventResolver.GoalReason` ("goal"), target the goal. HUD banner "JUMP TO GRAB THE FLAG!/AXE!" while `InReach`.
+- **Iris wipe** (`ScreenTransition`, added to the HUD canvas by `HUDSetup`): `ScreenTransition.Run(atBlack, readyToOpen)` closes, runs the change, waits for the next scene (max 1.2 s), opens. Used by `LevelGenerator` between stages (opens when the next stage is placed) and for warp pipes in and out. Without a live instance (edit mode, tests) the change runs at once.
+- **Sizes:** `GameContentSetup.ObjectScale` = 0.87 on every gameplay object's root (prefabs and stage pieces); `BulletBillCannon` sizes its column for a scaled cannon. Scenery rebuilt larger, outside the play area or overhead (`BlockWall` for cave and castle walls).
+- Tests: `GameplaySmokeTest` 103 checks (goal jump, locked axe, 87 % scale, castle taller than the flag, wipe in edit mode), `SimulationSmokeTest` and `-scan` pass; `ArtPreview` renders checked.
 
 The original plan, for reference:
 

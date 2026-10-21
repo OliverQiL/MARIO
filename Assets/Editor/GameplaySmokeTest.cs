@@ -70,6 +70,10 @@ public static class GameplaySmokeTest
         Check(r.Gate == 2, "v1 'fireball' is an unknown action (Gate 2)", r);
         r = Resolve("throw");
         Check(r.Gate == 3 && r.Reason == "nothing to throw", "throw with no flower and nothing held is Gate 3", r);
+        var statsBefore = s_State.GameStats;
+        r = Resolve("idle");
+        Check(r.Resolved && r.StateOnly && r.Reason == "idle" && s_State.GameStats.actionsResolved == statsBefore.actionsResolved
+              && s_State.GameStats.actionsRefused == statsBefore.actionsRefused, "idle resolves quietly (state-only, not counted)", r);
         r = Resolve("squat");
         Check(r.Resolved && r.StateOnly && s_State.IsDucked, "squat ducks the player", r);
         r = Resolve("jump");
@@ -328,8 +332,19 @@ public static class GameplaySmokeTest
         foreach (var go in new[] { hq.gameObject, hb.gameObject, hc }) UnityEngine.Object.DestroyImmediate(go);
 
         // -- the flag is tall enough to spot across a room
-        var goalPole = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("Goal/Pole");
-        Check(goalPole != null && goalPole.localPosition.y + goalPole.localScale.y >= 1.8f, "the flagpole is at least 1.8 m tall");
+        var goalRoot = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("Goal");
+        var goalPole = goalRoot != null ? goalRoot.Find("Pole") : null;
+        Check(goalPole != null && (goalPole.localPosition.y + goalPole.localScale.y) * goalRoot.localScale.y >= 1.5f, "the flagpole is at least 1.5 m tall");
+
+        // -- gameplay objects are built at 87% (comfort); scenery isn't
+        var goombaPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.GoombaPath);
+        Check(Mathf.Abs(goombaPrefab.transform.localScale.x - 0.87f) < 0.001f && Mathf.Abs(goalRoot.localScale.x - 0.87f) < 0.001f,
+              "gameplay objects (Goomba, flag) are built at 87%");
+
+        // -- the iris wipe never holds anything up without a live HUD (here: edit mode)
+        bool wiped = false;
+        ScreenTransition.Run(() => wiped = true);
+        Check(wiped, "a scene change runs at once when there's no live iris wipe");
 
         // -- campaign: names, looping, and every stage is complete
         Check(GameStateManager.NameOf(1) == "1-1" && GameStateManager.NameOf(4) == "1-4" && GameStateManager.NameOf(5) == "2-1", "stages are named 1-1 ... 1-4, then 2-1");
@@ -342,6 +357,11 @@ public static class GameplaySmokeTest
               "World 1 stages are 2.5 x 4 m, World 2 3 x 5 m; every stage has a goal and coins");
         Check(campaignStages.All(c => c.GetComponentsInChildren<Transform>().Any(t => t.name is "Hill" or "Cloud" or "Pillar" or "Wall")),
               "every campaign stage has scenery");
+        var firstStage = UnityEngine.Object.Instantiate(campaignStages[0], s_Stage);
+        var castleTop = firstStage.transform.Find("Castle").GetComponentsInChildren<Renderer>().Max(x => x.bounds.max.y);
+        var flagTop = firstStage.GetComponentInChildren<StageGoal>().GetComponentsInChildren<Renderer>().Max(x => x.bounds.max.y);
+        Check(castleTop > flagTop + 0.3f && castleTop > 2f, $"1-1's backdrop castle ({castleTop:F2} m) stands well above the flag ({flagTop:F2} m)");
+        UnityEngine.Object.DestroyImmediate(firstStage);
         var squeezed = UnityEngine.Object.Instantiate(campaignStages[0], s_Stage);
         var goalBefore = squeezed.GetComponentInChildren<StageGoal>().transform.localPosition;
         LevelGenerator.CompressLayout(squeezed, 0.55f);
@@ -421,6 +441,12 @@ public static class GameplaySmokeTest
         Register(bowser);
         typeof(Bowser).GetMethod("Start", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(bowser, null);
         Check(bowser != null && axe != null && axe.EndsGame && axe.Locked && bowser.Health == 5 && Bowser.Active == bowser, "2-4: Bowser (5 health) guards a locked axe");
+        axe.Initialise(s_Cam.transform); // as LevelGenerator does; the player starts away from it
+        StandAt(axe.transform.position);
+        r = Resolve("jump");
+        Check(r.StateOnly && !axe.IsReached, "a jump at the locked axe does nothing", r);
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        Invoke(axe, "Update"); // away again
 
         // -- his fire: a roar (warning), then a flame at head height; squatting ducks it
         var farPlayer = new Vector3(0f, 1.5f, 0.5f);
@@ -463,6 +489,20 @@ public static class GameplaySmokeTest
         Check(r.Resolved && !axe.Locked && s_State.Score == scoreBefore + 5000 && s_State.GameStats.enemiesDefeated == defeatsBefore + 1,
             "the last hit defeats Bowser (+5000) and unlocks the axe", r);
 
+        // -- the goal needs a jump: walking up to it isn't enough
+        var ap = axe.transform.position;
+        s_Cam.transform.position = new Vector3(ap.x, 1.5f, ap.z - axe.ReachRadius - 0.3f);
+        Invoke(axe, "Update");
+        r = Resolve("jump");
+        Check(r.StateOnly && !axe.IsReached, "a jump out of the axe's reach doesn't grab it", r);
+        StandAt(ap);
+        for (int i = 0; i < 30; i++) Invoke(axe, "Update");
+        Check(!axe.IsReached && axe.InReach, "standing at the unlocked axe doesn't clear it (needs a jump)");
+        bool reachedEvent = false;
+        axe.OnReached += _ => reachedEvent = true;
+        r = Resolve("jump");
+        Check(r.Resolved && r.Reason == EventResolver.GoalReason && r.Target == axe && axe.IsReached && reachedEvent, "a jump at the axe grabs it", r);
+
         // -- GAME CLEAR: play stops; a jump (after the grace period) starts a new game
         s_State.ClearGame();
         Check(s_State.IsGameClear && s_State.IsFinished && !s_State.IsSessionReady, "reaching the axe is GAME CLEAR");
@@ -484,6 +524,8 @@ public static class GameplaySmokeTest
         Check(s_State.IsGameOver && !s_State.IsSessionReady, "losing the last life is game over");
         r = Resolve("stomp");
         Check(r.Gate == 1, "actions are dropped during game over", r);
+        r = Resolve("idle");
+        Check(r.Resolved && r.StateOnly && s_State.IsGameOver, "idle still resolves quietly during game over", r);
         r = Resolve("jump");
         Check(r.Gate == 1 && s_State.IsGameOver, "a jump inside the grace period doesn't restart", r);
         SetField(s_State, "_gameOverAt", float.NegativeInfinity);
@@ -536,6 +578,16 @@ public static class GameplaySmokeTest
         s_Checks++;
         if (ok) Debug.Log($"[GameplaySmokeTest] ok — {what}");
         else s_Failures.Add(r.HasValue ? $"{what} (got gate {r.Value.Gate}: {r.Value.Reason})" : what);
+    }
+
+    private static void Invoke(object target, string method) =>
+        target.GetType().GetMethod(method, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).Invoke(target, null);
+
+    /// <summary>Puts the player (camera at eye height) right at a floor point, as if they'd walked there.</summary>
+    private static void StandAt(Vector3 floorPoint)
+    {
+        s_Cam.transform.position = new Vector3(floorPoint.x, 1.5f, floorPoint.z + 0.05f);
+        FaceForward();
     }
 
     private static void FaceForward() => s_Cam.transform.rotation = Quaternion.LookRotation(Vector3.forward);

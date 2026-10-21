@@ -30,9 +30,9 @@ using UnityEngine.XR.ARSubsystems;
 /// On non-LiDAR devices meshing never runs and there is no wait.
 ///
 /// Step 6 (stage loop): each stage prefab carries a StageGoal. When the
-/// player physically reaches it, OnStageCompleted fires (closing Gate 1 via
-/// GameStateManager), and after a short pause the completed stage and its
-/// anchor are destroyed, a fresh checkpoint anchor is created at the
+/// player jumps at it, OnStageCompleted fires (closing Gate 1 via
+/// GameStateManager), and after a short pause the view irises out
+/// (ScreenTransition), the completed stage and its anchor are destroyed, a fresh checkpoint anchor is created at the
 /// player's current floor position/heading, and Step 3 runs again. Re-anchoring
 /// every stage bounds both memory and accumulated tracking drift.
 /// OnStageStarted fires each time a stage is placed and playable.
@@ -46,9 +46,9 @@ using UnityEngine.XR.ARSubsystems;
 /// pieces closer together, same sizes) — otherwise the largest stageTemplates
 /// fallback that does. Completing the last campaign stage (Bowser's castle)
 /// clears the game: GameStateManager.ClearGame, a celebration, then the loop
-/// halts until a jump restarts it (RestartLoop). Warp pipes: entering one hides the stage and puts the bonus room
-/// in the same place; its exit pipe removes the bonus room and brings the
-/// stage back as it was.
+/// halts until a jump restarts it (RestartLoop). Warp pipes: entering one irises out, hides the stage and puts
+/// the bonus room in the same place; its exit pipe removes the bonus room and brings the
+/// stage back as it was. The next stage irises in once it's placed.
 /// </summary>
 [RequireComponent(typeof(ARSessionManager), typeof(ARAnchorManager), typeof(ARRaycastManager))]
 public class LevelGenerator : MonoBehaviour
@@ -149,6 +149,7 @@ public class LevelGenerator : MonoBehaviour
     private int _searchTooClose;
     private int _searchOffFloor;
     private bool _halted;
+    private bool _warping;
     private static readonly List<ARRaycastHit> s_Hits = new();
     private static readonly Collider[] s_Overlap = new Collider[1];
 
@@ -177,8 +178,15 @@ public class LevelGenerator : MonoBehaviour
 
     private void HandlePipeEntered(WarpPipe pipe)
     {
-        if (pipe.IsExit) ExitBonusRoom();
-        else EnterBonusRoom();
+        if (_warping) return;
+        _warping = true;
+        // Iris out, swap stage and room while the view is black, iris in.
+        ScreenTransition.Run(() =>
+        {
+            _warping = false;
+            if (pipe.IsExit) ExitBonusRoom();
+            else EnterBonusRoom();
+        });
     }
 
     private void EnterBonusRoom()
@@ -454,11 +462,16 @@ public class LevelGenerator : MonoBehaviour
 
     private IEnumerator TransitionToNextStage()
     {
-        yield return new WaitForSeconds(transitionDelaySeconds);
+        yield return new WaitForSeconds(transitionDelaySeconds); // the flag slides down, confetti
 
-        TearDownStage();
-        IsTransitioning = false;
-        CreateCheckpointAnchorAsync(); // re-anchor at the player's current pose, then Step 3 again
+        // Iris out; while it's black, clear the stage and re-anchor at the player's current
+        // pose (then Step 3 again); iris in once the next stage is placed (or the wipe's time limit).
+        ScreenTransition.Run(() =>
+        {
+            TearDownStage();
+            IsTransitioning = false;
+            CreateCheckpointAnchorAsync();
+        }, () => CurrentStage != null || _halted);
     }
 
     private void TearDownStage()
@@ -481,6 +494,7 @@ public class LevelGenerator : MonoBehaviour
     public void EndGame()
     {
         _halted = true;
+        _warping = false;
         StopAllCoroutines();
         CancelInvoke();
         IsTransitioning = false;
