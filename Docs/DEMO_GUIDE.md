@@ -7,15 +7,16 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | **Visualizer GUI design**: data correctly visualized, with dummy inputs | HUD reacting to random dummy `GAME_EVENT`s from the mock gateway | §3, §6 |
 | **CV and AR effects**: tracking the physical environment; placing virtual assets in it | Scan, floor-only detection, anchors, placement search, occlusion | §4 |
 | **Application state engine**: where state is stored and how it's passed to the visualizer | `GameStateManager`, the gate chain, events → HUD, audio and elements | §5 |
-| **Demonstration on the actual platform** | iPhone 17, handheld or in the VRG Pro headset | §2, §7 |
+| **Demonstration on the actual platform** | iPhone 17, in the VRG Pro headset (or handheld) | §2, §7 |
 
 ---
 
 ## 1. Before the lab (checklist)
 
 - [ ] **Latest build on the iPhone:** Unity closed, then *Tools ▸ MARIO ▸ Build iOS (John, Release)* for the integrated demo, or *(Local)* for the mock gateway → `xcodebuild` → `devicectl install`; see `VISUALIZER_STATUS.md`, "Device testing".
-- [ ] **Phone and Mac on the same Wi-Fi.** On the phone, Local Network access must be allowed (Settings ▸ Privacy ▸ Local Network ▸ MARIO).
-- [ ] **Mock gateway runs:** `python3 tools/mock_gateway.py --keys`, then check the phone's HUD shows **● ONLINE**.
+- [ ] **Which app:** **MARIO Local** (connects to this Mac's mock gateway, `Olis-MacBook-Pro.local`) for the dummy-input demo below; **MARIO** (connects to John's laptop on its hotspot, `192.168.137.1`) for the integrated system. Both can be installed side by side.
+- [ ] **Network:** MARIO Local: phone and Mac on the same Wi-Fi. MARIO: phone on John's laptop hotspot. Either way, Local Network access must be allowed (Settings ▸ Privacy ▸ Local Network).
+- [ ] **Mock gateway runs** (MARIO Local): `python3 tools/mock_gateway.py --keys`, then check the phone's HUD shows **● ONLINE**.
 - [ ] **Dummy file ready:** `tools/dummy_packets.json`, open in an editor for the "change the dummy packets" request.
 - [ ] **Editor ready for the code walk-through:** Unity open on `SampleScene` (the XR Simulation Museum room), and VS Code open on `Assets/Scripts`.
 - [ ] **Charged:** phone at 100 %, headset lenses clean, focus knob set.
@@ -23,8 +24,8 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 
 ## 2. Live demo runbook (about 8 minutes)
 
-1. **Launch on the phone** (handheld first; the headset is optional, see §8). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
-2. **Start the scan with a jump (key 1).** Walk round looking at the floor.
+1. **Launch MARIO Local on the phone** (headset mode is on by default; a two-finger tap toggles it before wearing, see §10). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
+2. **Start the scan with a jump** (key 1, or a real jump: in headset mode the phone detects jumps and squats itself from its height tracking). Walk round looking at the floor.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
 3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag). Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not done in 40 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
@@ -35,12 +36,16 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - 4 → throw a fireball (with the flower); 5 → punch a brick
    - 3 → squat to dodge a Bullet Bill
    - Walk to the flag and **jump** → STAGE CLEAR; the view irises out, the next stage is re-anchored and irises in.
+   - The bottom-right **LAST ACTION** shows each class received, its confidence and the outcome (`(KEY)` for keys, `(PHONE)` for the phone's own jump/squat detection).
+   - The campaign runs 1-1 to 2-4; 2-4 is Bowser's castle (punch, fireball or shell him; squat his fire), and its axe is GAME CLEAR.
 5. **Dummy data, randomised:** quit the keys gateway (`q`) and run `python3 tools/mock_gateway.py --dummy --every 2`. Random packets arrive and the HUD shows each outcome: accepted (green), refused with a reason (orange), low confidence (grey), duplicates silent. The terminal shows the matching ACK colour and the gate that decided it.
 6. **"Change the dummy packets":** edit `tools/dummy_packets.json` (for example add `{ "action": "squat", "confidence": 0.3 }` or change an action). The gateway **re-reads it on the next pick**, with no restart, and logs `loaded N dummy packets`. Restarting the gateway also works.
 7. **Show robustness:**
    - `k` kicks the connection → OFFLINE → it reconnects with backoff.
    - Cover the camera → TRACKING LOST, and the game pauses (Gate 1).
-   - Lose all lives → the GAME OVER screen → jump to restart.
+   - Lose all lives (not possible in training) → the GAME OVER screen with stats → jump to restart (straight to 1-1).
+   - Send a burst of the same action (`--script "stomp,rep,rep"`) → one stomp; the rest ACK as `repeat of the same motion`.
+   - Look straight up for 5 s → the countdown, then a **hard reset** back to "jump to start scanning" (and the training round again).
 
 ## 3. GUI design with dummy inputs: what to show and say
 
@@ -55,11 +60,13 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 
   | Area | Contents |
   |---|---|
-  | Top bar | score (6 digits), coins, stage (1-2), lives (heart ×N), power (flower icon), connection status |
-  | Banner | current state: scanning, tracking lost, placing, flag distance, bonus room |
-  | Centre title | STAGE 1-2 / STAGE CLEAR! / WARP! / READY! |
-  | Feedback | action results: green for hits and +score, orange for refused with a reason, grey for "move not recognised"; red flash on damage |
-  | Game-over screen | final score and the restart prompt |
+  | Top bar | score (6 digits), coins, stage (0-1 in training, 1-1 … 2-4), lives (heart ×N; `INF` in training), power (flower icon), held item (shell), connection status |
+  | Banner | current state: scanning, tracking lost, placing, the training step (`TRAINING 3/7 - …`), flag distance / "JUMP TO GRAB THE FLAG!", bonus room, Bowser's fire warning, the hard-reset countdown |
+  | Boss bar | Bowser's health in 2-4 |
+  | Centre title | intro cards (WORLD 0-1 TRAINING, WORLD 1-1 with the stage name and a tip), training step cards, STAGE CLEAR! / TRAINING COMPLETE! / WARP! / READY! |
+  | Feedback | action results: green for hits and +score, orange for refused with a reason, grey for "move not recognised" and training tips ("That was STOMP — try JUMP"); red flash on damage; world-space +score popups |
+  | Bottom-right (debug) | LAST ACTION: class, confidence (or `(PHONE)`/`(KEY)`), OK or the gate |
+  | End screen | GAME OVER / GAME CLEAR! with score, coins, enemies, time, accuracy, and the restart prompt |
 
   The HUD **only reads** game state. It never changes it (see §5).
 
@@ -72,6 +79,8 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | World tracking and camera | `AR Session`, `XR Origin` (AR Foundation → ARKit VIO) | 6-DoF camera pose each frame |
 | Floor detection | `ARSessionManager` (`IsFloorPlane`, `RecalculateTotalArea`) | Horizontal planes; ARKit's *semantic classification* keeps `Floor` and rejects Table/Seat. Unclassified planes count only at floor height (±0.15 m). Floor level = the largest Floor plane. |
 | Player-controlled scan | `ARSessionManager.StartScan / ConfirmScan` (jumps) | Plane detection is off until the first jump; confirming needs at least 3 m² |
+| Jumps and squats from tracking | `PhoneMotionDetector` | Head height vs standing (floor + eye height): up 10 cm at 0.5 m/s = jump; down 28 cm = squat, held = stays ducked; backs up the classifier, one motion counts once |
+| Hard reset | `HardReset` | Looking up ≥ 65° for 5 s resets in place to "jump to start scanning" (on the phone also `ARSession.Reset`) |
 | Player height | `ARSessionManager.SampleEyeHeight` → `PlayerBody` | Median camera height above the floor while scanning |
 | Tracking loss and relocalisation | `ARSessionManager.PollTrackingState` | `OnTrackingLost` closes Gate 1 (the game pauses); `OnTrackingRestored` reopens it |
 | Room mesh and occlusion (LiDAR iPhones) | `ARMeshManager` (AR Meshes), `RenderManager` + `AROcclusionManager` | Real furniture hides virtual objects; the mesh rejects obstructed placements. The base iPhone 17 has no LiDAR, so this falls back gracefully. |
@@ -84,9 +93,9 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | World-locked checkpoint | `LevelGenerator.CreateCheckpointAnchorAsync` | An `ARAnchor` on the floor at the player's position, yaw only; re-anchored every stage, which bounds drift |
 | Placement search | `LevelGenerator.TryFindValidPlacement` | Rings to 6 m and 15° steps, forward arc first. Each candidate must: have detected floor under all 4 corners and the flag; keep clear of the player; need a real walk to the goal; and (LiDAR) not overlap the room mesh. |
 | Fitting the room | `LevelGenerator.campaignScales`, `CompressLayout` | The designed stage at 100 / 85 / 70 / 55 %, then the fallback templates |
-| Stage content | `StageDesigns` (data) → `GameContentSetup` → prefabs | Campaign 1-1 to 1-4; positions in metres on the floor |
+| Stage content | `StageDesigns` (data) → `GameContentSetup` → prefabs | The training lane (`Tutorial`, 7 stations) and the campaign 1-1 to 2-4; positions in metres on the floor; gameplay objects at 87 %, scenery sized to fill the room |
 | Body-relative heights | `EyeHeightPlacement` | ? block eyes + 0.35 m; brick 78 %; coin 60 % of eye height |
-| Visual effects | `Burst`, `EnemyWaddle`, `Spinner`, `StageGoal` | Particles, knock-outs, flag slide, confetti |
+| Visual effects | `Burst`, `EnemyWaddle`, `Spinner`, `StageGoal`, `ScreenTransition`, `ScorePopup` | Particles, knock-outs, flag slide, confetti, the iris wipe between stages and through pipes, +score popups |
 | Headset view | `HeadsetView` + `HeadsetLens.shader` | Side-by-side eyes, lens pre-distortion, HUD safe frame |
 
 ## 5. Application state engine: where state lives and how it reaches the visualizer
@@ -96,9 +105,10 @@ flowchart LR
   subgraph Input
     GW[Gateway / mock gateway<br/>GAME_EVENT JSON] -->|WSS| NC[NetworkClient]
     KB[EditorActionInput<br/>keys 1-6, Editor only] --> ER
+    PM[PhoneMotionDetector<br/>jump / squat from head height] --> ER
   end
   NC -->|GameEvent| ER[EventResolver<br/>6-gate chain]
-  ER -->|reads/writes| GS[(GameStateManager<br/>score · coins · lives · stage<br/>fire flower · airborne/ducked/invulnerable<br/>session ready · game over)]
+  ER -->|reads/writes| GS[(GameStateManager<br/>score · coins · lives · stage · held item<br/>fire flower · airborne/ducked/invulnerable<br/>training · session ready · game over/clear)]
   ER -->|ResolveHit| EL[Stage elements<br/>blocks · enemies · pipes]
   EL -->|AddScore / AddCoin / TakeHit| GS
   ARS[ARSessionManager<br/>tracking · scan] -->|OnTrackingLost/Restored| GS
@@ -110,10 +120,10 @@ flowchart LR
   GS -. polled every frame .-> HUD
 ```
 
-- **One source of truth.** `GameStateManager` holds all game state. Everything else reads it; it's changed only through its methods (`AddScore`, `AddCoin`, `TakeHit`, `BeginStage`, `CompleteStage`, `RestartGame`, `Jump`, `Duck`, …).
+- **One source of truth.** `GameStateManager` holds all game state. Everything else reads it; it's changed only through its methods (`AddScore`, `AddCoin`, `TakeHit`, `BeginStage`, `CompleteStage`, `RestartGame`, `StartTraining`/`EndTraining`, `ResetForScan`, `Jump`, `Duck`, `PickUp`, …).
 - **Every action goes through `EventResolver.Resolve`**, which has six ordered gates:
   1. **Session:** tracking OK, a stage live, not game over.
-  2. **Validity:** confidence ≥ 0.6, and not a duplicate `event_id`.
+  2. **Validity:** confidence ≥ 0.6, not a duplicate `event_id`, and not another report of a motion already processed (the gateway forwards every classification; the phone's own jump/squat and the classifier's count once). `idle` is acknowledged before the gates and ignored.
   3. **Capability:** e.g. at most 2 fireballs in flight.
   4. **Spatial:** a target in range and facing.
   5. **Target state:** e.g. not already spent.
@@ -122,6 +132,7 @@ flowchart LR
   Gates 1–2 mean "not registered"; gates 3–5 mean "not permitted". Each result is returned to `NetworkClient`, which ACKs every event with its gate.
 - **The visualizer is updated in two ways.** Transient events arrive through C# events (`OnEventProcessed`, `OnImpact`, `OnLifeLost`, `BulletBillCannon.OnWarning`). Persistent values (score, lives, stage, flower) are polled each frame from `GameStateManager`. The HUD never writes state.
 - **Scene wiring.** Stage lifecycle ⇄ state is wired as persistent UnityEvents by `GameContentSetup`.
+- **Two event sources, one path.** Gateway events (via `NetworkClient`, ACKed) and the phone's own jumps/squats (`PhoneMotionDetector`, session `phone-motion`, not ACKed) both go through `EventResolver.Resolve`.
 
 ## 6. Concurrency: block diagram
 
@@ -180,7 +191,9 @@ stateDiagram-v2
   [*] --> GetReady
   GetReady --> Scanning: jump
   Scanning --> Scanning: planes found, eye height sampled
-  Scanning --> Placing: jump, with ≥ 3 m² of floor
+  Scanning --> Training: jump, with ≥ 3 m² of floor; anchor + placement
+  Training --> Training: 7 stations in turn (infinite lives)
+  Training --> Placing: jump at the training flag, fresh game
   Placing --> Playing: checkpoint anchor + valid placement
   Placing --> Placing: no fit, retry every 2 s
   Playing --> BonusRoom: squat on a warp pipe
@@ -190,7 +203,10 @@ stateDiagram-v2
   Playing --> Paused: tracking lost
   Paused --> Playing: tracking restored
   Playing --> GameOver: last life lost
-  GameOver --> Placing: jump after 2 s
+  GameOver --> Placing: jump after 2 s (no training)
+  Playing --> GameClear: jump at the axe (2-4, Bowser beaten)
+  GameClear --> Placing: jump after 2 s
+  Playing --> GetReady: look up 5 s (hard reset, from any state)
 ```
 
 **Message sequence:**
@@ -211,7 +227,7 @@ sequenceDiagram
 | Time | Show | Say / point at |
 |---|---|---|
 | 0:00–0:40 | Title, then the system diagram (§6) | Role in the system: the phone receives classified actions over WSS and renders the AR game |
-| 0:40–2:30 | **Phone:** get ready → jump → scan → jump → stage appears | Floor-only detection, the m² meter, eye-height calibration, anchoring; walk round the stage (§4) |
+| 0:40–2:30 | **Phone:** get ready → jump → scan → jump → the training round appears | Floor-only detection, the m² meter, eye-height calibration, anchoring; walk round the stage; a station or two of training (§4) |
 | 2:30–4:30 | **Phone plus terminal side by side:** `--dummy --every 2`, then edit `dummy_packets.json` | Real packet format, random choice, colour-coded ACKs by gate, HUD feedback colours (§3) |
 | 4:30–6:00 | **Phone:** play 1-2 with keys: power-up, punch or fireball, stomp, Koopa, warp to the bonus room and back, Bullet Bill and squat | AR effects, particles, audio |
 | 6:00–7:30 | **Code:** `EventResolver.RunGates`, `GameStateManager`, state diagram (§5) | Where state lives, the 6 gates, events vs polling |
@@ -230,7 +246,9 @@ sequenceDiagram
 - **Why a queue?** Unity objects may only be touched on the main thread. The receive task never touches game state; it enqueues complete messages.
 - **Why ACK every event, even duplicates?** So the gateway sees an outcome for every `event_id`, whichever gate decided it.
 - **How is a duplicate detected?** Gate 2 keeps a bounded set of recent `session_id/event_id` keys (1024, FIFO).
-- **What if the classifier sends the same action every window?** Protocol v2 makes every action discrete: the gateway sends one event per physical motion. The phone also drops repeated `event_id`s (gate 2).
+- **What if the classifier sends the same action every window?** The gateway forwards every classification; the phone's gate 2 processes the first of a run of the same action (reports under 0.5 s apart; a run over 1.2 s is a new motion) and ACKs the rest as repeats. It also drops repeated `event_id`s.
+- **The classifier misses jumps. What then?** In the headset the phone sees jumps and squats itself from its tracked head height (`PhoneMotionDetector`); whichever source sees a motion first counts, and the other's report within 1.5 s is a repeat. A held squat keeps the player ducked.
+- **How does a new player learn the moves?** After every scan a training round (WORLD 0-1) shows seven stations one at a time, with infinite lives, tips for misread moves, and a 40 s timeout per step; its flag starts 1-1.
 - **How do you avoid placing a stage on a table?** Semantic classification (Floor only), a floor-height tolerance, floor required under all 4 corners and the flag, and on LiDAR devices, room-mesh overlap tests.
 - **What if tracking is lost?** Gate 1 closes, enemies freeze, and the banner says "look around slowly". The stage stays anchored and resumes when ARKit relocalises.
 - **How is the project structured?** See `VISUALIZER_STATUS.md` §3: `Scripts/` (runtime), `Scripts/Gameplay/` (elements), `Editor/` (one-click setup, content builders, headless tests).
@@ -241,7 +259,8 @@ sequenceDiagram
 |---|---|
 | Game stuck, or need to start over mid-demo (phone in the headset) | **Hard reset: look straight up at the ceiling for 5 s.** A countdown appears after 1 s; looking down cancels. The game goes back to "jump to start scanning". In the Editor, press **R**. |
 | Headset is uncomfortable or disorienting | Demo handheld. Two-finger tap before wearing toggles headset mode; it's on by default on the phone. |
-| Wi-Fi blocked or unstable | Personal Hotspot from the phone, with the Mac joined. Or, in the Editor, keys 1–6 drive `EventResolver` directly in the Museum simulation. |
+| Wi-Fi blocked or unstable | MARIO Local: Personal Hotspot from the phone, with the Mac joined. MARIO: it already uses John's laptop hotspot. Or, in the Editor, keys 1–6 drive `EventResolver` directly in the Museum simulation. |
+| Classifier misreads moves | Watch the bottom-right LAST ACTION to see what it sent. Jumps and squats still work through the phone's own detection (headset mode). |
 | Placement is slow in a cramped room | Stand in open floor; scan more floor before the finishing jump. Stages compress to 55 %, and the fallback templates fit about 1.2 × 2 m. |
 | Phone build fails on the day | Keep yesterday's build installed; run the Editor Museum simulation as a backup demo. |
 | Someone asks for a code change live | Dummy packets: edit `tools/dummy_packets.json` (hot-reloaded). Game values: edit in the Inspector, or in `StageDesigns.cs` then Tools ▸ MARIO ▸ Build Game Content, and re-run Play. |

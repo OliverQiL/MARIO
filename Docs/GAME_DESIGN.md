@@ -1,11 +1,11 @@
 # Game Design — Actions, Stage Elements, Enemies
 
-Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". **v2 (2026-10-12):** the action set is now six discrete actions, World 2 and Bowser's castle end the game, and the HUD has new elements: see "v2: actions, World 2 and the ending" at the end, which supersedes the older notes on `stand`, `walk`, `fireball` and continuous actions. All numbers are tunable in the Inspector. The values below are the defaults.
+Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". **v2 (2026-10-12):** the action set is now six discrete actions, World 2 and Bowser's castle end the game, and the HUD has new elements: see "v2: actions, World 2 and the ending" at the end, which supersedes the older notes on `stand`, `walk`, `fireball` and continuous actions. **Since the first integration test (2026-10-21/22):** the flag needs a jump, an iris wipe between scenes, gameplay objects at 87 %, the `idle` class, a phone-side repeat filter, a look-up hard reset, a training round after every scan, and jumps/squats detected from the phone's own tracking: see the sections from "Gameplay polish" on. All numbers are tunable in the Inspector. The values below are the defaults.
 
 ## Constraints that shape the design
 - **Everything is physical.** The player can't really leap onto things or duck quickly, so all interaction happens around them at human scale.
 - **The latency budget is 275 ms, measured from when the action *finishes*.** Anything that asks "is the player ducking or airborne?" therefore uses a **grace window** (about 1 s) that starts when the event *arrives*. Threats are telegraphed well before they hit.
-- **Every action is discrete (v2).** `jump`, `stomp`, `squat`, `throw`, `punch` and `clap` each arrive once per physical action. The phone also deduplicates on `event_id`. (v1 had continuous `stand`, `walk` and `stomp`, re-sent every window.)
+- **Every action is discrete (v2), one per motion.** `jump`, `stomp`, `squat`, `throw`, `punch` and `clap` each count once per physical action. The gateway forwards every classification, so the phone keeps the first of a run of the same action and drops the rest as repeats (gate 2); it also deduplicates on `event_id`, and acknowledges and ignores `idle`. Jumps and squats are also detected on the phone from its tracked head height. (v1 had continuous `stand`, `walk` and `stomp`, re-sent every window.)
 - **No touch input, no markers.** Restarting after a game over is also done with an action.
 
 ## Action → outcome
@@ -13,24 +13,25 @@ Every action still passes the six-gate chain (session → validity → capabilit
 
 | Action | Outcome | Targeting (Gate 4) |
 |---|---|---|
-| `jump` | The player is **airborne** for 1.0 s: a Goomba reaching them does no damage and passes by. If a "?" block is overhead, the jump hits it. | Optional: a block **above eye level** within **0.5 m** horizontally |
-| `squat` | The player is **ducked** for 1.0 s: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
+| `jump` | The player is **airborne** for 1.0 s: a Goomba reaching them does no damage and passes by. At the flag (or the unlocked axe) it grabs it and clears the stage; otherwise, if a "?" block is overhead, the jump hits it. | Optional: the goal within **0.5 m**, or a block **above eye level** within **0.5 m** horizontally |
+| `squat` | The player is **ducked** for 1.0 s, or for as long as they stay down when the phone sees the squat: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
 | `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
 | `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
 | `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **0.8 m** and **±60°** of facing |
 | `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
+| `idle` | Nothing: the classifier's catch-all for other movement. Acknowledged (gate 6, reason `idle`) in every state and ignored. | — |
 
 Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
 
 ## Stage elements (pass 1)
-- **"?" block.** Floats **0.3 m above the player's eye height**, measured when the stage appears. A `jump` underneath hits it:
+- **"?" block.** Floats **0.35 m above the player's calibrated eye height**. A `jump` underneath hits it:
   - it drops a **random power-up**: a **fire flower** or a **1-Up mushroom** (+1 life, pass 2), 50/50
   - the power-up falls from the block and lands 0.5 m past it, on the side away from the player (straight down it would land on the player and be collected unseen)
   - if the roll would be wasted (a flower while the player holds one, or a 1-Up at the life cap), it drops the other one
   - if both would be wasted, a **coin** pops out instead (+100)
 
   It then becomes spent: brown, and it can't be hit again (Gate 5, "already used").
-- **Brick block.** Sits at **chest height** (eye height − 0.35 m). A bare-handed strike or a fireball breaks it for +50.
+- **Brick block.** Sits at **chest height** (78 % of eye height). A bare-handed strike or a fireball breaks it for +50.
 - **Fire flower.** Collected by walking to it (within 0.45 m). It enables fireball projectiles and is **lost when the player takes damage**.
 - **Flag.** Each stage ends at a flag, whatever state the enemies are in (report §6.4). The player grabs it by **jumping within 0.5 m of it** (since 2026-10-21; walking up to it isn't enough). The HUD shows "JUMP TO GRAB THE FLAG!" while they're in reach.
 
@@ -46,7 +47,8 @@ Enemies spawn from a spawner on the stage, within a bounded distance of the play
 ## Lives and game over
 - The player starts with **3 lives**. 1-Ups can raise that to at most **8**.
 - Taking damage costs one life and the fire flower, and gives **2 s of invulnerability**.
-- At 0 lives it's **game over**: the stage and enemies are removed and every action is ignored, except `jump` after 2 s, which restarts. Restarting resets score, lives and stage, then re-anchors and places a new stage.
+- At 0 lives it's **game over**: the stage and enemies are removed and every action is ignored, except `jump` after 2 s, which restarts. Restarting resets score, lives and stage, then re-anchors and places 1-1 (no training round).
+- In the **training round** lives are infinite: a hit costs nothing (see "Training round").
 
 ## Stage templates
 LevelGenerator tries larger templates first. A placement is valid only if:
@@ -80,7 +82,7 @@ Each template's +Z axis points away from the player.
   - "GAME OVER — jump to play again" as the top banner
 
 ## Pass 2 details
-These fill gaps in the agreed table above. They were chosen while implementing and are all tunable in the Inspector.
+These fill gaps in the agreed table above. (The Koopa stomp-gap rule below was for v1's continuous stomps; in v2 a Koopa simply takes two stomps, each a separate motion.) They were chosen while implementing and are all tunable in the Inspector.
 - **Koopa, two stomps.** `stomp` is re-sent every classification window, so one held stomp would shell and clear a Koopa within 0.1 s. A stomp therefore only clears a shell if its *motion* started after the shell appeared. A new motion is a stomp event arriving more than **0.3 s** after the previous one (`GameStateManager.newStompGapSeconds`). Until then the shell is at Gate 5, which is silent for continuous actions.
   - **To check with Xavier:** does the classifier's stomp stream actually pause for 0.3 s between two real stomps?
 - **Koopa scoring.** The first stomp scores nothing; clearing the shell or a fireball kill gives +200. A shell is stationary and harmless, and it stays until it's cleared or the stage ends.
@@ -121,7 +123,7 @@ Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
     - jump, coin, power-up appears, power-up, 1-Up, stomp, kick (a fireball hitting an enemy), brick break, fireball
     - damage, the Bullet Bill warning, cannon fire, stage clear, warp, game over
     - a soft "bonk" when a discrete action is refused (never for continuous actions)
-  - There's no background music yet.
+  - Background music: the Super Mario theme loops during stages (`AudioManager.music`), stopping for game over, game clear and a hard reset; GAME CLEAR has a fanfare.
 - **Art:** still primitives. It's deferred until after this playtest, so it can target what reads worst in the room (as the cannon restyle did).
 
 ## Scanning the room (2026-09-30, Oliver's design)
@@ -139,13 +141,13 @@ Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
     - **bricks** at 78 % (chest)
     - **? blocks** 0.35 m above the eyes, so the block's bottom clears the top of the player's head and they reach it by jumping
   - A shorter player therefore gets lower pieces, and a taller player higher ones.
-- **The flag** is 1.8 m tall with a larger pennant, so it's easy to spot across a room.
+- **The flag** is tall (about 1.7 m to the ball, since gameplay objects went to 87 %) with a larger pennant, so it's easy to spot across a room.
 
 ## Maps and layouts (2026-09-30)
 Decided with Oliver: a hand-designed campaign, full-size stages of about 2.5 × 4 m, collectable coins with a counter and a 1-Up every 100, and layouts that work in both labs and homes.
 - **The campaign.**
-  - It has four stages, 1-1 to 1-4, written as data in `Assets/Editor/StageDesigns.cs`, one prefab each in `Assets/Stages/Campaign`. Each design is a list of pieces (? block, brick, coin, spawner with its enemy sequence, cannon, warp pipe with a chance to appear, flag) at floor positions.
-  - Stage N plays design (N−1) mod 4. After 1-4 comes 2-1, the same layouts again, with Difficulty making each round harder.
+  - It's written as data in `Assets/Editor/StageDesigns.cs`, one prefab each in `Assets/Stages/Campaign`. Each design is a list of pieces (? block, brick, coin, spawner with its enemy sequence, cannon, warp pipe with a chance to appear, flag) at floor positions.
+  - Originally four stages looping; **since v2 it's eight (1-1 to 2-4) and ends at Bowser's castle** (see "v2"). The training round (WORLD 0-1) comes before 1-1 after every scan.
   - Stages are named like Mario's ("1-2"), in the HUD and the stage titles.
 - **The stages.**
 
@@ -160,7 +162,6 @@ Decided with Oliver: a hand-designed campaign, full-size stages of about 2.5 × 
   - At 55 % it needs about 1.4 × 2.2 m.
   - The search covers the whole scanned room, out to 6 m around the player.
   - Only if even that doesn't fit is a generic fallback used (Large 2 × 3, Standard 1.2 × 2, Compact 0.6 × 1).
-  - The search reaches 3 m from the player.
 - **Coins.**
   - Floating coins at waist height, collected by walking through them (within 0.3 m): +100 each, and they count towards the COINS counter on the HUD. A coin from a ? block counts too.
   - Every 100 coins gives a 1-Up and the counter starts again. At the life cap of 8, you get the points only.
@@ -196,12 +197,12 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
   | **2-4** Bowser's Castle | 3 × 5 m | castle | Two ? blocks (flowers), a Koopa spawner for shells, Bowser guarding the axe |
 
 - **Height ("more 3D").** Stair-block columns (1–3 blocks), tall decorative pipes, coin **arcs** that rise up to 35 cm in the middle, and scenery overhead.
-- **Scenery** (decoration only: no targets, no colliders, kept to the stage edges and overhead):
-  - overworld: green hills, bushes, drifting clouds with eyes, and a small castle beyond the flag
-  - underground: blue-brick ceiling rows at 2.35 m and pillars along the sides
-  - sky: clouds overhead and along the edges, giant mushrooms
-  - castle: grey crenellated walls, lava strips outside them, flickering torches
-- **Bowser** (2-4). About 1 m tall, 5 health. He paces side to side, faces the player and touching him costs a life. Every 4.5 s (first after 3 s) he **roars** (mouth glow, warning sound, HUD "BOWSER'S FIRE - SQUAT!") for 1 s, then breathes a fireball at head height that flies like a Bullet Bill: squat or sidestep. Punch or fireball = 1 damage, a thrown shell = 2; he can't be stomped. Defeated: +5000, knocked out, and the **axe** unlocks (until then the banner says "BEAT BOWSER TO REACH THE AXE" and standing at the axe does nothing). Reaching the axe: the axe drops, confetti, the GAME CLEAR fanfare, and after 4 s the stage is cleared away.
+- **Scenery** (decoration only: no targets, no colliders, kept outside the stage edges and overhead; enlarged 2026-10-21 to fill the space, see "Gameplay polish"):
+  - overworld: green hills and bushes beside the stage, drifting clouds with eyes, and a castle (about 2.3 m) beyond the flag
+  - underground: blue-brick ceiling rows at 2.35 m, thick pillars along the sides, a brick wall at the far end
+  - sky: big clouds overhead, a cloud floor along the edges, giant mushrooms
+  - castle: grey crenellated walls with lava moats inside them, a high back wall, flickering torches
+- **Bowser** (2-4). About 1 m tall, 5 health. He paces side to side, faces the player and touching him costs a life. Every 4.5 s (first after 3 s) he **roars** (mouth glow, warning sound, HUD "BOWSER'S FIRE - SQUAT!") for 1 s, then breathes a fireball at head height that flies like a Bullet Bill: squat or sidestep. Punch or fireball = 1 damage, a thrown shell = 2; he can't be stomped. Defeated: +5000, knocked out, and the **axe** unlocks (until then the banner says "BEAT BOWSER TO REACH THE AXE" and jumping at the axe does nothing). Jumping at the axe: it drops, confetti, the GAME CLEAR fanfare, and after 4 s the stage is cleared away.
 - **HUD and graphics.**
   - HELD slot in the top bar (shell icon), and the held shell shown in the bottom-right of the 3D view.
   - Boss health bar under the banner while Bowser is on the stage.
@@ -214,7 +215,7 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
 
 - **Clearing a stage needs a jump.** At the flag (or the axe in 2-4, once Bowser is beaten), a `jump` within 0.5 m grabs it: Gate 6, reason `goal`, a success haptic, then the usual stage clear. Standing there does nothing; the banner prompts "JUMP TO GRAB THE FLAG!" / "AXE!".
 - **Scene changes iris out and in.** Between stages and through warp pipes, the view closes to black in a circle, the scene changes, and it opens again (`ScreenTransition`, about 1 s in all). For safety in a real room it's never black for more than about 1.2 s; the HUD text stays on top.
-- **Sizes.** Gameplay objects (blocks, pipes, cannons, enemies, pickups, coins, the flag and the axe) are 13 % smaller than before, for comfort; reach and hit distances are unchanged. Scenery is sized to fill the space round the stage, outside the play area or overhead: the 1-1 castle is about 2.3 m tall, behind the flag; hills, bushes, giant mushrooms, cloud banks, cave pillars and walls, and castle walls with lava moats.
+- **Sizes.** Gameplay objects (blocks, pipes, cannons, enemies, pickups, coins, the flag and the axe) are 13 % smaller than before, for comfort; reach and hit distances are unchanged. Scenery is sized to fill the space round the stage, outside the play area or overhead: the 1-1 castle is about 2.3 m tall, behind the flag; giant mushrooms, cloud banks, cave pillars and walls, and castle walls with lava moats. The overworld hills and bushes were then halved again (2026-10-21, too big in the room).
 - **One event per motion, filtered on the phone.** The gateway forwards every classification, so one motion arrives as a run of events with the same action. `EventResolver` processes the first and drops the rest at Gate 2 (`repeat of the same motion`), in every state: a report within 0.5 s of the previous one of that action continues the run; a run over 1.2 s is a new motion (two stomps back to back). The scan ignores repeated jumps, so one jump never starts and confirms it at once.
 - **Hard reset from inside the headset.** Look straight up (more than 65° above the horizon) for **5 s**. The HUD counts down ("KEEP LOOKING UP TO RESTART... 4") after the first second, so glancing up at a ? block shows nothing; looking down cancels. The game irises out and goes back to the very start: "jump to start scanning", the scan, a jump to confirm. Score, lives and stage are reset; on the phone the AR session is reset too, so the scan starts from no planes.
 

@@ -1,15 +1,15 @@
-# Visualizer ⇄ Gateway WebSocket Protocol (v1 — proposal)
+# Visualizer ⇄ Gateway WebSocket Protocol (v2)
 
 > **Comms integrators:** start with [`COMMS_INTEGRATION.md`](COMMS_INTEGRATION.md). It's a practical guide (what your gateway must do, a minimal working gateway, a test checklist, troubleshooting). This file is the wire-format reference.
 
-Status: **proposed by the visualizer side, needs John's sign-off.** `NetworkClient.cs` and `tools/mock_gateway.py` implement exactly this. If the gateway uses different names, change `GatewayMessages.cs`. Nothing else in the phone app depends on the wire format.
+Status (2026-10-22): **in use.** `NetworkClient.cs` (phone), `tools/mock_gateway.py` (Oliver's mock) and John's gateway (`integrated/laptop/visualizer_gateway.py`, visualizer mode of the comms bridge) all implement it; the full integration (boards → Ultra96 → gateway → phone) has been tested end to end. If a name ever changes, change `GatewayMessages.cs`; nothing else in the phone app depends on the wire format.
 
 ## Transport
 - The phone is the **client**. The gateway (laptop) is the **server**.
-- The URL is `wss://<gateway-ip>:<port>/`. The mock gateway uses port `8765`.
-- TLS: the gateway uses a self-signed certificate. The phone **pins the SHA-256 fingerprint of the certificate's DER bytes** (the same value `openssl x509 -noout -fingerprint -sha256` prints, without the colons). If the fingerprint doesn't match, the phone refuses to connect.
+- The URL is `wss://<gateway-ip>:<port>/`, port `8765`. The two phone builds (`BuildScript`): **MARIO** connects to John's laptop on its Windows hotspot, `wss://192.168.137.1:8765/`; **MARIO Local** connects to Oliver's Mac running the mock gateway, `wss://Olis-MacBook-Pro.local:8765/`. John's gateway only accepts phones on the hotspot (`192.168.137.0/24`; `VISUALIZER_ALLOW` changes it) and refuses connections that send an `Origin` header (browsers); the app sends none.
+- TLS 1.2: the gateway's certificate needn't be trusted by iOS. The phone **pins the SHA-256 fingerprint of the certificate's DER bytes** (what `openssl x509 -noout -fingerprint -sha256` prints; the whole line can be pasted, colons and all). It checks only the fingerprint, not the expiry date or hostname. If the fingerprint doesn't match, the phone refuses to connect. A new certificate needs a new app build with its pin (`BuildScript.cs`, `John.Pin`).
 - Every message is a **single UTF-8 JSON text frame**. Every message has `"type"` and `"protocol_version": 2`.
-- **Version 2** (v2 action set): every action is **discrete**, one event per physical motion, and the labels are `jump` `stomp` `squat` `throw` `punch` `clap`. Version 1's `stand`, `walk` and `fireball` are gone (the phone rejects them at gate 2 as unknown). A message with another `protocol_version` is still processed; the phone only logs a warning.
+- **Version 2** (v2 action set): the labels are `jump` `stomp` `squat` `throw` `punch` `clap`, plus `idle` (the classifier's catch-all). Version 1's `stand`, `walk` and `fireball` are gone (the phone rejects them at gate 2 as unknown). A message with another `protocol_version` is still processed; the phone only logs a warning.
 - Receivers **ignore unknown fields**. Both sides can therefore add fields without breaking the other.
 
 ## Messages
@@ -43,8 +43,8 @@ Sent for **every** `GAME_EVENT` received, including duplicates. The gateway can 
  "event_id":"e-000042","outcome":"rejected","gate":4,"reason":"no target in range/facing",
  "processing_ms":0.4}
 ```
-`outcome` is `resolved` or `rejected`. `gate` is 1–5 on a rejection and 6 on success. The gates are:
-1. session not ready (scanning, relocalising, stage transition)
+`idle` is always `resolved`, gate 6, reason `idle`. Repeats are `rejected`, gate 2, reason `repeat of the same motion`. `outcome` is `resolved` or `rejected`. `gate` is 1–5 on a rejection and 6 on success. The gates are:
+1. session not ready (before or during the scan, tracking lost, stage transition, game over / game clear). A `jump` here still drives the scan (start, confirm) and restarts after game over.
 2. invalid (low confidence, duplicate `event_id`, or a repeat of the same motion — including a jump or squat the phone already detected itself from its tracking within 1.5 s, see `GAME_DESIGN.md`)
 3. not permitted (for example `throw` with nothing to throw: no shell held and no fire flower)
 4. no target in range or facing
@@ -60,7 +60,9 @@ The phone decides on and **sends** haptics. The gateway forwards them to the wea
 | field | values |
 |---|---|
 | `target` | `wrist`, `ankle`, `both`. throw / punch / clap → wrist, stomp → ankle, everything else → both. |
-| `pattern` | `success` (a hit, or each impact of a thrown fireball or shell), `denied` (rejected at gates 3–5), `damage` (the player lost a life; `target` is `both`, and `session_id`/`event_id` are empty because no single event caused it). None for gates 1–2 or for state-only actions (a plain squat, a jump that hit nothing). See `GAME_DESIGN.md`. |
+| `pattern` | `success` (a hit, or each impact of a thrown fireball or shell), `denied` (rejected at gates 3–5), `damage` (the player was hit; `target` is `both`, and `session_id`/`event_id` are empty because no single event caused it; also sent in the training round, where no life is lost). None for gates 1–2 or for state-only actions (a plain squat, a jump that hit nothing, `idle`). See `GAME_DESIGN.md`. |
+
+Jumps and squats the phone detects itself from its head-height tracking (`PhoneMotionDetector`) aren't sent to the gateway and get no ACK; their haptics (`session_id` `phone-motion`) are sent like any other.
 
 How each pattern maps to motor pulses is up to the wearable firmware (Neo/John).
 

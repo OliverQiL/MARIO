@@ -1,5 +1,7 @@
 # CG4002 AR Visualizer — Project Status & Handoff
 
+> **Current state (2026-10-22):** integrated with the full system and playtested end to end (boards → Ultra96 → John's gateway → phone → haptics). The phone build **MARIO** points at John's laptop hotspot gateway; **MARIO Local** at the mock gateway on Oliver's Mac. Since the integration: jump-to-clear goals, iris wipes, 87 % gameplay objects with room-filling scenery, the `idle` class, a phone-side repeat filter (the gateway forwards every inference), a look-up hard reset, a training round after every scan, a LAST ACTION debug label, and jumps/squats detected from the phone's own tracking. Details: §7.2's "Gameplay polish" block and `Docs/GAME_DESIGN.md`. Latest commit synced to the team repo's `visualizer/`.
+
 **Purpose of this document:** a complete, self-contained summary of the Unity/ARKit AR visualizer subsystem for a university capstone project (CG4002, NUS, Group B15). Written so an AI coding agent with zero prior context on this conversation can pick up development immediately. If you are that agent: read this fully before touching any code, and treat the design report (not included here, but referenced throughout) as the authoritative spec whenever this document is ambiguous or silent.
 
 ---
@@ -18,16 +20,16 @@ CG4002 is a capstone engineering project. The team is building a **wearable, wir
 | Xavier | AI classifier + FPGA (Ultra96) |
 | Neo (Yin Qi) | Wearable sensors (FireBeetle ESP32 hardware) |
 
-**Overall system data path:**
+**Overall system data path** (as integrated, 2026-10; `integrated/README.md` in the team repo):
 ```
-Wrist/ankle FireBeetle ESP32 wearables (IMU)
-  --BLE-->  Laptop gateway (John)
-  --TLS 1.3-->  Ultra96 FPGA (Xavier) — stateless 1D-CNN classifier, 6 action classes
+Wrist and thigh FireBeetle ESP32 boards (IMU, 50 Hz stream)
+  --BLE (paired, encrypted)-->  Laptop gateway (John; Windows)
+  --TCP over an SSH tunnel-->  Ultra96 FPGA (Xavier) — 1D-CNN per board, sliding 1 s windows
   --back to gateway-->
-  --secure WebSocket (WSS), JSON GAME_EVENT-->  iPhone (Oliver, this subsystem)
+  --WSS over the laptop's hotspot, JSON GAME_EVENT-->  iPhone (Oliver, this subsystem)
 ```
-- Six classified action labels: `stand`, `walk`, `jump`, `squat`, `fireball`, `stomp`
-- Wrist strap = fireball arm; ankle strap = stomp leg
+- Action labels (protocol v2): `jump` `stomp` `squat` `throw` `punch` `clap`, plus `idle`. (The original design had `stand`, `walk`, `jump`, `squat`, `fireball`, `stomp`.) The gateway forwards every inference; the phone keeps one event per motion, and also detects jumps and squats itself from its tracking.
+- Wrist board = throw/punch/clap arm (haptic motor); thigh board ("ankle" in the protocol) = stomp leg
 - The phone holds **exactly one** network connection: a secure WebSocket to the laptop gateway. It never talks to the Ultra96 directly.
 - The phone is the **authoritative owner of game state**; the gateway owns session state and event ID assignment.
 - **Haptic feedback originates from the phone** and routes back phone → gateway → BLE → wearables. The Ultra96 is *not* in the haptic return path. (Note: as of the last report proofread, Section 4 of the design report reportedly still incorrectly attributes `HAPTIC_CMD` origin to the Ultra96 — this has been flagged to John to fix on the comms side. Not something this subsystem needs to change.)
@@ -85,11 +87,11 @@ The gate chain (Step 5 / `EventResolver`), in exact order:
 
 ---
 
-## 3. Project structure on disk (current as of 2026-09-30, after the clean-up)
+## 3. Project structure on disk (updated 2026-10-22)
 
 - **The project:** a Unity 6 (URP) project; all game code is ours, under `Assets/Scripts` and `Assets/Editor`. The `arfoundation-samples` clone lives *outside* the project and is for reference only (see Known Issues).
 - **Player settings:**
-  - iOS bundle `com.cg4002.mario`, landscape only (either direction, set by `BuildScript`)
+  - iOS bundles `com.cg4002.mario` ("MARIO", John's gateway) and `com.cg4002.mario.local` ("MARIO Local", the mock gateway), set per build by `BuildScript`; landscape only (either direction)
   - arm64
   - Active Input Handling "Both"
   - 60 fps (set at runtime)
@@ -100,7 +102,7 @@ Assets/
   Scripts/                      runtime: AR session, level generation, gate chain, network, HUD, audio, headset view
     Gameplay/                   stage elements, enemies, pickups, effects, difficulty, player body
   Editor/                       one-click setup (Tools ▸ MARIO ▸ …), content builders, headless tests, art preview, iOS build
-  Stages/                       fallback stage prefabs (Large, Standard, Compact) + Campaign/Stage 1-1 … 1-4
+  Stages/                       TrainingStage, fallback stage prefabs (Large, Standard, Compact) + Campaign/Stage 1-1 … 2-4
   Prefabs/                      element prefabs, Effects/, bonus room parts, AR Scan Plane, BlockCube/Pennant meshes
   Materials/ Textures/          generated by GameContentSetup / PixelArt (pixel-art PNGs)
   Fonts/                        Press Start 2P (SIL OFL, licence included) + its TMP font asset
@@ -108,8 +110,10 @@ Assets/
   Audio/                        background music (copyrighted Super Mario Bros. theme: private repo only)
   AR Mesh.prefab                room-mesh prefab (ARMesh layer)
   UnityXRContent/               XR Simulation rooms (gitignored; tools/fetch_sim_environments.sh)
-Docs/  GAME_DESIGN.md, GATEWAY_PROTOCOL.md
-tools/ mock_gateway.py (incl. --keys), fetch_sim_environments.sh
+Docs/  GAME_DESIGN.md, GATEWAY_PROTOCOL.md, COMMS_INTEGRATION.md, DEMO_GUIDE.md
+       (INTEGRATED.md, SECURITY.md: local copies of the team repo's integrated/ docs, excluded from git)
+tools/ mock_gateway.py (--keys, --dummy, --script), dummy_packets.json, push_to_integration.sh,
+       fetch_sim_environments.sh, certs/ (the mock gateway's certificate, gitignored)
 ```
 
 ### Scene hierarchy (SampleScene)
@@ -122,8 +126,8 @@ XR Origin            ARPlaneManager (plane prefab "AR Scan Plane"), ARAnchorMana
 │  └─ Main Camera    ARCameraManager, ARCameraBackground, TrackedPoseDriver, AROcclusionManager, RenderManager
 └─ AR Meshes         ARMeshManager (mesh prefab "AR Mesh"; must be a child of XR Origin)
 GameManager          GameStateManager, EventResolver, NetworkClient, AudioManager (+AudioSources), Difficulty,
-                     EditorActionInput (Editor only)
-Canvas               HUDController, HeadsetView; the HUD's text/icons/panels (built by HUDSetup);
+                     HardReset, PhoneMotionDetector, EditorActionInput (Editor only)
+Canvas               HUDController, HeadsetView, ScreenTransition (iris wipe); the HUD's text/icons/panels (built by HUDSetup);
                      "LidarDebug (TMP)" with LidarDebugHUD (hidden unless Show is ticked)
 ```
 
@@ -144,15 +148,18 @@ Canvas               HUDController, HeadsetView; the HUD's text/icons/panels (bu
 
 ### Tests
 Run headless, with Unity closed (see memory/notes for the editor path):
-- `GameplaySmokeTest` (75 checks)
-- `SimulationSmokeTest` (`-scan`: jump to start, sweep, jump to finish, check 1-1 is placed; `-headset`: save the side-by-side frame)
-- `NetworkSmokeTest` (needs the mock gateway running with `--script`)
+- `GameplaySmokeTest` (144 checks: the gate chain, every element, v2 actions, Bowser, the campaign, repeats, idle, hard-reset gesture, training walkthrough, phone motion)
+- `SimulationSmokeTest` (Play mode in XR Simulation; `-scan`: jump to start, sweep, jump to finish, then the training round is played through and a fresh 1-1 must follow; `-scan -reset`: also the look-up hard reset and a rescan; `-headset`: save the side-by-side frame)
+- `NetworkSmokeTest` (mock gateway on port 8766: `--script "stomp,rep,rep,stomp,dup,punch,low:jump,squat,rep,idle" --exit-after-acks`, `-expect 6,2,2,5,2,4,2,6,2,6`). The same test also passed against John's real `VisualizerGateway` code.
+- `ArtPreview` renders prefabs, every stage (incl. `stage_training.png`) and the HUD to PNGs.
 
 ---
 
 ## 4. What's been built and validated, module by module
 
 Status legend: ✅ built & tested on real hardware · 🟡 built & tested in Editor only · ⚠️ built but not yet tested · ❌ not started
+
+*This section is a dated log: each entry describes a module as of its date, and later work may have changed details (e.g. v1's `walk`/`fireball` labels, 1-1 to 1-4 only, early test counts). The current behaviour is in `Docs/GAME_DESIGN.md`, and the latest changes are §7.2's "Gameplay polish" block. Everything here has since run on the iPhone 17 with the full integrated system.*
 
 ### `ARSessionManager.cs` — ✅
 Two responsibilities, both implemented:
@@ -393,7 +400,7 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 - **`AudioManager`** (on GameManager, with an AudioSource) synthesises its clips at `Awake`.
   - It listens to `EventResolver`, `GameStateManager` and `LevelGenerator`.
   - The ? block, pickups, warp pipe and cannon call the static `AudioManager.Play(Sfx)` directly. It does nothing when there's no AudioManager.
-  - There's no background music yet.
+  - There was no background music yet (since added: the Super Mario theme, `Assets/Audio/`).
 - **Content:** `GameContentSetup` builds `LargeStage` and the warp pipes, and adds Difficulty and AudioManager to GameManager.
 - **Tests:** `GameplaySmokeTest` passes 62/62, including 11 pass-3 checks. The simulation and network smoke tests also pass.
 - **Deferred:** art in place of primitives, until after the playtest.
@@ -480,7 +487,7 @@ The rules are in `Docs/GAME_DESIGN.md`, "Pass 3 details". They're proposed defau
 ### Maps and layouts — ✅ Editor-playtested (2026-09-30)
 The design is in `Docs/GAME_DESIGN.md`, "Maps and layouts".
 - **Campaign:**
-  - `StageDesigns.cs` (editor) holds four data designs, 1-1 to 1-4, each 2.5 × 4 m.
+  - `StageDesigns.cs` (editor) held four data designs, 1-1 to 1-4, each 2.5 × 4 m (eight since v2, to 2-4).
   - `GameContentSetup.BuildCampaignStage` turns each into `Assets/Stages/Campaign/Stage 1-N.prefab`.
   - `LevelGenerator.campaignStages` tries `CampaignStageFor(stage)` first, then the `stageTemplates` fallbacks, largest first.
   - `searchDistances` now reaches 3 m.
@@ -585,7 +592,7 @@ Layout: landscape, Canvas at constant pixel size, 180 px left margin to clear th
 Not yet: game-over screen (lives are never lost yet); audio cues (AudioManager).
 
 ### `NetworkClient` — ✅ tested on the iPhone 17 against the mock gateway over Wi-Fi (2026-09-28)
-The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still needs John's sign-off**. `GatewayMessages.cs` is the only file to change if the field names change.
+The wire format is `Docs/GATEWAY_PROTOCOL.md`. It was a proposal at the time; John has since implemented it and it's in use (v2). `GatewayMessages.cs` is the only file to change if the field names change.
 
 **`GatewayConnection.cs`** (plain C#, no Unity dependency) handles the transport:
 - TcpClient → SslStream (TLS 1.2) → the RFC 6455 upgrade handshake → `WebSocket.CreateFromStream`.
@@ -636,7 +643,7 @@ The wire format is `Docs/GATEWAY_PROTOCOL.md`. It is **a proposal that still nee
 Synthesised sound effects, no music yet. See "Gameplay (pass 3)" above.
 
 ### Step 6 (stage completion loop) — ✅ tested on the iPhone 17 (2026-09-28)
-- **`StageGoal.cs`** goes on a child of a stage prefab. It counts as reached when the player (the AR camera) stays within `reachRadius` (0.6 m, measured horizontally) for `dwellSeconds` (0.5 s). It fires `OnReached` once and exposes `PlayerDistance`. `TestStage` now has a "Goal" child at its far (+Z) edge, with a pole and a yellow flag (visual only, no colliders), added by `StageLoopSetup`.
+- **`StageGoal.cs`** goes on a child of a stage prefab. It counted as reached when the player (the AR camera) stayed within `reachRadius` (0.6 m, measured horizontally) for `dwellSeconds` (0.5 s); since 2026-10-21 it needs a jump within reach instead (§7.2). It fires `OnReached` once and exposes `PlayerDistance`. `TestStage` now has a "Goal" child at its far (+Z) edge, with a pole and a yellow flag (visual only, no colliders), added by `StageLoopSetup`.
 - **The loop in `LevelGenerator`:**
   - Placing a stage finds its `StageGoal` and fires `OnStageStarted`.
   - Reaching the goal fires `OnStageCompleted`. After `transitionDelaySeconds` (1.5 s), the stage is destroyed, the anchor is removed (`TryRemoveAnchor`), a new checkpoint anchor is created at the player's current floor position and heading, and placement runs again.
@@ -696,38 +703,35 @@ These cost real debugging time once already — don't rediscover them:
 - **The checkpoint debug sphere is gone** (2026-09-30). Its default `SphereCollider` once caused a real `Physics.CheckBox` rejection during placement testing, so if you ever add a visible debug object, remove its collider or keep it off the ARMesh layer.
 - **New/very recent iPhone hardware sometimes needs the latest Xcode** to mount a compatible on-device "developer disk image" — if you see `kAMDMobileImageMounterPersonalizedBundleMissingVariantError`, the fix is almost always updating Xcode (and macOS, if the App Store won't offer the update otherwise).
 - **`AROcclusionManager`'s support flag needs polling, not a one-shot check** — `descriptor.environmentDepthImageSupported` can report `Supported.Unknown` for a few frames after the AR session starts before resolving to a real answer. `RenderManager.cs` already handles this correctly; don't "simplify" it back to a single `Awake()`-time check.
+- **XR Simulation can't survive a scene reload or `ARSession.Reset()`** (Editor). A reload unloads the simulated room; a session reset makes `SimulationMeshSubsystem.AddMeshes` throw. That's why `HardReset` resets in place and calls `ARSession.Reset()` on device only.
+- **The TMP font asset (`LiberationSans SDF.asset`) is dynamic** and gets rewritten by headless runs. Revert it (`git checkout`) before committing.
+- **Classifier vs phone tracking:** the classifier is weak at jumps; `PhoneMotionDetector` covers jumps and squats in headset mode. Its thresholds (Jump Rise 0.10 m, Jump Speed 0.5 m/s, Squat Drop 0.28 m) are first estimates and haven't been tuned on the headset yet.
+- **John's gateway private key** (`comms/security/server-key.pem`) was pushed to the team repo (2026-10-18). If it's regenerated, the MARIO build needs the new pin (`BuildScript.cs`).
 - **Design report Section 4 (Comms, owned by John) reportedly still attributes `HAPTIC_CMD` origin to the Ultra96** rather than the phone/gateway, per the last proofread — not something to fix in this codebase, but worth knowing when reading the report or integrating with comms, since the actual architecture (confirmed above) has the phone originating haptics.
 
 ---
 
 ## 6. Open coordination items with teammates
 
-- **Xavier**: inference hop-rate alignment (~100ms windows, 90% overlap) needs to be matched against the BLE batch size on the wearable side — unresolved as of last note, relevant once real `GAME_EVENT` traffic starts arriving and timing/dedup assumptions in `EventResolver`/`NetworkClient` need to match reality.
-- **John**: review and agree to `Docs/GATEWAY_PROTOCOL.md`. In particular:
-  - field names
-  - EVENT_ACK semantics (ACK every event, including duplicates)
-  - the `HAPTIC_CMD` target and pattern values
-
-  He also needs to provide his gateway certificate's SHA-256 fingerprint and the gateway URL. Separately, there's the Section 4 haptic-origin correction mentioned above.
-- **General**: `EventResolver`'s `minConfidence` (currently 0.6, arbitrarily chosen for testing) has not been validated against what Xavier's actual classifier outputs for true positives/negatives — worth revisiting once real data is available.
+- **Xavier**: the retrained model is deployed: one network reading both boards (12 channels), classes `CLAP PUNCH THROW JUMP SQUAT STOMP IDLE` (`integrated/README.md`). It's still unreliable, notably at jumps; `PhoneMotionDetector` backs up jumps and squats.
+- **John**: integration done (protocol, URL `wss://192.168.137.1:8765/`, certificate pinned in the MARIO build). His gateway forwards every inference (the phone filters repeats), uses push mode (estimated 150–230 ms from the end of a motion to the phone) and pings the phone every 100 ms to keep its Wi-Fi awake (the app answers by itself). **To confirm:** his README says the gateway skips `IDLE`, while the plan was to send `idle` to the phone; the phone handles both. Still open: the Section 4 haptic-origin correction mentioned above; possibly regenerating the leaked certificate key.
+- **General**: `EventResolver`'s `minConfidence` (0.6) is moot for now: the Ultra96 sends a fixed confidence (0.9) because the FPGA IP returns only the class. Revisit if real confidences arrive.
 
 ---
 
 ## 7. Next steps
 
-### 7.1 Now (while comms integrates)
+### 7.1 Now
 1. ~~Prepare the live demo~~: done (`Docs/DEMO_GUIDE.md`, week 7 freeze, MD5 submitted).
-2. **Integrate John's gateway.** He works from `Docs/COMMS_INTEGRATION.md`.
-   - Get his URL and certificate fingerprint, and put them in `NetworkClient` (on GameManager).
-   - Sync with `tools/push_to_integration.sh`.
-   - Measure the send → ACK round trip on the lab Wi-Fi.
-3. **Integrate Xavier's classifier.** Check `minConfidence` (0.6) and duplicate handling against real traffic. With action set v2 (below), the stomp-gap logic goes away.
-4. **Keep the device build alive.** The free signing team expires installs every 7 days; re-sign as in memory/ios-resign-expired-app, or move to a paid or university team.
-5. **Before anything goes public:** remove the copyrighted theme music (`Assets/Audio/`).
+2. ~~Integrate John's gateway~~: done (2026-10-18/21). Builds: `BuildScript.BuildIOSJohn` / `BuildIOSLocal`; sync with `tools/push_to_integration.sh`.
+3. **Classifier:** watch the HUD's LAST ACTION during playtests; tune `PhoneMotionDetector` on the headset; re-check once Xavier's retrained v2 model is deployed (punch, idle).
+4. **Playtest on the headset:** the training round (pacing, 40 s timeout, the 1.6 × 3.2 m lane), the hard reset, and the phone-side jump/squat thresholds.
+5. **Keep the device build alive.** The free signing team expires installs every 7 days; re-sign as in memory/ios-resign-expired-app, or move to a paid or university team.
+6. **Before anything goes public:** remove the copyrighted theme music (`Assets/Audio/`).
 
-### 7.2 v2 (planned by Oliver 2026-10-08; implemented 2026-10-12, awaiting Editor playtest)
+### 7.2 v2 (planned by Oliver 2026-10-08; implemented 2026-10-12; integrated and playtested 2026-10-21)
 
-**Status (2026-10-12):** A, B and C are built. All headless tests pass: `GameplaySmokeTest` (96 checks), `SimulationSmokeTest` and `-scan`, and `NetworkSmokeTest` against the mock gateway (gates 6,5,2,4,2,6). `ArtPreview` renders were checked. Still to do: an **Editor playtest**, then a device check at the end, and **confirming the six label strings with Xavier and John** (the protocol is now v2). The design as built is in `Docs/GAME_DESIGN.md` § "v2: actions, World 2 and the ending".
+**Status (2026-10-12):** A, B and C are built. All headless tests pass: `GameplaySmokeTest` (96 checks), `SimulationSmokeTest` and `-scan`, and `NetworkSmokeTest` against the mock gateway (gates 6,5,2,4,2,6). `ArtPreview` renders were checked. *(Since then: Editor-playtested, the labels agreed with John and Xavier, and the whole system playtested with the real gateway; the follow-ups are the "Gameplay polish" block below.)* The design as built is in `Docs/GAME_DESIGN.md` § "v2: actions, World 2 and the ending".
 
 What was built:
 - **A (actions):**
