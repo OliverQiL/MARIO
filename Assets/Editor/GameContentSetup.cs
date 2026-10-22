@@ -49,6 +49,7 @@ public static class GameContentSetup
     public const string BulletBillPath = PrefabDir + "/BulletBill.prefab";
     public const string CoinPopPath = PrefabDir + "/CoinPop.prefab";
     public const string StandardStagePath = StageDir + "/StandardStage.prefab";
+    public const string TrainingStagePath = StageDir + "/TrainingStage.prefab";
     public const string CompactStagePath = StageDir + "/CompactStage.prefab";
     public const string LargeStagePath = StageDir + "/LargeStage.prefab";
     public const string CampaignDir = StageDir + "/Campaign";
@@ -79,6 +80,7 @@ public static class GameContentSetup
         var compact = BuildCompactStage(m, coinPop, pickups);
         var large = BuildLargeStage(m, coinPop, pickups, goomba, koopa, bulletBill);
         var bonusRoom = BuildBonusRoom(m);
+        var training = BuildTrainingStage(m, coinPop, pickups, goomba, koopa, bulletBill);
         var campaign = new System.Collections.Generic.List<GameObject>();
         foreach (var design in StageDesigns.Campaign)
             campaign.Add(BuildCampaignStage(design, m, coinPop, pickups, goomba, koopa, bulletBill, bowser));
@@ -99,6 +101,7 @@ public static class GameContentSetup
         campaignProp.arraySize = campaign.Count;
         for (int i = 0; i < campaign.Count; i++) campaignProp.GetArrayElementAtIndex(i).objectReferenceValue = campaign[i];
         lg.FindProperty("bonusRoomPrefab").objectReferenceValue = bonusRoom;
+        lg.FindProperty("trainingStage").objectReferenceValue = training;
         // Search the whole scanned room (out to 6 m), not just in front of the player:
         // full-size (4 m deep) stages need their centre 2.3 m+ away.
         var distances = lg.FindProperty("searchDistances");
@@ -131,6 +134,10 @@ public static class GameContentSetup
 
         var manager = gameState.gameObject;
         if (manager.GetComponent<Difficulty>() == null) manager.AddComponent<Difficulty>();
+        // Hard reset from inside the headset: look straight up for 5 s.
+        var hardReset = manager.GetComponent<HardReset>();
+        if (hardReset == null) hardReset = manager.AddComponent<HardReset>();
+        Set(hardReset, "arCamera", Camera.main);
         var audio = manager.GetComponent<AudioManager>();
         if (audio == null) audio = manager.AddComponent<AudioManager>(); // adds its AudioSource
         var am = new SerializedObject(audio);
@@ -530,6 +537,88 @@ public static class GameContentSetup
         info.FindProperty("tip").stringValue = design.Tip;
         info.ApplyModifiedPropertiesWithoutUndo();
         return Save(root, CampaignStagePath(design.Name));
+    }
+
+    // ---- the training round (Tutorial): one station per step, shown one at a time ----
+
+    /// <summary>
+    /// WORLD 0-1, TRAINING: a 1.6 × 3.2 m lane. Each step's station is a child at its own spot
+    /// (so CompressLayout moves stations, not the pieces within one), hidden until its step.
+    /// From the player's end (−z) to the flag (+z): ? block, brick, a slow Goomba, a cannon,
+    /// a distant Goomba for a fireball, a Koopa with two Goombas for the shell, the flag.
+    /// </summary>
+    private static GameObject BuildTrainingStage(Mats m, GameObject coinPop, Pickups pickups, GameObject goomba, GameObject koopa, GameObject bulletBill)
+    {
+        var root = StageRoot("TrainingStage", 1.6f, 3.2f, 2.0f);
+        Transform Station(string name, float x, float z)
+        {
+            var t = Group(name, root.transform, new Vector3(x, 0f, z));
+            t.gameObject.SetActive(false);
+            return t;
+        }
+        void Enemy(GameObject prefab, Transform station, Vector3 at, float speed)
+        {
+            var e = (GameObject)PrefabUtility.InstantiatePrefab(prefab, station);
+            e.transform.localPosition = at;
+            e.transform.localRotation = Quaternion.Euler(0f, 180f, 0f); // facing the player's end
+            SetFloat(e.GetComponent<Goomba>(), "speed", speed); // Koopa is a Goomba too
+        }
+
+        var jump = Station("1 Jump", 0f, -1.0f);
+        QuestionBlock(jump, Vector3.up * 1.8f, m, coinPop, pickups);
+        SetFloat(jump.GetComponentInChildren<QuestionBlock>(true), "oneUpChance", 0f); // always the fire flower
+
+        var punch = Station("2 Punch", 0.3f, -0.5f);
+        Brick(punch, Vector3.up * 1.2f, m, coinPop);
+
+        var stomp = Station("3 Stomp", -0.15f, 0.7f);
+        Enemy(goomba, stomp, Vector3.zero, 0.12f); // half speed
+
+        var squat = Station("4 Squat", 0.7f, 0.6f);
+        Cannon(squat, Vector3.zero, m, bulletBill);
+        var cannon = new SerializedObject(squat.GetComponentInChildren<BulletBillCannon>(true));
+        cannon.FindProperty("maxShots").intValue = 20; // keeps firing until the duck lands
+        cannon.FindProperty("initialDelay").floatValue = 2.5f;
+        cannon.FindProperty("interval").floatValue = 5f;
+        cannon.ApplyModifiedPropertiesWithoutUndo();
+
+        var fire = Station("5 Throw", 0f, 1.3f);
+        Enemy(goomba, fire, Vector3.zero, 0.06f); // slow, far: a target for a fireball
+
+        var shell = Station("6 Shell", 0f, 1.0f);
+        Enemy(koopa, shell, Vector3.zero, 0.06f);
+        Enemy(goomba, shell, new Vector3(-0.45f, 0f, 0.35f), 0.05f);
+        Enemy(goomba, shell, new Vector3(0.45f, 0f, 0.35f), 0.05f);
+
+        var flag = Station("7 Flag", 0f, 1.45f);
+        Goal(flag, Vector3.zero, m);
+
+        // A little scenery so it feels like a level.
+        foreach (int side in new[] { -1, 1 })
+        {
+            Bush(root.transform, new Vector3(side * 1.05f, 0f, -0.8f), 0.9f, m);
+            Bush(root.transform, new Vector3(side * 1.05f, 0f, 0.9f), 0.8f, m);
+        }
+        Cloud(root.transform, new Vector3(-0.4f, 2.4f, 0.4f), 1.6f, m);
+
+        var steps = new[]
+        {
+            new Tutorial.Step { title = "JUMP!", hint = "Jump under the ? block to hit it", actions = new[] { "jump" }, station = jump.gameObject, done = Tutorial.Done.BlocksUsed },
+            new Tutorial.Step { title = "PUNCH!", hint = "Punch the brick in front of you", actions = new[] { "punch" }, station = punch.gameObject, done = Tutorial.Done.BlocksUsed },
+            new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, done = Tutorial.Done.EnemiesCleared },
+            new Tutorial.Step { title = "SQUAT!", hint = "Squat when the cannon glows to duck the Bullet Bill", actions = new[] { "squat" }, station = squat.gameObject, done = Tutorial.Done.DuckUnderBill },
+            new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, done = Tutorial.Done.EnemiesCleared, needsFlower = true },
+            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, throw it", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, done = Tutorial.Done.EnemiesCleared },
+            new Tutorial.Step { title = "JUMP AT THE FLAG!", hint = "Walk to the flag and jump to grab it", actions = new[] { "jump" }, station = flag.gameObject, done = Tutorial.Done.Goal },
+        };
+        var tutorial = root.AddComponent<Tutorial>();
+        typeof(Tutorial).GetField("steps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(tutorial, steps);
+
+        var info = new SerializedObject(root.AddComponent<StageInfo>());
+        info.FindProperty("title").stringValue = "TRAINING";
+        info.FindProperty("tip").stringValue = "Learn the moves - you can't lose lives here";
+        info.ApplyModifiedPropertiesWithoutUndo();
+        return Save(root, TrainingStagePath);
     }
 
     // ---- height: stairs and tall pipes (walk round them) ----

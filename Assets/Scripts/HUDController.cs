@@ -61,6 +61,8 @@ public class HUDController : MonoBehaviour
     [SerializeField] private Image heldIcon;
     [SerializeField] private TMP_Text heldEmptyText;
     [SerializeField] private TMP_Text connectionText;
+    [Tooltip("Debug, bottom-right: the last action class received (not idle or repeats), its confidence and outcome.")]
+    [SerializeField] private TMP_Text lastActionText;
 
     [Header("Centre")]
     [SerializeField] private TMP_Text bannerText;
@@ -152,6 +154,8 @@ public class HUDController : MonoBehaviour
         if (gameState != null) _lastScore = gameState.Score;
         BulletBillCannon.OnWarning += HandleBulletBillWarning;
         HeadsetView.OnTuned += HandleHeadsetTuned;
+        Tutorial.OnMessage += HandleTutorialMessage;
+        if (levelGenerator != null) levelGenerator.TrainingCompleted += HandleTrainingCompleted;
     }
 
     private void OnDisable()
@@ -171,6 +175,8 @@ public class HUDController : MonoBehaviour
         if (sessionManager != null) sessionManager.OnScanComplete.RemoveListener(HandleScanComplete);
         BulletBillCannon.OnWarning -= HandleBulletBillWarning;
         HeadsetView.OnTuned -= HandleHeadsetTuned;
+        Tutorial.OnMessage -= HandleTutorialMessage;
+        if (levelGenerator != null) levelGenerator.TrainingCompleted -= HandleTrainingCompleted;
     }
 
     private void Update()
@@ -179,6 +185,7 @@ public class HUDController : MonoBehaviour
         UpdateConnection();
         UpdateBanner();
         UpdateFeedbackFade();
+        UpdateTutorialCard();
         UpdateTitle();
         UpdateGameOver();
         UpdateDamage();
@@ -207,7 +214,7 @@ public class HUDController : MonoBehaviour
         if (scoreText != null) scoreText.text = Mathf.Min(gameState.Score, 999999).ToString("D6");
         if (coinsText != null) coinsText.text = $"x{gameState.Coins:D2}";
         if (stageText != null) stageText.text = gameState.StageName;
-        if (livesText != null) livesText.text = $"x{Mathf.Max(0, gameState.Lives)}";
+        if (livesText != null) livesText.text = gameState.InTraining ? "INF" : $"x{Mathf.Max(0, gameState.Lives)}"; // training: infinite lives
         if (powerIcon != null) powerIcon.enabled = gameState.HasFireFlower;
         if (powerEmptyText != null) powerEmptyText.enabled = !gameState.HasFireFlower;
         bool holding = gameState.Held != HeldItem.None;
@@ -245,6 +252,8 @@ public class HUDController : MonoBehaviour
         }
     }
 
+    private HardReset _hardReset;
+
     private void UpdateBanner()
     {
         if (bannerText == null) return;
@@ -253,7 +262,14 @@ public class HUDController : MonoBehaviour
         Color color = Color.white;
 
         var boss = Bowser.Active;
-        if (gameState != null && gameState.IsFinished)
+        if (_hardReset == null) _hardReset = FindAnyObjectByType<HardReset>();
+        if (_hardReset != null && _hardReset.ShowCountdown)
+        {
+            // Looking up to reset: shown in every phase, over everything else.
+            message = $"KEEP LOOKING UP TO RESTART... {_hardReset.SecondsLeft}";
+            color = warningColor;
+        }
+        else if (gameState != null && gameState.IsFinished)
         {
             message = null; // the end screen says it all
         }
@@ -274,6 +290,12 @@ public class HUDController : MonoBehaviour
         else if (levelGenerator != null && levelGenerator.IsTransitioning)
         {
             message = null; // the centre title shows STAGE CLEAR!
+        }
+        else if (Tutorial.Active is { Current: { } step } tutorial)
+        {
+            // Training: the step stays up in the banner.
+            message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {step.hint.ToUpperInvariant()}";
+            color = Color.white;
         }
         else if (levelGenerator != null && levelGenerator.CurrentStage == null)
         {
@@ -326,6 +348,18 @@ public class HUDController : MonoBehaviour
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
         string action = Capitalise(evt.actionLabel);
+
+        // Debug corner: what the classifier last said. Idle (several a second) and repeats would hide it.
+        if (lastActionText != null && evt.actionLabel != EventResolver.IdleAction && !result.IsRepeat)
+            lastActionText.text = $"LAST ACTION: {evt.actionLabel.ToUpperInvariant()} {evt.confidence:F2} " +
+                                  $"<color=#{(result.Resolved ? "4CFF66>OK" : $"FFB020>GATE {result.Gate}")}</color>";
+
+        // Training: the classifier read a move this step isn't about — say what it saw.
+        if (Tutorial.Active != null && Tutorial.Active.WrongMoveTip(evt, result) is { } tip)
+        {
+            ShowFeedback(tip, quietColor);
+            return;
+        }
 
         if (result.StateOnly) return;
 
@@ -399,8 +433,38 @@ public class HUDController : MonoBehaviour
         _popupFrame = Time.frameCount;
     }
 
+    private void HandleTutorialMessage(string message) => ShowFeedback(message, goodColor);
+
+    private void HandleTrainingCompleted()
+    {
+        ShowTitle("TRAINING COMPLETE!", titleColor);
+        if (subtitleText != null) subtitleText.text = "GET READY FOR WORLD 1-1";
+        _introCard = true; // hold it as long as an intro card
+    }
+
+    /// <summary>Training: a new step's card (its title, and the hint underneath).</summary>
+    private void UpdateTutorialCard()
+    {
+        var tutorial = Tutorial.Active;
+        int step = tutorial != null ? tutorial.StepIndex : -1;
+        if (step == _tutorialStep) return;
+        _tutorialStep = step;
+        if (tutorial == null || tutorial.Current == null) return;
+        ShowTitle(tutorial.Current.title, titleColor);
+        if (subtitleText != null) subtitleText.text = $"<size=60%><color=#FFE08A>{tutorial.Current.hint.ToUpperInvariant()}</color></size>";
+        _introCard = true;
+    }
+
+    private int _tutorialStep = -1;
+
     private void HandleLifeLost(int livesLeft)
     {
+        if (gameState != null && gameState.InTraining)
+        {
+            ShowFeedback("Ouch! (no lives lost in training)", warningColor);
+            _damageAt = Time.time;
+            return;
+        }
         ShowFeedback(livesLeft > 0 ? "Ouch! -1 life" : "Out of lives!", warningColor);
         _damageAt = Time.time;
     }

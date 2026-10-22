@@ -216,3 +216,24 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
 - **Scene changes iris out and in.** Between stages and through warp pipes, the view closes to black in a circle, the scene changes, and it opens again (`ScreenTransition`, about 1 s in all). For safety in a real room it's never black for more than about 1.2 s; the HUD text stays on top.
 - **Sizes.** Gameplay objects (blocks, pipes, cannons, enemies, pickups, coins, the flag and the axe) are 13 % smaller than before, for comfort; reach and hit distances are unchanged. Scenery is sized to fill the space round the stage, outside the play area or overhead: the 1-1 castle is about 2.3 m tall, behind the flag; hills, bushes, giant mushrooms, cloud banks, cave pillars and walls, and castle walls with lava moats.
 - **One event per motion, filtered on the phone.** The gateway forwards every classification, so one motion arrives as a run of events with the same action. `EventResolver` processes the first and drops the rest at Gate 2 (`repeat of the same motion`), in every state: a report within 0.5 s of the previous one of that action continues the run; a run over 1.2 s is a new motion (two stomps back to back). The scan ignores repeated jumps, so one jump never starts and confirms it at once.
+- **Hard reset from inside the headset.** Look straight up (more than 65° above the horizon) for **5 s**. The HUD counts down ("KEEP LOOKING UP TO RESTART... 4") after the first second, so glancing up at a ? block shows nothing; looking down cancels. The game irises out and goes back to the very start: "jump to start scanning", the scan, a jump to confirm. Score, lives and stage are reset; on the phone the AR session is reset too, so the scan starts from no planes.
+
+## Training round (WORLD 0-1, 2026-10-21)
+
+After every scan (first launch and every hard reset, not after a game over), a training lane (1.6 × 3.2 m, compressible) teaches the moves before 1-1. Its stations appear one at a time, each with a big card and a banner line (`TRAINING n/7 - ...`):
+
+| # | Card | Teaches | Done when |
+|---|---|---|---|
+| 1 | JUMP! | jump under a ? block | the block is hit (it always drops the fire flower) |
+| 2 | PUNCH! | punch a brick | the brick breaks |
+| 3 | STOMP! | stomp a half-speed Goomba | it's defeated |
+| 4 | SQUAT! | duck a Bullet Bill (the cannon keeps firing) | a squat while a Bill is coming |
+| 5 | THROW! | fireball at a slow, distant Goomba (the flower is given if missing) | it's defeated |
+| 6 | STOMP, CLAP, THROW! | Koopa: shell, pick up, throw at two Goombas | all three cleared |
+| 7 | JUMP AT THE FLAG! | jump at the goal | the flag is grabbed |
+
+- **Infinite lives:** a hit flashes, buzzes and says "Ouch! (no lives lost in training)", but costs no life, flower or held item. The HUD shows `INF`.
+- **Wrong move:** a move the step isn't about (that did nothing) gets "That was STOMP — try JUMP", which also shows what the classifier read.
+- **Never stuck:** a step not done in 40 s says "Let's move on" and the next starts; its leftover enemies and cannon are cleared. The flag doesn't time out (it's the way out); it can't be grabbed while hidden.
+- **Then 1-1, fresh:** "TRAINING COMPLETE!", the iris wipe, and 1-1 with score 0, 3 lives and no flower; no clear bonus or stage count for training. No skip.
+

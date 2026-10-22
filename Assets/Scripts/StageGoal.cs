@@ -48,7 +48,7 @@ public class StageGoal : MonoBehaviour
     /// <summary>Current horizontal distance to the player, for HUD/debugging. Infinity until initialised.</summary>
     public float PlayerDistance { get; private set; } = float.PositiveInfinity;
     /// <summary>A jump now would grab the goal: armed, unlocked, not yet reached, and the player within reach.</summary>
-    public bool InReach => _armed && !Locked && !IsReached && PlayerDistance <= reachRadius;
+    public bool InReach => _armed && !Locked && !IsReached && isActiveAndEnabled && PlayerDistance <= reachRadius; // hidden (training: not yet shown) = not there
 
     private Transform _player;
     private bool _armed;

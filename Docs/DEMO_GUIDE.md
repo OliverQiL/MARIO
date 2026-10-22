@@ -26,7 +26,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 1. **Launch on the phone** (handheld first; the headset is optional, see §8). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
 2. **Start the scan with a jump (key 1).** Walk round looking at the floor.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
-3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The "WORLD 1-1 / FIRST STEPS" intro card pops in and the stage is **anchored to the floor**.
+3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag). Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not done in 40 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
 4. **Play with keys 1–6, each one a real `GAME_EVENT` over TLS/WebSocket:**
    - 1 → jump under a ? block → power-up
@@ -239,6 +239,7 @@ sequenceDiagram
 
 | Problem | Fallback |
 |---|---|
+| Game stuck, or need to start over mid-demo (phone in the headset) | **Hard reset: look straight up at the ceiling for 5 s.** A countdown appears after 1 s; looking down cancels. The game goes back to "jump to start scanning". In the Editor, press **R**. |
 | Headset is uncomfortable or disorienting | Demo handheld. Two-finger tap before wearing toggles headset mode; it's on by default on the phone. |
 | Wi-Fi blocked or unstable | Personal Hotspot from the phone, with the Mac joined. Or, in the Editor, keys 1–6 drive `EventResolver` directly in the Museum simulation. |
 | Placement is slow in a cramped room | Stand in open floor; scan more floor before the finishing jump. Stages compress to 55 %, and the fallback templates fit about 1.2 × 2 m. |

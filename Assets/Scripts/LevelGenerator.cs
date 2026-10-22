@@ -64,6 +64,8 @@ public class LevelGenerator : MonoBehaviour
     [Header("Stage Templates")]
     [Tooltip("The hand-designed campaign, in order: stage N plays entry (N-1) % count, and after the last it loops (harder, via Difficulty).")]
     [SerializeField] private List<GameObject> campaignStages = new();
+    [Tooltip("The training round (Tutorial), played after every scan (launch and hard reset) before 1-1. Empty = no training.")]
+    [SerializeField] private GameObject trainingStage;
     [Tooltip("Fallback stage prefabs, each with a StageFootprint component, for when the campaign stage doesn't fit the room. Tried largest-footprint first.")]
     [SerializeField] private List<GameObject> stageTemplates = new();
     [Tooltip("If the campaign stage doesn't fit at full size, it's tried at these scales (positions only; pieces keep their size) before the fallbacks.")]
@@ -143,6 +145,13 @@ public class LevelGenerator : MonoBehaviour
     private GameObject _bonusRoom;
     private float _searchScale = 1f; // layout scale being tried: footprint and piece positions (x, z) shrink together
     private bool _creatingAnchor;
+    /// <summary>The next stage placed is the training round: true after each scan (launch, hard reset), false after it or a game over.</summary>
+    private bool _trainingPending = true;
+    /// <summary>Raised when the training round's flag is grabbed (the HUD shows TRAINING COMPLETE!).</summary>
+    public event System.Action TrainingCompleted;
+    public bool InTraining => CurrentStage != null && CurrentStage.GetComponent<Tutorial>() != null;
+    /// <summary>Bumped by a hard reset, so an anchor still being created for the old game is dropped.</summary>
+    private int _generation;
     private float _scanCompleteTime;
     private int _searchObstructed;
     private int _searchNoFloor;
@@ -244,7 +253,14 @@ public class LevelGenerator : MonoBehaviour
             pose.rotation = Quaternion.LookRotation(forward.normalized, Vector3.up);
 
         _creatingAnchor = true;
+        int generation = _generation;
         var result = await anchorManager.TryAddAnchorAsync(pose);
+        if (generation != _generation)
+        {
+            // A hard reset happened while it was being created: it belongs to the old game.
+            if (result.status.IsSuccess() && result.value != null && !anchorManager.TryRemoveAnchor(result.value)) Destroy(result.value.gameObject);
+            return;
+        }
         _creatingAnchor = false;
         if (!result.status.IsSuccess())
         {
@@ -302,6 +318,9 @@ public class LevelGenerator : MonoBehaviour
         // then the fallbacks, largest first, at full size.
         var gs = GameStateManager.Instance;
         var candidates = new List<(GameObject template, float scale)>();
+        // After a scan, the training round first (at full size, then compressed); if it can't fit, play on without it.
+        if (_trainingPending && trainingStage != null && trainingStage.GetComponent<StageFootprint>() != null)
+            foreach (var scale in campaignScales) candidates.Add((trainingStage, scale));
         var campaign = CampaignStageFor(campaignStages, gs != null ? gs.StageIndex : 1);
         if (campaign != null && campaign.GetComponent<StageFootprint>() != null)
             foreach (var scale in campaignScales) candidates.Add((campaign, scale));
@@ -318,6 +337,7 @@ public class LevelGenerator : MonoBehaviour
             _searchScale = 1f;
             if (!found) continue;
 
+            if (template != trainingStage) _trainingPending = false;
             CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
             if (!Mathf.Approximately(scale, 1f)) CompressLayout(CurrentStage, scale);
             Debug.Log($"[LevelGenerator] Placed '{template.name}'{(Mathf.Approximately(scale, 1f) ? "" : $" at {scale:P0} size")} at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}° — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
@@ -415,7 +435,9 @@ public class LevelGenerator : MonoBehaviour
 
     private void StartStage()
     {
-        CurrentGoal = CurrentStage.GetComponentInChildren<StageGoal>();
+        var gs = GameStateManager.Instance;
+        if (InTraining && gs != null) gs.StartTraining();
+        CurrentGoal = CurrentStage.GetComponentInChildren<StageGoal>(true); // training: its flag is hidden until the last step
         if (CurrentGoal != null)
         {
             CurrentGoal.Initialise(arCamera.transform);
@@ -435,6 +457,18 @@ public class LevelGenerator : MonoBehaviour
 
         goal.OnReached -= HandleGoalReached;
         IsTransitioning = true;
+        if (InTraining)
+        {
+            // Training done: no clear bonus or stage count; a fresh game starts at 1-1.
+            _trainingPending = false;
+            var trainee = GameStateManager.Instance;
+            if (trainee != null) trainee.EndTraining();
+            AudioManager.Play(Sfx.StageClear);
+            Debug.Log("[LevelGenerator] Training complete — 1-1 next.");
+            TrainingCompleted?.Invoke();
+            StartCoroutine(TransitionToNextStage());
+            return;
+        }
         StagesCompleted++;
         Debug.Log($"[LevelGenerator] Stage complete ({StagesCompleted} so far) — next stage in {transitionDelaySeconds:F1}s.");
         // The last campaign stage ends the game, even if a fallback template stood in for it.
@@ -503,9 +537,27 @@ public class LevelGenerator : MonoBehaviour
         Debug.Log("[LevelGenerator] Game over — loop halted.");
     }
 
+    /// <summary>Hard reset (HardReset): clears the stage and waits, like at launch, for the next scan to complete (HandleScanComplete).</summary>
+    public void ResetToScan()
+    {
+        StopAllCoroutines();
+        CancelInvoke();
+        _generation++;
+        _trainingPending = true; // a new player: training again after the scan
+        _halted = false;
+        _warping = false;
+        _creatingAnchor = false;
+        IsTransitioning = false;
+        IsWaitingForMesh = false;
+        StagesCompleted = 0;
+        TearDownStage();
+        Debug.Log("[LevelGenerator] Hard reset — waiting for a new scan.");
+    }
+
     /// <summary>Wired to GameStateManager.OnGameRestarted: re-anchors at the player and places a fresh stage.</summary>
     public void RestartLoop()
     {
+        _trainingPending = false; // after a game over they know the moves
         _halted = false;
         StagesCompleted = 0;
         TearDownStage();

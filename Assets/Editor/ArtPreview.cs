@@ -121,6 +121,12 @@ public static class ArtPreview
             var stage = Object.Instantiate(Load(GameContentSetup.CampaignStagePath(design.Name)));
             ShootLayout(stage, Path.Combine(outDir, $"stage_{design.Name}.png"), design.Depth / 4f);
         }
+        // The training lane with every station shown at once (in play they appear one at a time).
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var training = Object.Instantiate(Load(GameContentSetup.TrainingStagePath));
+        foreach (Transform station in training.transform) station.gameObject.SetActive(true);
+        ShootLayout(training, Path.Combine(outDir, "stage_training.png"), 3.2f / 4f);
+
         EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
         var room = Object.Instantiate(Load(GameContentSetup.BonusRoomPath));
         room.GetComponent<BonusRoom>().Build(2.5f, 4f);

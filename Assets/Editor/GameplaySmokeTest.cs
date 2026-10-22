@@ -360,6 +360,25 @@ public static class GameplaySmokeTest
         Check(Mathf.Abs(goombaPrefab.transform.localScale.x - 0.87f) < 0.001f && Mathf.Abs(goalRoot.localScale.x - 0.87f) < 0.001f,
               "gameplay objects (Goomba, flag) are built at 87%");
 
+        // -- hard reset: look straight up for 5 s (the phone is in the headset)
+        var hardReset = new GameObject("HardReset").AddComponent<HardReset>();
+        var upView = Quaternion.Euler(-80f, 0f, 0f) * Vector3.forward;
+        var blockView = Quaternion.Euler(-50f, 0f, 0f) * Vector3.forward; // looking up at a ? block
+        bool resetFired = false;
+        for (int i = 0; i < 100; i++) resetFired |= hardReset.Tick(0.1f, Vector3.forward);
+        for (int i = 0; i < 100; i++) resetFired |= hardReset.Tick(0.1f, blockView);
+        Check(!resetFired && hardReset.Held == 0f, "looking ahead or up at a ? block never resets");
+        for (int i = 0; i < 5; i++) resetFired |= hardReset.Tick(0.1f, upView);
+        Check(!resetFired && !hardReset.ShowCountdown, "a glance up (0.5 s) shows no countdown");
+        for (int i = 0; i < 10; i++) resetFired |= hardReset.Tick(0.1f, Quaternion.Euler(-60f, 0f, 0f) * Vector3.forward); // jitter just under the 65° threshold
+        Check(!resetFired && hardReset.ShowCountdown && hardReset.SecondsLeft == 4, "once looking up, small dips keep counting; countdown shows after 1 s (4 s left)");
+        resetFired |= hardReset.Tick(0.1f, Vector3.forward);
+        Check(!resetFired && hardReset.Held == 0f, "looking back down cancels the reset");
+        int ticks = 0;
+        while (!resetFired && ticks < 100) { resetFired = hardReset.Tick(0.1f, upView); ticks++; }
+        Check(resetFired && ticks >= 49 && ticks <= 51, $"holding the look up for 5 s triggers the hard reset ({ticks * 0.1f:F1} s)");
+        UnityEngine.Object.DestroyImmediate(hardReset.gameObject);
+
         // -- the iris wipe never holds anything up without a live HUD (here: edit mode)
         bool wiped = false;
         ScreenTransition.Run(() => wiped = true);
@@ -585,6 +604,122 @@ public static class GameplaySmokeTest
         Check(standard.GetComponentInChildren<WarpPipe>(true) != null, "StandardStage has a warp pipe");
         Check(large.GetComponent<StageFootprint>().FootprintArea > standard.GetComponent<StageFootprint>().FootprintArea
               && standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "templates are tried Large, Standard, Compact");
+
+        TrainingChecks();
+    }
+
+    /// <summary>The training round: seven stations shown one at a time, infinite lives, tips, timeouts, the flag.</summary>
+    private static void TrainingChecks()
+    {
+        s_State.RestartGame();
+        s_State.BeginStage();
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
+
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.TrainingStagePath);
+        var stage = UnityEngine.Object.Instantiate(prefab, new Vector3(0f, 0f, 1.6f), Quaternion.identity, s_Stage); // the player at the lane's start
+        var tutorial = stage.GetComponent<Tutorial>();
+        Invoke(tutorial, "OnEnable"); // edit mode: Active, and listening to the resolver
+        var stations = Enumerable.Range(1, 7).Select(i => stage.transform.Cast<Transform>().First(t => t.name.StartsWith($"{i} "))).ToArray();
+        Check(tutorial != null && tutorial.StepCount == 7 && stations.All(t => !t.gameObject.activeSelf) && tutorial.StepIndex == -1,
+              "training: 7 steps, every station hidden until its step");
+        var goal = stage.GetComponentInChildren<StageGoal>(true);
+        goal.Initialise(s_Cam.transform);
+
+        string message = null;
+        System.Action<string> onMessage = msg => message = msg;
+        Tutorial.OnMessage += onMessage;
+
+        // Infinite lives.
+        s_State.StartTraining();
+        int lives = s_State.Lives;
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        bool hit = s_State.TakeHit("test");
+        Check(hit && s_State.Lives == lives && s_State.InTraining && s_State.StageName == "0-1" && !s_State.IsGameOver,
+              "training: a hit lands but costs no life (infinite lives); the stage is 0-1");
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+
+        // 1: jump at the ? block.
+        tutorial.Tick(3f);
+        Check(tutorial.StepIndex == -1, "training waits for the intro card before step 1");
+        tutorial.Tick(1f);
+        Check(tutorial.StepIndex == 0 && stations[0].gameObject.activeSelf && !stations[1].gameObject.activeSelf, "step 1 (JUMP) shows only its station");
+        RegisterAll(stations[0]);
+        var block = stations[0].GetComponentInChildren<QuestionBlock>();
+        StandAt(block.transform.position);
+        var r = Resolve("stomp");
+        Check(tutorial.WrongMoveTip(new GameEvent("stomp", 0.95f, "x"), r) is { } tip1 && tip1.Contains("STOMP") && tip1.Contains("JUMP"),
+              "a wrong move gets a tip: 'That was STOMP — try JUMP'", r);
+        r = Resolve("jump");
+        tutorial.Tick(0.1f);
+        Check(r.Resolved && r.Target == block && tutorial.StepIndex == 1, "hitting the ? block finishes step 1", r);
+
+        // 2: punch the brick.
+        RegisterAll(stations[1]);
+        var brick = stations[1].GetComponentInChildren<BrickBlock>();
+        s_Cam.transform.position = new Vector3(brick.transform.position.x, 1.5f, brick.transform.position.z - 0.5f);
+        FaceForward();
+        r = Resolve("punch");
+        tutorial.Tick(0.1f);
+        Check(r.Resolved && tutorial.StepIndex == 2, "breaking the brick finishes step 2 (PUNCH)", r);
+
+        // 3: a step not done in 40 s moves on, and its enemy is cleared.
+        var stompGoomba = stations[2].GetComponentInChildren<Goomba>();
+        tutorial.Tick(41f);
+        Check(tutorial.StepIndex == 3 && message == "Let's move on" && stompGoomba == null, "a step not done after 40 s moves on, clearing its enemy");
+
+        // 4: squat while a Bullet Bill is coming.
+        Resolve("squat");
+        tutorial.Tick(0.1f);
+        Check(tutorial.StepIndex == 3, "a squat with no Bullet Bill coming doesn't finish step 4");
+        var bill = new GameObject("Bill").AddComponent<BulletBill>();
+        Resolve("squat");
+        tutorial.Tick(0.1f);
+        Check(tutorial.StepIndex == 4 && bill == null && !stations[3].GetComponentInChildren<BulletBillCannon>(true).gameObject.activeSelf,
+              "ducking a Bullet Bill finishes step 4; its cannon stops");
+
+        // 5: the fireball step hands out the flower if needed.
+        Check(s_State.HasFireFlower && message == "Here's a fire flower!", "step 5 (THROW) gives the fire flower if the player hasn't got it");
+        foreach (var g in stations[4].GetComponentsInChildren<Goomba>()) g.ResolveHit("fireball", s_State);
+        tutorial.Tick(0.1f);
+        Check(tutorial.StepIndex == 5, "defeating the Goomba finishes step 5");
+
+        // 6: the flag isn't there yet.
+        StandAt(goal.transform.position + Vector3.back * 1f);
+        Invoke(goal, "Update"); // arm it (the player starts away from it)
+        StandAt(goal.transform.position);
+        r = Resolve("jump");
+        Check(!goal.IsReached && tutorial.StepIndex == 5, "the hidden flag can't be grabbed before its step", r);
+        foreach (var e in stations[5].GetComponentsInChildren<Goomba>().Where(g => !(g is Koopa))) e.ResolveHit("stomp", s_State);
+        foreach (var k in stations[5].GetComponentsInChildren<Koopa>()) k.ResolveHit("stomp", s_State); // into the shell...
+        tutorial.Tick(0.1f);
+        Check(tutorial.StepIndex == 5, "a Koopa still in its shell keeps step 6 going");
+        foreach (var k in stations[5].GetComponentsInChildren<Koopa>()) k.ResolveHit("stomp", s_State); // ...and cleared
+        tutorial.Tick(0.1f);
+        Check(tutorial.StepIndex == 6 && stations[6].gameObject.activeSelf, "clearing the Koopa and Goombas finishes step 6; the flag appears");
+
+        // 7: the flag never times out; a jump at it ends the round.
+        tutorial.Tick(100f);
+        Check(tutorial.StepIndex == 6, "the flag step never times out");
+        bool reached = false;
+        goal.OnReached += _ => reached = true;
+        r = Resolve("jump");
+        Check(r.Resolved && r.Reason == EventResolver.GoalReason && reached, "a jump at the flag ends training", r);
+
+        // After training: a fresh 1-1.
+        s_State.AddScore(1234);
+        s_State.EndTraining();
+        Check(!s_State.InTraining && s_State.Score == 0 && s_State.StageIndex == 1 && s_State.Lives == 3 && !s_State.HasFireFlower && s_State.StageName == "1-1",
+              "after training, 1-1 starts fresh (score 0, 3 lives, no flower)");
+
+        Tutorial.OnMessage -= onMessage;
+        Invoke(tutorial, "OnDisable");
+        UnityEngine.Object.DestroyImmediate(stage);
+    }
+
+    private static void RegisterAll(Transform root)
+    {
+        foreach (var ib in root.GetComponentsInChildren<InteractableBase>()) Register(ib);
     }
 
     // ---- helpers ----

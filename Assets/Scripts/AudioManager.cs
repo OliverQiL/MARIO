@@ -148,6 +148,12 @@ public class AudioManager : MonoBehaviour
         if (livesLeft > 0) PlayNow(Sfx.Damage);
     }
 
+    /// <summary>Stops the background music (hard reset: back to the scan, where there's none).</summary>
+    public static void StopMusic()
+    {
+        if (s_Instance != null && s_Instance._musicSource != null) s_Instance._musicSource.Stop();
+    }
+
     private void HandleGameOver()
     {
         if (_musicSource != null) _musicSource.Stop();

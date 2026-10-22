@@ -79,6 +79,9 @@ public static class HUDSetup
         heldEmpty.text = "-";
 
         var connection = Styled(root, "Connection (TMP)", new Vector2(1f, 1f), new Vector2(-80f, top), new Vector2(600f, 40f), 22f, TextAlignmentOptions.TopRight, font, shadow);
+        // Debug: the last action class the classifier sent (bottom-right, small).
+        var lastAction = Styled(root, "LastAction (TMP)", new Vector2(1f, 0f), new Vector2(-SideMargin, 40f), new Vector2(600f, 40f), 22f, TextAlignmentOptions.BottomRight, font, shadow);
+        lastAction.text = "LAST ACTION: -";
 
         // ---- centre ----
         var banner = Styled(root, "Banner (TMP)", new Vector2(0.5f, 1f), new Vector2(0f, -150f), new Vector2(2000f, 60f), 30f, TextAlignmentOptions.Top, font, shadow);
@@ -214,6 +217,7 @@ public static class HUDSetup
         so.FindProperty("bossFill").objectReferenceValue = bossFill;
         so.FindProperty("gameOverTitleText").objectReferenceValue = overTitle;
         so.FindProperty("connectionText").objectReferenceValue = connection;
+        so.FindProperty("lastActionText").objectReferenceValue = lastAction;
         so.FindProperty("bannerText").objectReferenceValue = banner;
         so.FindProperty("feedbackText").objectReferenceValue = feedback;
         so.FindProperty("titleText").objectReferenceValue = title;

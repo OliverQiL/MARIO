@@ -16,10 +16,17 @@ using UnityEngine.XR.ARFoundation;
 /// With -scan it also plays the opening: it steers the simulated camera
 /// (looking down at the floor, turning and walking a small circle) after
 /// jumping to start the scan, confirms it with another jump as a player would, waits for a stage, then checks
-/// that the campaign's first stage was placed (not a fallback) and reports
+/// that the training round comes first, plays it through (skipping each
+/// step as its timeout would, then grabbing the flag), checks that the
+/// campaign's 1-1 follows fresh (not a fallback), and reports
 /// the size it fitted at.
 ///
-///   Unity -batchmode -projectPath . -executeMethod SimulationSmokeTest.Run [-scan]   (no -quit)
+/// With -scan -reset, once the first stage is up it looks straight up (the
+/// hard-reset gesture) until the game resets, checks it's back at "jump to
+/// start scanning" (no stage, scan not started, eye height cleared, stage 1),
+/// then scans again and expects the training round and 1-1 again.
+///
+///   Unity -batchmode -projectPath . -executeMethod SimulationSmokeTest.Run [-scan [-reset]]   (no -quit)
 /// </summary>
 [InitializeOnLoad]
 public static class SimulationSmokeTest
@@ -29,6 +36,8 @@ public static class SimulationSmokeTest
     private const string ErrorsKey = "SimulationSmokeTest.Errors";
     private const string ScanKey = "SimulationSmokeTest.Scan";
     private const string HeadsetKey = "SimulationSmokeTest.Headset";
+    private const string ResetKey = "SimulationSmokeTest.Reset";
+    private const string ResetResultKey = "SimulationSmokeTest.ResetResult";
     private const float RunSeconds = 30f;
     private const float ScanTimeoutSeconds = 150f;
     private const float ConfirmAfterSeconds = 25f; // two full turns of the sweep
@@ -50,6 +59,8 @@ public static class SimulationSmokeTest
         SessionState.SetString(ErrorsKey, "");
         SessionState.SetBool(ScanKey, System.Environment.GetCommandLineArgs().Contains("-scan"));
         SessionState.SetBool(HeadsetKey, System.Environment.GetCommandLineArgs().Contains("-headset"));
+        SessionState.SetBool(ResetKey, System.Environment.GetCommandLineArgs().Contains("-reset"));
+        SessionState.SetString(ResetResultKey, "");
         Attach();
         EditorApplication.EnterPlaymode();
     }
@@ -70,6 +81,11 @@ public static class SimulationSmokeTest
 
     private static Pose? s_StartPose;
     private static double s_ScanStartedAt = double.MaxValue;
+    // -reset: 0 = first round, 1 = looking up until the scene reloads, 2 = second round after the reset.
+    private static int s_ResetPhase;
+    private static double s_RoundStartedAt;
+    private static int s_LastDiag = -1;
+    private static bool s_TrainingSeen;
 
     private static void Tick()
     {
@@ -84,19 +100,77 @@ public static class SimulationSmokeTest
         if (scan)
         {
             bool placed = level != null && level.CurrentStage != null;
-            if (!placed && elapsed < ScanTimeoutSeconds)
+            double round = elapsed - s_RoundStartedAt;
+
+            // -reset: after the first stage, look straight up (the hard-reset gesture) until the scene reloads.
+            if (placed && s_ResetPhase == 0 && SessionState.GetBool(ResetKey, false))
+            {
+                s_ResetPhase = 1;
+                s_RoundStartedAt = elapsed;
+                Debug.Log("[SimulationSmokeTest] Stage up: looking up to hard-reset.");
+                round = 0;
+            }
+            if (s_ResetPhase == 1)
+            {
+                var scanNow = Object.FindAnyObjectByType<ARSessionManager>();
+                if (scanNow != null && !scanNow.IsScanStarted)
+                {
+                    var fresh = Object.FindAnyObjectByType<ARSessionManager>();
+                    bool back = fresh != null && !fresh.IsScanStarted && !fresh.IsScanComplete && level.CurrentStage == null
+                                && PlayerBody.EyeHeight == null && GameStateManager.Instance != null && GameStateManager.Instance.StageIndex == 1;
+                    SessionState.SetString(ResetResultKey, back ? "ok" : "not back at the scan");
+                    Debug.Log($"[SimulationSmokeTest] Hard reset after {round:F1} s looking up; back at 'jump to start scanning': {back}.");
+                    s_ResetPhase = 2;
+                    s_RoundStartedAt = elapsed;
+                    s_ScanStartedAt = double.MaxValue;
+                    s_StartPose = null;
+                    return;
+                }
+                if (round > 15) { SessionState.SetString(ResetResultKey, "no reset after 15 s looking up"); }
+                else
+                {
+                    LookUp();
+                    if (Mathf.FloorToInt((float)round) != s_LastDiag)
+                    {
+                        s_LastDiag = Mathf.FloorToInt((float)round);
+                        var hr = Object.FindAnyObjectByType<HardReset>();
+                        var cam = Camera.main;
+                        var provider = Object.FindAnyObjectByType<UnityEngine.XR.Simulation.SimulationCameraPoseProvider>();
+                        Debug.Log($"[SimulationSmokeTest] reset diag t={round:F1}: main camera '{cam?.name}' elevation {(cam != null ? Mathf.Asin(cam.transform.forward.y) * Mathf.Rad2Deg : float.NaN):F0}°, " +
+                                  $"provider euler {provider?.transform.rotation.eulerAngles}, HardReset {(hr == null ? "MISSING" : $"enabled {hr.isActiveAndEnabled}, held {hr.Held:F1}")}");
+                    }
+                    return;
+                }
+            }
+
+            // The training round: skip each step (as its 40 s timeout would), grab the flag, then wait for 1-1.
+            if (placed && level.InTraining && (!SessionState.GetBool(ResetKey, false) || s_ResetPhase == 2))
+            {
+                s_TrainingSeen = true;
+                var tutorial = Tutorial.Active;
+                if (tutorial != null && tutorial.StepIndex >= 0 && tutorial.StepIndex < tutorial.StepCount - 1) tutorial.Tick(41f);
+                else if (tutorial != null && tutorial.StepIndex == tutorial.StepCount - 1 && level.CurrentGoal != null && !level.CurrentGoal.IsReached)
+                {
+                    Debug.Log("[SimulationSmokeTest] Training: every step shown; grabbing the flag.");
+                    level.CurrentGoal.Reach();
+                }
+                if (round < ScanTimeoutSeconds) return;
+            }
+            if (s_TrainingSeen && !placed && round < ScanTimeoutSeconds) return; // the iris wipe into 1-1
+
+            if (!placed && round < ScanTimeoutSeconds && SessionState.GetString(ResetResultKey, "") is "" or "ok")
             {
                 // As a player would: jump to start scanning, look around, jump again to finish.
                 var scanSession = Object.FindAnyObjectByType<ARSessionManager>();
                 var resolver = Object.FindAnyObjectByType<EventResolver>();
-                if (scanSession != null && resolver != null && !scanSession.IsScanStarted && elapsed > 2)
+                if (scanSession != null && resolver != null && !scanSession.IsScanStarted && round > 2)
                 {
-                    resolver.Resolve(new GameEvent("jump", 0.95f, "scan-start", "smoketest"));
+                    resolver.Resolve(new GameEvent("jump", 0.95f, $"scan-start-{s_ResetPhase}", "smoketest"));
                     s_ScanStartedAt = elapsed;
                 }
                 if (scanSession != null && scanSession.IsScanStarted) SweepCamera((float)(elapsed - s_ScanStartedAt));
                 if (scanSession != null && resolver != null && !scanSession.IsScanComplete && elapsed - s_ScanStartedAt > ConfirmAfterSeconds && scanSession.CanConfirmScan)
-                    resolver.Resolve(new GameEvent("jump", 0.95f, $"scan-confirm-{elapsed:F0}", "smoketest"));
+                    resolver.Resolve(new GameEvent("jump", 0.95f, $"scan-confirm-{s_ResetPhase}-{elapsed:F0}", "smoketest"));
                 return;
             }
         }
@@ -128,7 +202,17 @@ public static class SimulationSmokeTest
                       $"stage root y {(stage != null ? stage.transform.position.y.ToString("F2") : "-")}, origin mode {origin?.CurrentTrackingOriginMode}, " +
                       $"camera offset y {origin?.CameraFloorOffsetObject?.transform.localPosition.y:F2}; " +
                       $"? block {(stage != null && stage.GetComponentInChildren<QuestionBlock>() is { } qb ? (qb.transform.position.y - stage.transform.position.y).ToString("F2") : "-")} m above the stage floor");
-            ok &= stage != null && stage.name.StartsWith("Stage 1-1");
+            // After the scan comes the training round (Tutorial), then a fresh 1-1.
+            var gs = GameStateManager.Instance;
+            bool handedOver = s_TrainingSeen && stage != null && stage.name.StartsWith("Stage 1-1") && gs != null && !gs.InTraining && gs.StageIndex == 1;
+            Debug.Log($"[SimulationSmokeTest] Training round played first: {s_TrainingSeen}; then {(stage != null ? stage.name : "NONE")}, score {gs?.Score}, lives {gs?.Lives}.");
+            ok &= handedOver;
+            if (SessionState.GetBool(ResetKey, false))
+            {
+                string reset = SessionState.GetString(ResetResultKey, "");
+                Debug.Log($"[SimulationSmokeTest] Hard reset: {(reset == "" ? "never triggered" : reset)}; rescanned to {(stage != null ? stage.name : "NONE")}.");
+                ok &= reset == "ok" && s_ResetPhase == 2;
+            }
         }
         if (headset != null && headset.IsOn) SaveHeadsetFrame(headset);
         if (ok) Debug.Log("[SimulationSmokeTest] PASS");
@@ -161,6 +245,17 @@ public static class SimulationSmokeTest
         output.Apply();
         System.IO.File.WriteAllBytes("Logs/headset_view.png", output.EncodeToPNG());
         Debug.Log($"[SimulationSmokeTest] Headset view ({w}x{h}) saved to Logs/headset_view.png");
+    }
+
+    /// <summary>Looks straight up at the ceiling from where the camera is (the hard-reset gesture).</summary>
+    private static void LookUp()
+    {
+        var provider = Object.FindAnyObjectByType<UnityEngine.XR.Simulation.SimulationCameraPoseProvider>();
+        if (provider == null) return;
+        var pose = new Pose(provider.transform.position, Quaternion.Euler(-80f, provider.transform.rotation.eulerAngles.y, 0f));
+        typeof(UnityEngine.XR.Simulation.SimulationCameraPoseProvider)
+            .GetMethod("UpdatePose", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .Invoke(provider, new object[] { pose });
     }
 
     /// <summary>Looks down at the floor and turns, walking a slow circle round the start, so XR Simulation discovers the floor.</summary>

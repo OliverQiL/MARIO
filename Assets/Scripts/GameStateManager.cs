@@ -81,7 +81,9 @@ public class GameStateManager : MonoBehaviour
     /// <summary>Stages per world in the names: stage 5 is "2-1" with 4 per world (the campaign's length).</summary>
     public const int StagesPerWorld = 4;
     /// <summary>Mario-style name of the current stage: "1-1", "1-2", ... "2-1" ...</summary>
-    public string StageName => NameOf(stageIndex);
+    public string StageName => InTraining ? "0-1" : NameOf(stageIndex);
+    /// <summary>The training round (Tutorial) is on: hits cost no lives, and nothing scored carries into 1-1.</summary>
+    public bool InTraining { get; private set; }
     public static string NameOf(int stage) => $"{(stage - 1) / StagesPerWorld + 1}-{(stage - 1) % StagesPerWorld + 1}";
     public bool HasFireFlower => hasFireFlower;
     public int Coins => coins;
@@ -148,6 +150,15 @@ public class GameStateManager : MonoBehaviour
     {
         if (isGameOver || IsInvulnerable) return false;
 
+        if (InTraining)
+        {
+            // Infinite lives: the hit still shows (flash, damage buzz, tip) but costs nothing.
+            _invulnerableUntil = Time.time + invulnerableSeconds;
+            Debug.Log($"[GameStateManager] Hit by {source} in training — no life lost.");
+            OnLifeLost?.Invoke(lives);
+            return true;
+        }
+
         lives = Mathf.Max(0, lives - 1);
         hasFireFlower = false;
         heldItem = HeldItem.None; // dropped, as in Mario
@@ -180,6 +191,35 @@ public class GameStateManager : MonoBehaviour
     /// <summary>Starts a fresh game after a game over or game clear (EventResolver calls this on a jump).</summary>
     public void RestartGame()
     {
+        ResetState();
+        Debug.Log("[GameStateManager] New game.");
+        OnGameRestarted?.Invoke();
+    }
+
+    /// <summary>The training stage has started (LevelGenerator): infinite lives until EndTraining.</summary>
+    public void StartTraining()
+    {
+        InTraining = true;
+        Debug.Log("[GameStateManager] Training round.");
+    }
+
+    /// <summary>Training is done: a fresh game for 1-1 (score, coins, stats and the flower from training don't carry over).</summary>
+    public void EndTraining()
+    {
+        ResetState();
+        Debug.Log("[GameStateManager] Training complete — new game from 1-1.");
+    }
+
+    /// <summary>Hard reset (HardReset): a new game's state, but no OnGameRestarted (the game goes back to the scan, not straight to a stage).</summary>
+    public void ResetForScan()
+    {
+        ResetState();
+        Debug.Log("[GameStateManager] Hard reset: new game after the scan.");
+    }
+
+    private void ResetState()
+    {
+        InTraining = false;
         score = 0;
         lives = startingLives;
         stageIndex = 1;
@@ -192,8 +232,6 @@ public class GameStateManager : MonoBehaviour
         _stats = default;
         _gameStartedAt = float.NegativeInfinity;
         _airborneUntil = _duckedUntil = _invulnerableUntil = float.NegativeInfinity;
-        Debug.Log("[GameStateManager] New game.");
-        OnGameRestarted?.Invoke();
     }
 
     public void AddScore(int amount)

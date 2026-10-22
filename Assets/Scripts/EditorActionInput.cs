@@ -49,12 +49,17 @@ public class EditorActionInput : MonoBehaviour
             var result = eventResolver.Resolve(new GameEvent(action, confidence, $"kb-{_nextId++}", "editor"));
             _last = $"{action} → {(result.Resolved ? "ok" : $"gate {result.Gate} ({result.Reason})")}";
         }
+        if (keyboard[Key.R].wasPressedThisFrame)
+        {
+            var reset = FindAnyObjectByType<HardReset>(); // on a device: look up for 5 s
+            if (reset != null) { _last = "hard reset"; reset.Trigger(); }
+        }
     }
 
     private void OnGUI()
     {
         if (!showKeyLegend) return;
-        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap   |   right-drag look, WASD move");
+        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap  R hard reset   |   right-drag look, WASD move");
         GUI.Label(new Rect(12, Screen.height - 24, 900, 22), $"Last: {_last}");
     }
 }

@@ -177,6 +177,18 @@ public class ARSessionManager : MonoBehaviour
         else ConfirmScan();
     }
 
+    /// <summary>Hard reset (HardReset): back to before the scan — waiting for a jump to start it.</summary>
+    public void ResetScan()
+    {
+        _scanStarted = false;
+        _scanComplete = false;
+        _eyeSamples.Clear();
+        _nextEyeSampleAt = 0f;
+        _lastLoggedArea = 0f;
+        planeManager.enabled = false;
+        Debug.Log("[ARSessionManager] Hard reset — jump to start scanning.");
+    }
+
     /// <summary>Starts the scan: turns plane detection on. The player jumps once they're set up.</summary>
     public void StartScan()
     {
