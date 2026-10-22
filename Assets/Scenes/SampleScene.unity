@@ -1257,6 +1257,8 @@ MonoBehaviour:
   stillSpeed: 0.15
   baselineBand: 0.06
   resettleSeconds: 3
+  teleportMetres: 0.25
+  warmUpSeconds: 1
 --- !u!1 &116405542
 GameObject:
   m_ObjectHideFlags: 0
