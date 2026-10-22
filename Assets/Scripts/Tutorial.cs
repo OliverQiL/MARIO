@@ -95,6 +95,8 @@ public class Tutorial : MonoBehaviour
         var step = Current;
         if (step == null || step.done == Done.Goal) return; // the flag ends the round (LevelGenerator)
         _age += dt;
+        // A squat held down (PhoneMotionDetector keeps the player ducked) counts once a Bill is coming.
+        if (step.done == Done.DuckUnderBill && GameStateManager.Instance is { IsDucked: true } && BillComing(step)) _ducked = true;
         if (IsDone(step)) Advance();
         else if (_age >= stepTimeoutSeconds)
         {
@@ -183,8 +185,10 @@ public class Tutorial : MonoBehaviour
         // The duck step: a squat while a Bullet Bill is coming (warning glow or in flight).
         var step = Current;
         if (step == null || step.done != Done.DuckUnderBill || evt.actionLabel != "squat" || !result.Resolved) return;
-        bool billComing = FindObjectsByType<BulletBill>().Length > 0
-                          || (step.station != null && step.station.GetComponentsInChildren<BulletBillCannon>().Any(c => c.IsWarning));
-        if (billComing) _ducked = true;
+        if (BillComing(step)) _ducked = true;
     }
+
+    private static bool BillComing(Step step) =>
+        FindObjectsByType<BulletBill>().Length > 0
+        || (step.station != null && step.station.GetComponentsInChildren<BulletBillCannon>().Any(c => c.IsWarning));
 }

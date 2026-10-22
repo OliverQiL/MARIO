@@ -138,6 +138,12 @@ public static class GameContentSetup
         var hardReset = manager.GetComponent<HardReset>();
         if (hardReset == null) hardReset = manager.AddComponent<HardReset>();
         Set(hardReset, "arCamera", Camera.main);
+        // Jumps and squats from the phone's own height tracking, alongside the classifier's.
+        var motion = manager.GetComponent<PhoneMotionDetector>();
+        if (motion == null) motion = manager.AddComponent<PhoneMotionDetector>();
+        Set(motion, "arCamera", Camera.main);
+        Set(motion, "eventResolver", resolver);
+        Set(motion, "sessionManager", session);
         var audio = manager.GetComponent<AudioManager>();
         if (audio == null) audio = manager.AddComponent<AudioManager>(); // adds its AudioSource
         var am = new SerializedObject(audio);

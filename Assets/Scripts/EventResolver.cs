@@ -101,6 +101,8 @@ public class EventResolver : MonoBehaviour
     /// <summary>The classifier's "none of the six" class: movement that isn't a game action. Resolved quietly, ignored.</summary>
     public const string IdleAction = "idle";
     public const string RepeatReason = "repeat of the same motion";
+    /// <summary>session_id of the jumps and squats PhoneMotionDetector sees in the phone's own tracking.</summary>
+    public const string PhoneMotionSession = "phone-motion";
 
     /// <summary>The v2 action labels the classifier sends (Docs/GATEWAY_PROTOCOL.md).</summary>
     public static readonly string[] Actions = { "jump", "stomp", "squat", "throw", "punch", "clap" };
@@ -123,7 +125,11 @@ public class EventResolver : MonoBehaviour
     [Tooltip("A run of reports of one action lasting longer than this counts as a new motion " +
              "(e.g. two stomps back to back). Longer than the classifier's 1 s window.")]
     [SerializeField] private float repeatMaxRunSeconds = 1.2f;
+    [Tooltip("The classifier and the phone's own tracking (PhoneMotionDetector) can both report one jump or squat, " +
+             "the classifier up to about a second later: the other source's report of the same action within this long is the same motion.")]
+    [SerializeField] private float crossSourceSeconds = 1.5f;
     private readonly Dictionary<string, (double start, double last)> _runs = new();
+    private readonly Dictionary<string, (double time, bool phone)> _lastNewMotion = new();
     /// <summary>Seconds, for the repeat filter. Tests replace it with a controlled clock.</summary>
     public Func<double> Clock = () => Time.realtimeSinceStartupAsDouble;
 
@@ -191,7 +197,7 @@ public class EventResolver : MonoBehaviour
         // Gate 2 (first, in every state) — repeats: the gateway sends every classification, so one
         // motion arrives as several events. Only the first of a run is processed; the rest are
         // ACKed and ignored. Low-confidence reports don't count (they're rejected below as usual).
-        if (evt.confidence >= minConfidence && IsRepeat(evt.actionLabel))
+        if (evt.confidence >= minConfidence && IsRepeat(evt))
             return new ResolutionResult(2, RepeatReason);
 
         // Game over / game clear: only a (deliberate, later) jump does anything — it restarts.
@@ -348,12 +354,16 @@ public class EventResolver : MonoBehaviour
     }
 
     /// <summary>
-    /// Records a report of <paramref name="action"/> and says whether it continues a run already
-    /// processed: the previous report was under repeatReleaseSeconds ago and the run has lasted
-    /// under repeatMaxRunSeconds. Otherwise it starts a new run (a new motion).
+    /// Records a report and says whether it's another report of a motion already processed:
+    /// it continues a run (the previous report of that action was under repeatReleaseSeconds
+    /// ago and the run has lasted under repeatMaxRunSeconds), or the other source (classifier
+    /// vs the phone's own tracking) started this action under crossSourceSeconds ago.
+    /// Otherwise it's a new motion.
     /// </summary>
-    private bool IsRepeat(string action)
+    private bool IsRepeat(GameEvent evt)
     {
+        string action = evt.actionLabel;
+        bool phone = evt.sessionId == PhoneMotionSession;
         double now = Clock();
         if (_runs.TryGetValue(action, out var run) && now - run.last < repeatReleaseSeconds && now - run.start < repeatMaxRunSeconds)
         {
@@ -361,8 +371,14 @@ public class EventResolver : MonoBehaviour
             return true;
         }
         _runs[action] = (now, now);
+        if (_lastNewMotion.TryGetValue(action, out var other) && other.phone != phone && now - other.time < crossSourceSeconds)
+            return true; // the same jump/squat, seen by the other source too
+        _lastNewMotion[action] = (now, phone);
         return false;
     }
+
+    /// <summary>The phone still sees this motion (a held squat): the classifier's reports of it stay repeats.</summary>
+    public void NotePhoneMotionOngoing(string action) => _lastNewMotion[action] = (Clock(), true);
 
     private static string Key(GameEvent evt) => $"{evt.sessionId}/{evt.eventId}";
 

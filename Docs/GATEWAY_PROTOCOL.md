@@ -45,7 +45,7 @@ Sent for **every** `GAME_EVENT` received, including duplicates. The gateway can 
 ```
 `outcome` is `resolved` or `rejected`. `gate` is 1–5 on a rejection and 6 on success. The gates are:
 1. session not ready (scanning, relocalising, stage transition)
-2. invalid (low confidence, duplicate `event_id`, or a repeat of the same motion)
+2. invalid (low confidence, duplicate `event_id`, or a repeat of the same motion — including a jump or squat the phone already detected itself from its tracking within 1.5 s, see `GAME_DESIGN.md`)
 3. not permitted (for example `throw` with nothing to throw: no shell held and no fire flower)
 4. no target in range or facing
 5. target not actionable

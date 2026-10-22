@@ -605,7 +605,66 @@ public static class GameplaySmokeTest
         Check(large.GetComponent<StageFootprint>().FootprintArea > standard.GetComponent<StageFootprint>().FootprintArea
               && standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "templates are tried Large, Standard, Compact");
 
+        PhoneMotionChecks();
         TrainingChecks();
+    }
+
+    /// <summary>Jumps and squats from the phone's own head-height tracking (PhoneMotionDetector).</summary>
+    private static void PhoneMotionChecks()
+    {
+        s_State.BeginStage();
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
+        var motion = new GameObject("PhoneMotion").AddComponent<PhoneMotionDetector>();
+        SetField(motion, "eventResolver", s_Resolver);
+        const float dt = 1f / 60f;
+        System.Collections.Generic.List<string> Play(float seconds, System.Func<float, float> headY)
+        {
+            var seen = new System.Collections.Generic.List<string>();
+            for (float t = 0f; t < seconds; t += dt)
+            {
+                s_Now += dt;
+                if (motion.Tick(dt, headY(t)) is { } a) seen.Add(a);
+            }
+            return seen;
+        }
+
+        var quiet = Play(2f, _ => 1.5f);
+        quiet.AddRange(Play(3f, t => 1.5f + 0.03f * Mathf.Sin(t * Mathf.PI * 4f)));              // walking bob, 3 cm
+        quiet.AddRange(Play(1f, t => 1.5f - 0.12f * t));                                            // looking down at the feet
+        quiet.AddRange(Play(2f, _ => 1.38f));
+        quiet.AddRange(Play(1f, t => 1.38f + 0.12f * t));
+        quiet.AddRange(Play(1.5f, t => 1.5f + 0.08f * Mathf.Clamp01(t)));                           // slowly onto tiptoe
+        quiet.AddRange(Play(1.5f, t => 1.58f - 0.08f * Mathf.Clamp01(t)));
+        Check(quiet.Count == 0 && Mathf.Abs(motion.Baseline - 1.5f) < 0.03f, $"phone motion: standing, walking bob, looking down and tiptoe detect nothing (got {string.Join(",", quiet)})");
+
+        var jump = Play(0.25f, t => 1.5f + 0.22f * (t / 0.25f));                                    // up ~0.9 m/s
+        jump.AddRange(Play(0.25f, t => 1.72f - 0.22f * (t / 0.25f)));
+        Check(jump.Count == 1 && jump[0] == "jump" && s_State.IsAirborne, "phone motion: a 22 cm jump is one jump (the player is airborne)");
+
+        s_Now += 0.6; // the classifier is slower: its report arrives about a second after the jump
+        var late = s_Resolver.Resolve(new GameEvent("jump", 0.95f, $"t-{s_NextId++}", "test"));
+        Check(late.IsRepeat, "the classifier's report of the same jump, ~1 s later, is a repeat", late);
+        jump.AddRange(Play(1f, _ => 1.5f));
+
+        var squat = Play(0.5f, t => 1.5f - 0.5f * (t / 0.5f));
+        squat.AddRange(Play(3f, _ => 1.0f));                                                        // and stays down
+        Check(squat.Count == 1 && squat[0] == "squat" && motion.IsSquatting && s_State.IsDucked, "phone motion: a squat is one squat, and holding it keeps the player ducked");
+        s_Now += 0.8;
+        late = s_Resolver.Resolve(new GameEvent("squat", 0.95f, $"t-{s_NextId++}", "test"));
+        Check(late.IsRepeat, "the classifier's squat during the phone's held squat is a repeat", late);
+        var up = Play(0.5f, t => 1.0f + 0.5f * (t / 0.5f));
+        up.AddRange(Play(1f, _ => 1.5f));
+        Check(up.Count == 0 && !motion.IsSquatting, "standing back up ends the squat (no jump)");
+
+        var again = Play(0.25f, t => 1.5f + 0.2f * (t / 0.25f));
+        again.AddRange(Play(0.25f, t => 1.7f - 0.2f * (t / 0.25f)));
+        Check(again.Count == 1 && again[0] == "jump", "a later jump is detected again");
+        var teleport = Play(0.5f, _ => 1.5f);
+        teleport.AddRange(Play(2f, _ => 3.0f)); // tracking relocalises 1.5 m higher in one frame
+        teleport.AddRange(Play(1f, _ => 3.0f - 0.5f)); // and the same again downward, within warm-up
+        Check(teleport.Count == 0, "a tracking jump (start-up, relocalisation) is neither a jump nor a squat");
+        UnityEngine.Object.DestroyImmediate(motion.gameObject);
     }
 
     /// <summary>The training round: seven stations shown one at a time, infinite lives, tips, timeouts, the flag.</summary>

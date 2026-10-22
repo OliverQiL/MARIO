@@ -351,7 +351,8 @@ public class HUDController : MonoBehaviour
 
         // Debug corner: what the classifier last said. Idle (several a second) and repeats would hide it.
         if (lastActionText != null && evt.actionLabel != EventResolver.IdleAction && !result.IsRepeat)
-            lastActionText.text = $"LAST ACTION: {evt.actionLabel.ToUpperInvariant()} {evt.confidence:F2} " +
+            lastActionText.text = $"LAST ACTION: {evt.actionLabel.ToUpperInvariant()} " +
+                                  (evt.sessionId == EventResolver.PhoneMotionSession ? "(PHONE) " : evt.sessionId == "editor" ? "(KEY) " : $"{evt.confidence:F2} ") +
                                   $"<color=#{(result.Resolved ? "4CFF66>OK" : $"FFB020>GATE {result.Gate}")}</color>";
 
         // Training: the classifier read a move this step isn't about — say what it saw.

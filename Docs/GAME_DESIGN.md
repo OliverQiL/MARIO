@@ -237,3 +237,13 @@ After every scan (first launch and every hard reset, not after a game over), a t
 - **Never stuck:** a step not done in 40 s says "Let's move on" and the next starts; its leftover enemies and cannon are cleared. The flag doesn't time out (it's the way out); it can't be grabbed while hidden.
 - **Then 1-1, fresh:** "TRAINING COMPLETE!", the iris wipe, and 1-1 with score 0, 3 lives and no flower; no clear bonus or stage count for training. No skip.
 
+## Jumps and squats from the phone's own tracking (2026-10-22)
+
+The classifier is still unreliable at jumps and squats, so the phone also detects them from its tracked height (in the headset, that's the head): `PhoneMotionDetector`.
+
+- **Jump:** the head rises more than **10 cm** above standing height, moving up faster than **0.5 m/s**. One jump; it re-arms after landing. Walking bob (2–4 cm), looking down and slowly rising onto tiptoe don't count.
+- **Squat:** the head drops more than **28 cm** below standing height. One squat, and **while the player stays down they stay ducked** (Bullet Bills and Bowser's fire miss) until they rise above −20 cm.
+- **Standing height:** after the scan, the floor plus the calibrated eye height; before it, the head height while standing still. It follows slow tracking drift only while standing still near it, so a held squat is never absorbed. A height change too fast for a person (over 25 cm in a frame: tracking starting or relocalising) restarts it, with a 1 s warm-up.
+- **One motion counts once:** its events go through the same gates as the classifier's (session `phone-motion`). The other source's report of the same action within **1.5 s** (and the classifier's squats during a held squat) are repeats. Nothing is sent to the gateway for them; haptics work as usual.
+- **When:** on the phone in headset mode (handheld, raising the arm would look like a jump), and always in the Editor. The HUD's LAST ACTION shows `(PHONE)` for these.
+
