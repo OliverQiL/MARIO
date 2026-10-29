@@ -134,12 +134,12 @@ public class EventResolver : MonoBehaviour
     public Func<double> Clock = () => Time.realtimeSinceStartupAsDouble;
 
     [Header("Gate 4 - Targeting (metres / degrees, horizontal)")]
-    [SerializeField] private float stompRange = 0.7f;
+    [SerializeField] private float stompRange = 1.0f;
     [SerializeField] private float stompHalfAngle = 70f;
     [SerializeField] private float strikeRange = 0.8f;
     [SerializeField] private float strikeHalfAngle = 35f;
     [Tooltip("Clap: how far in front a shell on the floor can be picked up from.")]
-    [SerializeField] private float clapRange = 0.8f;
+    [SerializeField] private float clapRange = 1.0f;
     [SerializeField] private float clapHalfAngle = 60f;
     [Tooltip("Max horizontal offset of an overhead block for a jump to hit it.")]
     [SerializeField] private float jumpBlockRadius = 0.5f;
@@ -328,6 +328,27 @@ public class EventResolver : MonoBehaviour
     /// Actionable targets are preferred, so Gate 5 only fires when the only
     /// candidate in reach is spent.
     /// </summary>
+    public float StompRange => stompRange;
+    public float StompHalfAngle => stompHalfAngle;
+    public float ClapRange => clapRange;
+    public float ClapHalfAngle => clapHalfAngle;
+
+    /// <summary>
+    /// What a stomp or clap would hit right now (the same targeting as Gates 4-5), or null:
+    /// for the range ring (RangeRing), so players can see when one will register.
+    /// </summary>
+    public InteractableBase TargetInReach(string action)
+    {
+        if (arCamera == null) return null;
+        InteractableBase target = action switch
+        {
+            "stomp" => FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f),
+            "clap" => gameState != null && gameState.Held != HeldItem.None ? null : FindTarget("clap", clapRange, clapHalfAngle, dy => dy < -0.5f),
+            _ => null,
+        };
+        return target != null && target.IsActionableFor(action) ? target : null;
+    }
+
     private InteractableBase FindTarget(string label, float range, float halfAngle, Func<float, bool> heightFilter)
     {
         var eye = arCamera.transform.position;

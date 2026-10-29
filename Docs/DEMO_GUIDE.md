@@ -37,6 +37,8 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - 3 → squat to dodge a Bullet Bill
    - Walk to the flag and **jump** → STAGE CLEAR; the view irises out, the next stage is re-anchored and irises in.
    - The bottom-right **LAST ACTION** shows each class received, its confidence and the outcome (`(KEY)` for keys, `(PHONE)` for the phone's own jump/squat detection).
+   - Red floor arrows point at approaching enemies (and an arrow at the edge of the view when one is out of sight); the ring round your feet turns **green** when a stomp would land and **gold** for a shell to clap.
+   - Each stage appears centred in the scanned floor, facing away from you with its flag on the far side.
    - The campaign runs 1-1 to 2-4; 2-4 is Bowser's castle (punch, fireball or shell him; squat his fire), and its axe is GAME CLEAR.
 5. **Dummy data, randomised:** quit the keys gateway (`q`) and run `python3 tools/mock_gateway.py --dummy --every 2`. Random packets arrive and the HUD shows each outcome: accepted (green), refused with a reason (orange), low confidence (grey), duplicates silent. The terminal shows the matching ACK colour and the gate that decided it.
 6. **"Change the dummy packets":** edit `tools/dummy_packets.json` (for example add `{ "action": "squat", "confidence": 0.3 }` or change an action). The gateway **re-reads it on the next pick**, with no restart, and logs `loaded N dummy packets`. Restarting the gateway also works.
@@ -91,11 +93,13 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | What | Where | Key points |
 |---|---|---|
 | World-locked checkpoint | `LevelGenerator.CreateCheckpointAnchorAsync` | An `ARAnchor` on the floor at the player's position, yaw only; re-anchored every stage, which bounds drift |
-| Placement search | `LevelGenerator.TryFindValidPlacement` | Rings to 6 m and 15° steps, forward arc first. Each candidate must: have detected floor under all 4 corners and the flag; keep clear of the player; need a real walk to the goal; and (LiDAR) not overlap the room mesh. |
-| Fitting the room | `LevelGenerator.campaignScales`, `CompressLayout` | The designed stage at 100 / 85 / 70 / 55 %, then the fallback templates |
+| Placement search | `LevelGenerator.TryFindValidPlacement`, `ClearMargin` | Rings to 6 m in 15° steps; the stage always faces away from the player (flag on the far side). Each candidate must have detected floor under all 4 corners and the flag, keep clear of the player, need a real walk to the goal, and (LiDAR) not overlap the room mesh; the **best-centred** one wins (most clear floor all round, up to 1 m), then it's nudged to even the margins. |
+| Fitting the room | `LevelGenerator.campaignScales`, `CompressLayout`, `preferredMargin` | The designed stage at 100 / 85 / 70 / 55 %, then the fallback templates; a size with less than 0.3 m clear all round gives way to a smaller one that's better centred |
 | Stage content | `StageDesigns` (data) → `GameContentSetup` → prefabs | The training lane (`Tutorial`, 7 stations) and the campaign 1-1 to 2-4; positions in metres on the floor; gameplay objects at 87 %, scenery sized to fill the room |
 | Body-relative heights | `EyeHeightPlacement` | ? block eyes + 0.35 m; brick 78 %; coin 60 % of eye height |
 | Visual effects | `Burst`, `EnemyWaddle`, `Spinner`, `StageGoal`, `ScreenTransition`, `ScorePopup` | Particles, knock-outs, flag slide, confetti, the iris wipe between stages and through pipes, +score popups |
+| Enemy indicator | `EnemyIndicator` | Red floor arrows towards the nearest approaching enemies, and an edge-of-view arrow when one is out of sight |
+| Range ring | `RangeRing` | A floor ring at stomp/clap reach round the feet: green when a stomp would land, gold for a shell to clap |
 | Headset view | `HeadsetView` + `HeadsetLens.shader` | Side-by-side eyes, lens pre-distortion, HUD safe frame |
 
 ## 5. Application state engine: where state lives and how it reaches the visualizer

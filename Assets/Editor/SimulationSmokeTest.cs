@@ -207,6 +207,18 @@ public static class SimulationSmokeTest
             bool handedOver = s_TrainingSeen && stage != null && stage.name.StartsWith("Stage 1-1") && gs != null && !gs.InTraining && gs.StageIndex == 1;
             Debug.Log($"[SimulationSmokeTest] Training round played first: {s_TrainingSeen}; then {(stage != null ? stage.name : "NONE")}, score {gs?.Score}, lives {gs?.Lives}.");
             ok &= handedOver;
+
+            // Placement: facing away from the player (they're behind its start edge, on its axis), the goal on the far side.
+            if (stage != null && footprint != null && level != null)
+            {
+                var player = stage.transform.InverseTransformPoint(Camera.main.transform.position);
+                var goal = stage.GetComponentInChildren<StageGoal>(true);
+                float goalZ = goal != null ? stage.transform.InverseTransformPoint(goal.transform.position).z : float.NaN;
+                bool facingAway = player.z < -footprint.depth * 0.5f && Mathf.Abs(player.x) < 0.3f && goalZ > 0f;
+                Debug.Log($"[SimulationSmokeTest] Placement: player at local ({player.x:F2}, {player.z:F2}) of a {footprint.width:F2} x {footprint.depth:F2} m stage, goal at z {goalZ:F2}; " +
+                          $"{level.LastPlacementMargin:F1} m clear all round; facing away with the goal on the far side: {facingAway}.");
+                ok &= facingAway;
+            }
             if (SessionState.GetBool(ResetKey, false))
             {
                 string reset = SessionState.GetString(ResetResultKey, "");

@@ -50,6 +50,8 @@ public static class GameContentSetup
     public const string CoinPopPath = PrefabDir + "/CoinPop.prefab";
     public const string StandardStagePath = StageDir + "/StandardStage.prefab";
     public const string TrainingStagePath = StageDir + "/TrainingStage.prefab";
+    public const string EnemyArrowPath = PrefabDir + "/EnemyArrow.prefab";
+    private const string ArrowMeshPath = PrefabDir + "/ArrowMesh.asset";
     public const string CompactStagePath = StageDir + "/CompactStage.prefab";
     public const string LargeStagePath = StageDir + "/LargeStage.prefab";
     public const string CampaignDir = StageDir + "/Campaign";
@@ -138,6 +140,18 @@ public static class GameContentSetup
         var hardReset = manager.GetComponent<HardReset>();
         if (hardReset == null) hardReset = manager.AddComponent<HardReset>();
         Set(hardReset, "arCamera", Camera.main);
+        // Red arrows showing where approaching enemies are (on the floor, and at the edge of the view).
+        var indicator = manager.GetComponent<EnemyIndicator>();
+        if (indicator == null) indicator = manager.AddComponent<EnemyIndicator>();
+        Set(indicator, "arrowPrefab", BuildEnemyArrow(m));
+        Set(indicator, "arCamera", Camera.main);
+        // A ring on the floor at stomp/clap reach that lights up when one would register.
+        var ring = manager.GetComponent<RangeRing>();
+        if (ring == null) ring = manager.AddComponent<RangeRing>();
+        Set(ring, "eventResolver", resolver);
+        Set(ring, "arCamera", Camera.main);
+        Set(ring, "sessionManager", session);
+        Set(ring, "material", m.RangeRing);
         // Jumps and squats from the phone's own height tracking, alongside the classifier's.
         var motion = manager.GetComponent<PhoneMotionDetector>();
         if (motion == null) motion = manager.AddComponent<PhoneMotionDetector>();
@@ -256,7 +270,7 @@ public static class GameContentSetup
         hide.GetArrayElementAtIndex(0).objectReferenceValue = head.gameObject;
         hide.GetArrayElementAtIndex(1).objectReferenceValue = feet.gameObject;
         so.ApplyModifiedPropertiesWithoutUndo();
-        return Save(Shrink(root), KoopaPath);
+        return Save(Enemy(root), KoopaPath);
     }
 
     /// <summary>Bullet Bill: glossy black bullet, round nose, flared tail, big white eyes and white gloves.</summary>
@@ -277,7 +291,7 @@ public static class GameContentSetup
             Visual(PrimitiveType.Cube, side < 0 ? "LidL" : "LidR", root.transform, new Vector3(0.05f * side, 0.088f, 0.18f), new Vector3(0.085f, 0.03f, 0.06f), m.BillBody, new Vector3(0f, 0f, 22f * side));
             Visual(PrimitiveType.Sphere, side < 0 ? "GloveL" : "GloveR", root.transform, new Vector3(0.125f * side, -0.03f, 0.0f), new Vector3(0.06f, 0.055f, 0.07f), m.White);
         }
-        return Save(Shrink(root), BulletBillPath);
+        return Save(Enemy(root), BulletBillPath);
     }
 
     /// <summary>A Bill Blaster tower: column from the floor to a turning head at head height (both resized at runtime).</summary>
@@ -340,7 +354,7 @@ public static class GameContentSetup
             Visual(PrimitiveType.Cube, side < 0 ? "FangL" : "FangR", model, new Vector3(0.032f * side, 0.115f, 0.108f), new Vector3(0.02f, 0.024f, 0.012f), m.White);
             Visual(PrimitiveType.Sphere, side < 0 ? "FootL" : "FootR", model, new Vector3(0.06f * side, 0.022f, 0.02f), new Vector3(0.09f, 0.045f, 0.13f), m.GoombaFeet);
         }
-        return Save(Shrink(root), GoombaPath);
+        return Save(Enemy(root), GoombaPath);
     }
 
     /// <summary>Fireball: a glowing orange ball with flame licks, spinning as it flies.</summary>
@@ -372,6 +386,41 @@ public static class GameContentSetup
         Visual(PrimitiveType.Cylinder, "Rim", model, new Vector3(0f, 0.04f, 0f), new Vector3(0.28f, 0.016f, 0.3f), m.White);
         Visual(PrimitiveType.Cylinder, "Belly", model, new Vector3(0f, 0.025f, 0f), new Vector3(0.24f, 0.012f, 0.26f), m.KoopaBelly);
         return Save(Shrink(root), ThrownShellPath);
+    }
+
+    /// <summary>A flat red arrow (shaft and a diamond head), +Z the way it points; EnemyIndicator lays it on the floor or at the edge of the view.</summary>
+    private static GameObject BuildEnemyArrow(Mats m)
+    {
+        var root = new GameObject("EnemyArrow");
+        var shape = Visual(PrimitiveType.Quad, "Arrow", root.transform, Vector3.zero, Vector3.one, m.EnemyArrow);
+        shape.GetComponent<MeshFilter>().sharedMesh = ArrowMesh();
+        return Save(root, EnemyArrowPath);
+    }
+
+    /// <summary>A flat arrow in the XZ plane facing up (+Y): a shaft and a wide triangular head, 0.3 m long, tip at +Z.</summary>
+    private static Mesh ArrowMesh()
+    {
+        var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(ArrowMeshPath);
+        if (mesh == null)
+        {
+            mesh = new Mesh { name = "Arrow" };
+            AssetDatabase.CreateAsset(mesh, ArrowMeshPath);
+        }
+        var v = new[]
+        {
+            new Vector3(-0.035f, 0f, -0.15f), new Vector3(-0.035f, 0f, 0.02f), new Vector3(0.035f, 0f, 0.02f), new Vector3(0.035f, 0f, -0.15f), // shaft
+            new Vector3(-0.1f, 0f, 0.02f), new Vector3(0f, 0f, 0.15f), new Vector3(0.1f, 0f, 0.02f),                                          // head
+        };
+        mesh.Clear();
+        mesh.SetVertices(v);
+        var normals = new Vector3[v.Length];
+        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
+        mesh.SetNormals(normals);
+        mesh.SetUVs(0, new Vector2[v.Length]);
+        mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3, 4, 5, 6 }, 0); // clockwise seen from above
+        mesh.RecalculateBounds();
+        EditorUtility.SetDirty(mesh);
+        return mesh;
     }
 
     /// <summary>A small Koopa shell in the bottom-right of the player's view, shown while they hold one (HeldItemView on the AR camera).</summary>
@@ -839,7 +888,7 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Flame", model, Vector3.zero, new Vector3(0.16f, 0.16f, 0.3f), m.Fire);
         Visual(PrimitiveType.Sphere, "Core", model, new Vector3(0f, 0f, 0.05f), new Vector3(0.1f, 0.1f, 0.18f), m.FireCore);
         Visual(PrimitiveType.Sphere, "Tail", model, new Vector3(0f, 0f, -0.18f), new Vector3(0.09f, 0.09f, 0.2f), m.Fire);
-        return Save(Shrink(root), BossFlamePath);
+        return Save(Enemy(root), BossFlamePath);
     }
 
     /// <summary>Bowser: a spiked green shell on a big yellow body, horned head with a red mane, white-ringed shell; about 1 m tall.</summary>
@@ -884,7 +933,7 @@ public static class GameContentSetup
         so.FindProperty("hitEffect").objectReferenceValue = Effect(FireBurstPath);
         so.FindProperty("defeatEffect").objectReferenceValue = Effect(ConfettiPath);
         so.ApplyModifiedPropertiesWithoutUndo();
-        return Save(Shrink(root), BowserPath);
+        return Save(Enemy(root), BowserPath);
     }
 
     /// <summary>The final goal: an axe on a stone pedestal. Locked while Bowser stands; reaching it ends the game (the axe drops).</summary>
@@ -1144,6 +1193,15 @@ public static class GameContentSetup
     /// </summary>
     private const float ObjectScale = 0.87f;
 
+    /// <summary>Enemies are built this much larger again (Oliver 2026-10-29: easier to spot). Hit and contact distances are world metres and don't change.</summary>
+    private const float EnemyGrowth = 1.18f;
+
+    private static GameObject Enemy(GameObject root)
+    {
+        root.transform.localScale = Vector3.one * (ObjectScale * EnemyGrowth);
+        return root;
+    }
+
     private static T Shrink<T>(T obj) where T : Object
     {
         var t = obj is GameObject go ? go.transform : obj as Transform;
@@ -1264,6 +1322,8 @@ public static class GameContentSetup
         public readonly Material BowserHair = Mat("BowserHair", new Color(0.95f, 0.35f, 0.1f));
         public readonly Material AxeHandle = Mat("AxeHandle", new Color(0.75f, 0.15f, 0.1f));
         public readonly Material BlobShadow = TransparentMat("BlobShadow", PixelArt.BlobShadow());
+        public readonly Material RangeRing = Mat("RangeRing", Color.white, emission: new Color(0.6f, 0.6f, 0.6f), smoothness: 0f);
+        public readonly Material EnemyArrow = Mat("EnemyArrow", new Color(1f, 0.12f, 0.08f), emission: new Color(0.9f, 0.05f, 0.02f), smoothness: 0.2f);
 
         /// <summary>Unlit, alpha-blended, no depth write: for soft shadows on the floor.</summary>
         private static Material TransparentMat(string name, Texture2D texture)

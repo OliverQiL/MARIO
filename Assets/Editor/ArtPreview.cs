@@ -121,6 +121,42 @@ public static class ArtPreview
             var stage = Object.Instantiate(Load(GameContentSetup.CampaignStagePath(design.Name)));
             ShootLayout(stage, Path.Combine(outDir, $"stage_{design.Name}.png"), design.Depth / 4f);
         }
+        // The enemy indicator: a Goomba and the red floor arrow pointing at it.
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var arrowShot = new GameObject("ArrowShot");
+        var goomba = Object.Instantiate(Load(GameContentSetup.GoombaPath), arrowShot.transform);
+        goomba.transform.SetLocalPositionAndRotation(new Vector3(0.3f, 0f, 0.6f), Quaternion.Euler(0f, 200f, 0f));
+        var arrow = Object.Instantiate(Load(GameContentSetup.EnemyArrowPath), arrowShot.transform);
+        arrow.transform.SetLocalPositionAndRotation(new Vector3(0f, 0.01f, 0.05f), Quaternion.LookRotation(new Vector3(0.3f, 0f, 0.55f)));
+        arrow.transform.localScale = Vector3.one * 1.2f;
+        ShootLayout(arrowShot, Path.Combine(outDir, "enemy_arrow.png"), 0.35f);
+
+        // The range ring, green: a Goomba within stomp reach in front of the player.
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var ringShot = new GameObject("RingShot");
+        var player = new GameObject("Player", typeof(Camera));
+        player.GetComponent<Camera>().enabled = false;
+        player.transform.SetPositionAndRotation(new Vector3(0f, 1.55f, 0f), Quaternion.LookRotation(new Vector3(0f, -0.4f, 1f)));
+        var manager = new GameObject("GameManager");
+        var gs = manager.AddComponent<GameStateManager>();
+        var resolver = manager.AddComponent<EventResolver>();
+        SetPrivate(resolver, "gameState", gs);
+        SetPrivate(resolver, "arCamera", player.GetComponent<Camera>());
+        gs.BeginStage();
+        var near = Object.Instantiate(Load(GameContentSetup.GoombaPath), ringShot.transform);
+        near.transform.SetLocalPositionAndRotation(new Vector3(0.25f, 0f, 0.75f), Quaternion.Euler(0f, 190f, 0f));
+        typeof(InteractableBase).GetMethod("OnEnable", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).Invoke(near.GetComponent<Goomba>(), null);
+        var ring = manager.AddComponent<RangeRing>();
+        SetPrivate(ring, "eventResolver", resolver);
+        SetPrivate(ring, "arCamera", player.GetComponent<Camera>());
+        SetPrivate(ring, "material", AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/RangeRing.mat"));
+        ring.Tick(0.05f);
+        var ringVisual = GameObject.Find("RangeRingVisual");
+        if (ringVisual != null) ringVisual.transform.SetParent(ringShot.transform, true);
+        ShootLayout(ringShot, Path.Combine(outDir, "range_ring.png"), 0.75f);
+        Object.DestroyImmediate(manager);
+        Object.DestroyImmediate(player);
+
         // The training lane with every station shown at once (in play they appear one at a time).
         EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
         var training = Object.Instantiate(Load(GameContentSetup.TrainingStagePath));
@@ -276,4 +312,7 @@ public static class ArtPreview
         Object.DestroyImmediate(tex);
         Object.DestroyImmediate(camGO);
     }
+
+    private static void SetPrivate(object target, string field, object value) =>
+        target.GetType().GetField(field, System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(target, value);
 }

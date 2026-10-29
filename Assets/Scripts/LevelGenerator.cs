@@ -13,13 +13,16 @@ using UnityEngine.XR.ARSubsystems;
 /// complete, creates a single world-locked checkpoint anchor at the
 /// player's position projected onto the floor, retaining only yaw.
 ///
-/// Step 3 (this pass): once the checkpoint anchor exists, searches for a
-/// free floor region matching a stage template's footprint — preferring
-/// the anchor's forward arc, falling back through rotated placements and
-/// smaller "compact" templates, and validating each candidate with a
-/// Physics.CheckBox test against the scanned mesh's colliders. If nothing
-/// fits anywhere, it signals OnPlacementFailed (for an HUD move-prompt)
-/// and retries automatically after a short delay.
+/// Step 3: once the checkpoint anchor exists, searches for a free floor
+/// region for the stage's footprint. Every stage faces directly away from
+/// the player (its start nearest them, its goal on the far side), and of all
+/// the spots that fit (detected floor under the footprint and goal, clear of
+/// the player and, with LiDAR, of the room mesh) it takes the best-centred
+/// one: the largest clear margin of floor round the footprint, refined by
+/// small nudges. A fit with less than preferredMargin to spare first tries
+/// the compressed scales and fallback templates, then takes the
+/// best-centred fit found. If nothing fits anywhere, it signals
+/// OnPlacementFailed (for an HUD move-prompt) and retries after a delay.
 ///
 /// On LiDAR devices the scanned room mesh (ARMeshManager, on its own
 /// ARMesh layer) is what the CheckBox tests against. Because that mesh
@@ -76,12 +79,22 @@ public class LevelGenerator : MonoBehaviour
     [Header("Placement Search")]
     [Tooltip("Distances (metres) from the checkpoint anchor to try, closest first.")]
     [SerializeField] private float[] searchDistances = { 0.5f, 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f, 5.5f, 6f };
-    [Tooltip("Half-angle (degrees) either side of the anchor's forward direction searched before expanding to the full circle.")]
+    [Tooltip("Half-angle (degrees) either side of where the player faces: candidates there get forwardBonus, so the stage tends to appear in view.")]
     [SerializeField] private float forwardArcHalfAngle = 60f;
     [Tooltip("Angular step (degrees) between search directions.")]
     [SerializeField] private float angleStep = 15f;
-    [Tooltip("Yaw offsets tried at each candidate, relative to facing directly away from the player (0 = stage's +Z points away, so its goal is on the far side).")]
-    [SerializeField] private float[] rotationCandidates = { 0f, 90f, 270f, 180f };
+
+    [Header("Centring")]
+    [Tooltip("The clear floor margin round the footprint is measured up to this (metres): the bigger, the more centred. Beyond it, closer to the player wins.")]
+    [SerializeField] private float centringMargin = 1f;
+    [Tooltip("Resolution (metres) of the margin measurement.")]
+    [SerializeField] private float centringStep = 0.1f;
+    [Tooltip("A fit with at least this margin (metres) is taken at once; with less, smaller scales and fallbacks are tried first and the best-centred fit overall wins.")]
+    [SerializeField] private float preferredMargin = 0.3f;
+    [Tooltip("Score bonus (metres of margin) for a spot within the forward arc, so the stage appears where the player is looking when it can.")]
+    [SerializeField] private float forwardBonus = 0.15f;
+    [Tooltip("Score penalty per metre of distance from the player, so among equally centred spots the nearer wins.")]
+    [SerializeField] private float distancePenalty = 0.05f;
     [Tooltip("Minimum horizontal gap (metres) between the player and the nearest edge of a placed stage's footprint.")]
     [SerializeField] private float playerClearance = 0.3f;
     [Tooltip("The goal must be at least this far (metres) beyond its reach radius from the player when the stage appears, so it takes deliberate walking.")]
@@ -329,24 +342,34 @@ public class LevelGenerator : MonoBehaviour
                      .OrderByDescending(t => t.GetComponent<StageFootprint>().FootprintArea))
             candidates.Add((t, 1f));
 
+        // Take the first (most preferred) layout that fits with a comfortable margin; otherwise
+        // the best-centred fit of any of them (ties go to the more preferred).
+        (GameObject template, float scale, Pose pose, float margin)? best = null;
         foreach (var (template, scale) in candidates)
         {
             var footprint = template.GetComponent<StageFootprint>();
             _searchScale = scale;
-            bool found = TryFindValidPlacement(footprint, out var pose);
+            bool found = TryFindValidPlacement(footprint, out var pose, out float margin);
             _searchScale = 1f;
             if (!found) continue;
-
-            if (template != trainingStage) _trainingPending = false;
-            CurrentStage = Instantiate(template, pose.position, pose.rotation, CheckpointAnchor.transform);
-            if (!Mathf.Approximately(scale, 1f)) CompressLayout(CurrentStage, scale);
-            Debug.Log($"[LevelGenerator] Placed '{template.name}'{(Mathf.Approximately(scale, 1f) ? "" : $" at {scale:P0} size")} at {pose.position}, yaw {pose.rotation.eulerAngles.y:F0}° — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
-            StartStage();
-            return true;
+            Debug.Log($"[LevelGenerator] '{template.name}' at {scale:P0} fits with {margin:F1} m clear all round.");
+            if (best == null || margin > best.Value.margin + 0.01f) best = (template, scale, pose, margin);
+            if (margin >= preferredMargin) break;
         }
+        if (best is not { } chosen) return false;
 
-        return false;
+        if (chosen.template != trainingStage) _trainingPending = false;
+        CurrentStage = Instantiate(chosen.template, chosen.pose.position, chosen.pose.rotation, CheckpointAnchor.transform);
+        if (!Mathf.Approximately(chosen.scale, 1f)) CompressLayout(CurrentStage, chosen.scale);
+        LastPlacementMargin = chosen.margin;
+        Debug.Log($"[LevelGenerator] Placed '{chosen.template.name}'{(Mathf.Approximately(chosen.scale, 1f) ? "" : $" at {chosen.scale:P0} size")} at {chosen.pose.position}, yaw {chosen.pose.rotation.eulerAngles.y:F0}° (facing away from the player), " +
+                  $"{chosen.margin:F1} m clear floor all round — skipped {SearchSummary()} ({MeshChunkCount} mesh chunks).");
+        StartStage();
+        return true;
     }
+
+    /// <summary>The clear floor margin (metres, capped at centringMargin) round the last stage placed.</summary>
+    public float LastPlacementMargin { get; private set; }
 
     /// <summary>
     /// Fits a layout into less floor: moves its pieces closer together (their
@@ -372,63 +395,139 @@ public class LevelGenerator : MonoBehaviour
     private string SearchSummary() =>
         $"{_searchNoFloor} no-floor, {_searchTooClose} too-close-to-player, {_searchOffFloor} partly-off-floor, {_searchObstructed} obstructed";
 
-    private bool TryFindValidPlacement(StageFootprint footprint, out Pose pose)
+    /// <summary>
+    /// The best-centred valid placement for the footprint at the scale being searched: every
+    /// candidate on the search rings that fits (facing away from the player) is scored by its clear
+    /// floor margin, plus a bonus in the player's forward arc and a small penalty for distance; the
+    /// winner is then nudged to centre it further. <paramref name="margin"/> is its clear margin.
+    /// </summary>
+    private bool TryFindValidPlacement(StageFootprint footprint, out Pose pose, out float margin)
     {
         var anchorTransform = CheckpointAnchor.transform;
-
-        // Pass 1: the anchor's forward arc. Pass 2: the rest of the circle,
-        // only attempted if pass 1 finds nothing.
-        if (TrySearchAngleRange(footprint, anchorTransform, -forwardArcHalfAngle, forwardArcHalfAngle, out pose))
-            return true;
-        if (TrySearchAngleRange(footprint, anchorTransform, forwardArcHalfAngle, 360f - forwardArcHalfAngle, out pose))
-            return true;
+        float floorY = anchorTransform.position.y;
+        var player = arCamera.transform.position;
+        var facing = Vector3.ProjectOnPlane(arCamera.transform.forward, Vector3.up);
+        if (facing.sqrMagnitude < 1e-4f) facing = anchorTransform.forward;
 
         pose = default;
-        return false;
-    }
-
-    private bool TrySearchAngleRange(StageFootprint footprint, Transform anchorTransform, float fromDeg, float toDeg, out Pose pose)
-    {
-        for (float angle = fromDeg; angle <= toDeg; angle += angleStep)
+        margin = 0f;
+        float bestScore = float.NegativeInfinity;
+        for (float angle = 0f; angle < 360f; angle += angleStep)
         {
             var direction = Quaternion.Euler(0f, angle, 0f) * anchorTransform.forward;
-
             foreach (var distance in searchDistances)
             {
-                var approximatePoint = anchorTransform.position + direction.normalized * distance;
-
-                if (!TryGetFloorProjectedPose(approximatePoint, out var floorPose, anchorTransform.position.y))
+                if (!TryGetFloorProjectedPose(anchorTransform.position + direction.normalized * distance, out var floorPose, floorY))
                 {
                     _searchNoFloor++;
                     continue;
                 }
-
-                // Face the stage away from the player so its goal is on the far side.
-                var awayFromPlayer = Quaternion.LookRotation(direction, Vector3.up);
-                foreach (var rotationY in rotationCandidates)
-                {
-                    var candidateRotation = awayFromPlayer * Quaternion.Euler(0f, rotationY, 0f);
-                    if (!KeepsClearOfPlayer(footprint, floorPose.position, candidateRotation))
-                    {
-                        _searchTooClose++;
-                        continue;
-                    }
-                    if (!IsFullyOnFloor(footprint, floorPose.position, candidateRotation, anchorTransform.position.y))
-                    {
-                        _searchOffFloor++;
-                        continue;
-                    }
-                    if (IsPlacementClear(footprint, floorPose.position, candidateRotation))
-                    {
-                        pose = new Pose(floorPose.position, candidateRotation);
-                        return true;
-                    }
-                }
+                if (Score(centringMargin, floorPose.position, player, facing) <= bestScore) continue; // can't beat the best even fully centred
+                if (!IsValidPlacement(footprint, floorPose.position, floorY, out var rotation)) continue;
+                float m = ClearMargin(footprint, floorPose.position, rotation, floorY);
+                float score = Score(m, floorPose.position, player, facing);
+                if (score <= bestScore) continue;
+                bestScore = score;
+                pose = new Pose(floorPose.position, rotation);
+                margin = m;
             }
         }
+        if (float.IsNegativeInfinity(bestScore)) return false;
 
-        pose = default;
-        return false;
+        // Nudge it sideways and along its length while that centres it more (the rings are coarse).
+        foreach (float step in new[] { 0.3f, 0.15f })
+        {
+            for (int i = 0; i < 8; i++)
+            {
+                bool moved = false;
+                foreach (var nudge in new[] { Vector3.right, Vector3.left, Vector3.forward, Vector3.back })
+                {
+                    var p = pose.position + pose.rotation * (nudge * step);
+                    if (!TryGetFloorProjectedPose(p, out var floorPose, floorY)) continue;
+                    if (!IsValidPlacement(footprint, floorPose.position, floorY, out var rotation, countRejections: false)) continue;
+                    float m = ClearMargin(footprint, floorPose.position, rotation, floorY);
+                    if (m <= margin + 0.001f) continue;
+                    pose = new Pose(floorPose.position, rotation);
+                    margin = m;
+                    moved = true;
+                }
+                if (!moved) break;
+            }
+        }
+        return true;
+    }
+
+    private float Score(float margin, Vector3 position, Vector3 player, Vector3 facing)
+    {
+        var toSpot = position - player;
+        toSpot.y = 0f;
+        bool ahead = Vector3.Angle(facing, toSpot) <= forwardArcHalfAngle;
+        return margin + (ahead ? forwardBonus : 0f) - distancePenalty * toSpot.magnitude;
+    }
+
+    /// <summary>The stage at a floor point faces straight away from the player: its start nearest them, its goal on the far side.</summary>
+    private Quaternion FacingAwayFromPlayer(Vector3 floorPosition)
+    {
+        var away = floorPosition - arCamera.transform.position;
+        away.y = 0f;
+        if (away.sqrMagnitude < 1e-4f) away = Vector3.ProjectOnPlane(CheckpointAnchor.transform.forward, Vector3.up);
+        return Quaternion.LookRotation(away.normalized, Vector3.up);
+    }
+
+    /// <summary>Faces the stage away from the player and checks it fits there: clear of the player, on detected floor, clear of the room mesh.</summary>
+    private bool IsValidPlacement(StageFootprint footprint, Vector3 floorPosition, float floorY, out Quaternion rotation, bool countRejections = true)
+    {
+        rotation = FacingAwayFromPlayer(floorPosition);
+        if (!KeepsClearOfPlayer(footprint, floorPosition, rotation))
+        {
+            if (countRejections) _searchTooClose++;
+            return false;
+        }
+        if (!IsFullyOnFloor(footprint, floorPosition, rotation, floorY))
+        {
+            if (countRejections) _searchOffFloor++;
+            return false;
+        }
+        return IsPlacementClear(footprint, floorPosition, rotation, countRejections);
+    }
+
+    /// <summary>
+    /// How much clear floor surrounds the footprint (metres, in centringStep steps up to
+    /// centringMargin): the footprint grown by that much still has detected floor all along its
+    /// edges and, with LiDAR, nothing of the room mesh inside it. A stage with equal margins on
+    /// both sides scores highest, so maximising this centres it in the scanned space.
+    /// </summary>
+    private float ClearMargin(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation, float floorY)
+    {
+        float clear = 0f;
+        for (float m = centringStep; m <= centringMargin + 0.001f; m += centringStep)
+        {
+            float hx = footprint.width * _searchScale * 0.5f + m, hz = footprint.depth * _searchScale * 0.5f + m;
+            if (!EdgeOnFloor(floorPosition, rotation, hx, hz, floorY)) break;
+            var halfExtents = SearchScaled(footprint.HalfExtents) + new Vector3(m, 0f, m);
+            if (!BoxClear(footprint, floorPosition, rotation, halfExtents)) break;
+            clear = m;
+        }
+        return clear;
+    }
+
+    /// <summary>Detected floor at points every ~0.5 m round a rectangle (half-sizes hx, hz) centred at floorPosition.</summary>
+    private bool EdgeOnFloor(Vector3 floorPosition, Quaternion rotation, float hx, float hz, float floorY)
+    {
+        int nx = Mathf.Max(2, Mathf.CeilToInt(hx * 2f / 0.5f) + 1), nz = Mathf.Max(2, Mathf.CeilToInt(hz * 2f / 0.5f) + 1);
+        for (int i = 0; i < nx; i++)
+        {
+            float x = Mathf.Lerp(-hx, hx, i / (nx - 1f));
+            if (!TryGetFloorProjectedPose(floorPosition + rotation * new Vector3(x, 0f, -hz), out _, floorY)) return false;
+            if (!TryGetFloorProjectedPose(floorPosition + rotation * new Vector3(x, 0f, hz), out _, floorY)) return false;
+        }
+        for (int i = 1; i < nz - 1; i++)
+        {
+            float z = Mathf.Lerp(-hz, hz, i / (nz - 1f));
+            if (!TryGetFloorProjectedPose(floorPosition + rotation * new Vector3(-hx, 0f, z), out _, floorY)) return false;
+            if (!TryGetFloorProjectedPose(floorPosition + rotation * new Vector3(hx, 0f, z), out _, floorY)) return false;
+        }
+        return true;
     }
 
     // ---- Step 6: stage loop ----
@@ -635,22 +734,24 @@ public class LevelGenerator : MonoBehaviour
         return TryGetFloorProjectedPose(floorPosition + rotation * goalOffset, out _, floorHeight);
     }
 
-    private bool IsPlacementClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation)
+    private bool IsPlacementClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation, bool countRejections = true)
     {
-        // Lift the box off the floor by the margin (shrinking it to keep the same
-        // top), so the floor's own mesh triangles don't register as obstructions.
-        var halfExtents = SearchScaled(footprint.HalfExtents);
-        float margin = Mathf.Min(floorClearanceMargin, footprint.clearance * 0.5f);
-        halfExtents.y -= margin * 0.5f;
-        var boxCenter = floorPosition + Vector3.up * (margin + halfExtents.y);
-
-        int hits = Physics.OverlapBoxNonAlloc(boxCenter, halfExtents, s_Overlap, rotation, obstructionLayerMask, QueryTriggerInteraction.Ignore);
-        if (hits == 0) return true;
-
+        if (BoxClear(footprint, floorPosition, rotation, SearchScaled(footprint.HalfExtents))) return true;
+        if (!countRejections) return false;
         _searchObstructed++;
         TotalObstructedCandidates++;
         LastObstructionName = s_Overlap[0].name;
         return false;
+    }
+
+    /// <summary>No room mesh (LiDAR) inside the box: lifted off the floor by floorClearanceMargin (keeping
+    /// the same top), so the floor's own mesh triangles don't register as obstructions.</summary>
+    private bool BoxClear(StageFootprint footprint, Vector3 floorPosition, Quaternion rotation, Vector3 halfExtents)
+    {
+        float lift = Mathf.Min(floorClearanceMargin, footprint.clearance * 0.5f);
+        halfExtents.y -= lift * 0.5f;
+        var boxCenter = floorPosition + Vector3.up * (lift + halfExtents.y);
+        return Physics.OverlapBoxNonAlloc(boxCenter, halfExtents, s_Overlap, rotation, obstructionLayerMask, QueryTriggerInteraction.Ignore) == 0;
     }
 
     /// <summary>

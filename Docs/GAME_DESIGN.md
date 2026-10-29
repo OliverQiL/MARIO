@@ -17,8 +17,8 @@ Every action still passes the six-gate chain (session → validity → capabilit
 | `squat` | The player is **ducked** for 1.0 s, or for as long as they stay down when the phone sees the squat: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
 | `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
 | `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
-| `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **0.8 m** and **±60°** of facing |
-| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. | An enemy **below eye level** within **0.7 m** and **±70°** of facing |
+| `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **1.0 m** (the same as stomp) and **±60°** of facing |
+| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. | An enemy **below eye level** within **1.0 m** and **±70°** of facing |
 | `idle` | Nothing: the classifier's catch-all for other movement. Acknowledged (gate 6, reason `idle`) in every state and ignored. | — |
 
 Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
@@ -57,6 +57,8 @@ LevelGenerator tries larger templates first. A placement is valid only if:
 - on LiDAR devices, the space is clear of the room mesh
 
 Each template's +Z axis points away from the player.
+
+**Where it goes (2026-10-29): centred, facing away.** Every stage faces straight away from where the player stands: its start nearest them (they're on its centre line, just behind the start edge) and its flag on the far side; it's never turned sideways or round. Of all the spots that fit, the stage takes the **best-centred** one: the most clear, detected floor round it on every side (measured up to 1 m, and with LiDAR also free of furniture), preferring spots in view and then nearer ones, nudged to even the margins out. If the full-size stage only fits with less than **0.3 m** to spare, the compressed sizes (85 / 70 / 55 %) and fallbacks are tried first and the best-centred fit of all wins, so pieces don't sit right at the edge of the scanned floor.
 
 | Template | Footprint | Contents |
 |---|---|---|
@@ -247,4 +249,11 @@ The classifier is still unreliable at jumps and squats, so the phone also detect
 - **Standing height:** after the scan, the floor plus the calibrated eye height; before it, the head height while standing still. It follows slow tracking drift only while standing still near it, so a held squat is never absorbed. A height change too fast for a person (over 25 cm in a frame: tracking starting or relocalising) restarts it, with a 1 s warm-up.
 - **One motion counts once:** its events go through the same gates as the classifier's (session `phone-motion`). The other source's report of the same action within **1.5 s** (and the classifier's squats during a held squat) are repeats. Nothing is sent to the gateway for them; haptics work as usual.
 - **When:** on the phone in headset mode (handheld, raising the arm would look like a jump), and always in the Editor. The HUD's LAST ACTION shows `(PHONE)` for these.
+
+## Finding enemies, and reach (2026-10-29)
+
+- **Enemy arrows.** For each of the 3 nearest walking enemies (Goombas, Koopas out of their shell) within 8 m, a red arrow lies on the floor about 1.2 m from the player in its direction, pointing at it. It pulses faster and grows as the enemy closes in, and goes once the enemy is within 0.7 m (at the feet, to stomp). When the nearest is out of view (more than 25° off where the player looks, or behind), a small red arrow near the edge of the view points towards it (`EnemyIndicator`; in both headset eyes).
+- **Reach.** Stomp and clap both reach **1.0 m** (were 0.7 and 0.8).
+- **Range ring.** A ring on the floor round the player's feet at that reach, with a brighter arc in front for the stomp zone (±70° of where they face), turning with them. It's dim white normally, **green** (pulsing) when a stomp would register right now, and **gold** when there's a shell a clap would pick up. It uses the gate chain's own targeting (`EventResolver.TargetInReach`), so it shows exactly when a stomp or clap will land. Shown while a stage is live (`RangeRing`).
+- **Bigger enemies.** Goombas, Koopas, Bullet Bills, Bowser and his fire are **18 % larger** (on top of the 87 % gameplay scale), so they're easier to spot; hit and contact distances are unchanged.
 

@@ -282,12 +282,13 @@ class Gateway:
             log("disconnected", "status", tag)
 
     async def run_script(self):
-        # Commands are separate motions: 0.6 s apart, past the phone's 0.5 s repeat window.
+        # Commands are separate motions: 0.8 s apart, well past the phone's 0.5 s repeat window
+        # (the Editor can process one late and the next on time).
         # "rep" goes out at once, as the real gateway forwards each classification of one motion.
         await asyncio.sleep(0.5)
         for i, cmd in enumerate(self.args.script.split(",")):
             if i > 0 and cmd.strip() != "rep":
-                await asyncio.sleep(0.6)
+                await asyncio.sleep(0.8)
             await self.command(cmd)
 
     async def stdin_loop(self):

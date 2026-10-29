@@ -357,8 +357,8 @@ public static class GameplaySmokeTest
 
         // -- gameplay objects are built at 87% (comfort); scenery isn't
         var goombaPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.GoombaPath);
-        Check(Mathf.Abs(goombaPrefab.transform.localScale.x - 0.87f) < 0.001f && Mathf.Abs(goalRoot.localScale.x - 0.87f) < 0.001f,
-              "gameplay objects (Goomba, flag) are built at 87%");
+        Check(Mathf.Abs(goombaPrefab.transform.localScale.x - 0.87f * 1.18f) < 0.001f && Mathf.Abs(goalRoot.localScale.x - 0.87f) < 0.001f,
+              "gameplay objects are built at 87% (the flag), enemies 18% larger than that (Goomba)");
 
         // -- hard reset: look straight up for 5 s (the phone is in the headset)
         var hardReset = new GameObject("HardReset").AddComponent<HardReset>();
@@ -605,8 +605,108 @@ public static class GameplaySmokeTest
         Check(large.GetComponent<StageFootprint>().FootprintArea > standard.GetComponent<StageFootprint>().FootprintArea
               && standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "templates are tried Large, Standard, Compact");
 
+        EnemyIndicatorChecks();
+        RangeRingChecks();
         PhoneMotionChecks();
         TrainingChecks();
+    }
+
+    /// <summary>The floor ring at stomp/clap reach: green when a stomp would register, gold for a shell to clap.</summary>
+    private static void RangeRingChecks()
+    {
+        s_State.BeginStage();
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
+        foreach (var leftover in UnityEngine.Object.FindObjectsByType<Goomba>()) UnityEngine.Object.DestroyImmediate(leftover.gameObject);
+        var ring = new GameObject("RangeRing").AddComponent<RangeRing>();
+        SetField(ring, "eventResolver", s_Resolver);
+        SetField(ring, "arCamera", s_Cam);
+        SetField(ring, "material", AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/RangeRing.mat"));
+
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Idle, "range ring: idle (dim) with nothing in reach");
+        var goomba = UnityEngine.Object.Instantiate(Load<Goomba>(GameContentSetup.GoombaPath), new Vector3(0f, 0f, 0.9f), Quaternion.identity, s_Stage);
+        Register(goomba);
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Stomp && s_Resolver.TargetInReach("stomp") == goomba, "a Goomba 0.9 m ahead: green, a stomp would register");
+        goomba.transform.position = new Vector3(0f, 0f, 1.3f);
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Idle, "at 1.3 m it's out of reach: idle again");
+        goomba.transform.position = new Vector3(0f, 0f, -0.9f);
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Idle, "behind the player (outside the stomp arc): idle");
+        UnityEngine.Object.DestroyImmediate(goomba.gameObject);
+
+        var koopa = UnityEngine.Object.Instantiate(Load<Koopa>(GameContentSetup.KoopaPath), new Vector3(0.2f, 0f, 0.8f), Quaternion.identity, s_Stage);
+        Register(koopa);
+        koopa.ResolveHit("stomp", s_State); // into its shell
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Clap, "a shell in reach: gold, a clap would pick it up");
+        s_State.PickUp(HeldItem.Shell);
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Stomp, "hands full: no clap, but the shell can still be stomped (green)");
+        s_State.ThrowHeld();
+        UnityEngine.Object.DestroyImmediate(koopa.gameObject);
+
+        s_State.CompleteStage();
+        ring.Tick(0.1f);
+        Check(ring.Current == RangeRing.State.Hidden, "hidden between stages");
+        s_State.BeginStage();
+        var root = GameObject.Find("RangeRingVisual");
+        UnityEngine.Object.DestroyImmediate(ring.gameObject);
+        if (root != null) UnityEngine.Object.DestroyImmediate(root);
+    }
+
+    /// <summary>Red arrows towards approaching enemies: on the floor, and at the edge of the view when out of sight.</summary>
+    private static void EnemyIndicatorChecks()
+    {
+        s_State.BeginStage();
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
+        var indicator = new GameObject("EnemyIndicator").AddComponent<EnemyIndicator>();
+        SetField(indicator, "arrowPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.EnemyArrowPath));
+        SetField(indicator, "arCamera", s_Cam);
+        foreach (var leftover in UnityEngine.Object.FindObjectsByType<Goomba>()) UnityEngine.Object.DestroyImmediate(leftover.gameObject);
+
+        indicator.Tick(0.1f);
+        Check(indicator.ShownArrows == 0 && !indicator.PointerShown, "enemy indicator: nothing shows with no enemies");
+
+        var goomba = UnityEngine.Object.Instantiate(Load<Goomba>(GameContentSetup.GoombaPath), new Vector3(3f, 0f, 0f), Quaternion.identity, s_Stage); // to the right
+        Register(goomba);
+        indicator.Tick(0.1f);
+        var arrow = indicator.Arrows.FirstOrDefault(a => a.activeSelf);
+        Check(indicator.ShownArrows == 1 && arrow != null && Vector3.Dot(arrow.transform.forward, Vector3.right) > 0.99f
+              && arrow.transform.position.x > 0.5f && arrow.transform.position.x < 1.5f && Mathf.Abs(arrow.transform.position.y) < 0.05f,
+              "a Goomba to the right gets a floor arrow ~1.2 m out, pointing at it");
+        Check(indicator.PointerShown && indicator.PointerLocalPosition.x > 0.1f, "it's out of view, so the edge pointer shows on the right");
+
+        goomba.transform.position = new Vector3(0f, 0f, -3f); // behind
+        indicator.Tick(0.1f);
+        Check(indicator.PointerShown && Mathf.Abs(indicator.PointerLocalPosition.x) > 0.1f, "an enemy behind the player gets the edge pointer at a side");
+
+        goomba.transform.position = new Vector3(0.2f, 0f, 3f); // ahead, in view
+        indicator.Tick(0.1f);
+        Check(indicator.ShownArrows == 1 && !indicator.PointerShown, "an enemy ahead keeps its floor arrow but needs no edge pointer");
+
+        goomba.transform.position = new Vector3(0f, 0f, 0.5f); // at the player's feet
+        indicator.Tick(0.1f);
+        Check(indicator.ShownArrows == 0 && !indicator.PointerShown, "an enemy at the player's feet (stomp range) needs no arrow");
+
+        var more = Enumerable.Range(0, 4).Select(i =>
+        {
+            var g = UnityEngine.Object.Instantiate(Load<Goomba>(GameContentSetup.GoombaPath), new Vector3(-2f - i, 0f, 1f), Quaternion.identity, s_Stage);
+            Register(g);
+            return g;
+        }).ToList();
+        indicator.Tick(0.1f);
+        Check(indicator.ShownArrows == 3, "at most 3 arrows, for the nearest enemies");
+
+        foreach (var g in more) UnityEngine.Object.DestroyImmediate(g.gameObject);
+        UnityEngine.Object.DestroyImmediate(goomba.gameObject);
+        foreach (var a in indicator.Arrows) UnityEngine.Object.DestroyImmediate(a);
+        var pointer = s_Cam.transform.Find("EnemyPointer");
+        if (pointer != null) UnityEngine.Object.DestroyImmediate(pointer.gameObject);
+        UnityEngine.Object.DestroyImmediate(indicator.gameObject);
     }
 
     /// <summary>Jumps and squats from the phone's own head-height tracking (PhoneMotionDetector).</summary>
