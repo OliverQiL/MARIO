@@ -143,12 +143,12 @@ public static class SimulationSmokeTest
                 }
             }
 
-            // The training round: skip each step (as its 40 s timeout would), grab the flag, then wait for 1-1.
+            // The training round: skip each step (as its 90 s fallback timeout would), grab the flag, then wait for 1-1.
             if (placed && level.InTraining && (!SessionState.GetBool(ResetKey, false) || s_ResetPhase == 2))
             {
                 s_TrainingSeen = true;
                 var tutorial = Tutorial.Active;
-                if (tutorial != null && tutorial.StepIndex >= 0 && tutorial.StepIndex < tutorial.StepCount - 1) tutorial.Tick(41f);
+                if (tutorial != null && tutorial.StepIndex >= 0 && tutorial.StepIndex < tutorial.StepCount - 1) tutorial.Tick(91f);
                 else if (tutorial != null && tutorial.StepIndex == tutorial.StepCount - 1 && level.CurrentGoal != null && !level.CurrentGoal.IsReached)
                 {
                     Debug.Log("[SimulationSmokeTest] Training: every step shown; grabbing the flag.");

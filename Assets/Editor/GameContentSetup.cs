@@ -145,6 +145,12 @@ public static class GameContentSetup
         if (indicator == null) indicator = manager.AddComponent<EnemyIndicator>();
         Set(indicator, "arrowPrefab", BuildEnemyArrow(m));
         Set(indicator, "arCamera", Camera.main);
+        // Safety: whatever the player's head is in or at (a bush, a block, a wall) turns see-through.
+        var fade = manager.GetComponent<ProximityFade>();
+        if (fade == null) fade = manager.AddComponent<ProximityFade>();
+        Set(fade, "arCamera", Camera.main);
+        Set(fade, "levelGenerator", levelGenerator);
+        Set(fade, "ghostMaterial", m.Ghost);
         // A ring on the floor at stomp/clap reach that lights up when one would register.
         var ring = manager.GetComponent<RangeRing>();
         if (ring == null) ring = manager.AddComponent<RangeRing>();
@@ -200,7 +206,7 @@ public static class GameContentSetup
         foreach (int side in new[] { -1, 1 })
             foreach (int face in new[] { -1, 1 }) // eyes on both faces: it spins
                 Visual(PrimitiveType.Sphere, "Eye", head, new Vector3(0.012f * side, 0.004f, 0.034f * face), new Vector3(0.01f, 0.022f, 0.008f), m.Black);
-        return Save(Shrink(root), FireFlowerPath);
+        return Save(PowerUp(root), FireFlowerPath);
     }
 
     /// <summary>1-Up mushroom: green cap dotted with white spots all round, cream stalk with eyes.</summary>
@@ -231,7 +237,7 @@ public static class GameContentSetup
             var spot = Visual(PrimitiveType.Sphere, "Spot", root.transform, pos, new Vector3(size, size, 0.02f), m.White);
             spot.transform.localRotation = Quaternion.LookRotation(normal, Mathf.Abs(normal.y) > 0.99f ? Vector3.forward : Vector3.up);
         }
-        return Save(Shrink(root), OneUpPath);
+        return Save(PowerUp(root), OneUpPath);
     }
 
     /// <summary>Koopa: patterned green shell with a white rim, yellow head with a snout, big eyes, yellow feet.</summary>
@@ -303,16 +309,19 @@ public static class GameContentSetup
         Shrink(root);
         var cannon = root.AddComponent<BulletBillCannon>();
 
-        // Steel column on a wider base (the column is stretched to the head's height at runtime).
-        Visual(PrimitiveType.Cylinder, "Base", root.transform, new Vector3(0f, 0.04f, 0f), new Vector3(0.34f, 0.04f, 0.34f), m.CannonBarrel);
-        var column = Visual(PrimitiveType.Cylinder, "Column", root.transform, new Vector3(0f, 0.7f, 0f), new Vector3(0.14f, 0.7f, 0.14f), m.CannonSteel);
+        // A thick, bright red tower with yellow warning bands, so it stands out across a room
+        // (Oliver 2026-10-29); the column is stretched to the head's height at runtime.
+        Visual(PrimitiveType.Cylinder, "Base", root.transform, new Vector3(0f, 0.05f, 0f), new Vector3(0.56f, 0.05f, 0.56f), m.CannonTowerDark);
+        var column = Visual(PrimitiveType.Cylinder, "Column", root.transform, new Vector3(0f, 0.7f, 0f), new Vector3(0.32f, 0.7f, 0.32f), m.CannonTower);
+        foreach (float y in new[] { 0.3f, 0.7f })
+            Visual(PrimitiveType.Cylinder, "WarningBand", root.transform, new Vector3(0f, y, 0f), new Vector3(0.335f, 0.05f, 0.335f), m.CannonBand);
         var head = new GameObject("Head");
         head.transform.SetParent(root.transform, false);
         head.transform.localPosition = new Vector3(0f, 1.4f, 0f);
         Visual(PrimitiveType.Cylinder, "Collar", head.transform, new Vector3(0f, -0.19f, 0f), new Vector3(0.24f, 0.03f, 0.24f), m.CannonRim);
-        Visual(PrimitiveType.Cube, "Housing", head.transform, Vector3.zero, new Vector3(0.32f, 0.32f, 0.32f), m.Dark);
-        Visual(PrimitiveType.Cube, "SkullL", head.transform, new Vector3(-0.161f, 0.02f, 0f), new Vector3(0.005f, 0.11f, 0.11f), m.White);
-        Visual(PrimitiveType.Cube, "SkullR", head.transform, new Vector3(0.161f, 0.02f, 0f), new Vector3(0.005f, 0.11f, 0.11f), m.White);
+        Visual(PrimitiveType.Cube, "Housing", head.transform, Vector3.zero, new Vector3(0.4f, 0.36f, 0.4f), m.CannonTower);
+        Visual(PrimitiveType.Cube, "SkullL", head.transform, new Vector3(-0.201f, 0.02f, 0f), new Vector3(0.005f, 0.15f, 0.15f), m.White);
+        Visual(PrimitiveType.Cube, "SkullR", head.transform, new Vector3(0.201f, 0.02f, 0f), new Vector3(0.005f, 0.15f, 0.15f), m.White);
         // Barrel along +Z: grey tube, silver rim, dark bore, so it reads as a cannon even head-on.
         Visual(PrimitiveType.Cylinder, "Barrel", head.transform, new Vector3(0f, 0f, 0.24f), new Vector3(0.22f, 0.09f, 0.22f), m.CannonBarrel, new Vector3(90f, 0f, 0f));
         Visual(PrimitiveType.Cylinder, "Rim", head.transform, new Vector3(0f, 0f, 0.34f), new Vector3(0.27f, 0.02f, 0.27f), m.CannonRim, new Vector3(90f, 0f, 0f));
@@ -321,7 +330,9 @@ public static class GameContentSetup
         muzzle.transform.SetParent(head.transform, false);
         muzzle.transform.localPosition = new Vector3(0f, 0f, 0.38f);
         // Warning: a warm glow filling the bore, not a ball in front of it.
-        var glow = Visual(PrimitiveType.Cylinder, "WarningGlow", head.transform, new Vector3(0f, 0f, 0.36f), new Vector3(0.15f, 0.004f, 0.15f), m.CannonGlow, new Vector3(90f, 0f, 0f));
+        var glow = Visual(PrimitiveType.Cylinder, "WarningGlow", head.transform, new Vector3(0f, 0f, 0.36f), new Vector3(0.2f, 0.004f, 0.2f), m.CannonGlow, new Vector3(90f, 0f, 0f));
+        // And a bright ring round the muzzle while it warns, visible from the side too.
+        Visual(PrimitiveType.Cylinder, "WarningRing", glow.transform, new Vector3(0f, 0f, 0f), new Vector3(1.6f, 1f, 1.6f), m.CannonGlow);
 
         var so = new SerializedObject(cannon);
         so.FindProperty("bulletBillPrefab").objectReferenceValue = bulletBill.GetComponent<BulletBill>();
@@ -635,6 +646,7 @@ public static class GameContentSetup
         cannon.FindProperty("maxShots").intValue = 20; // keeps firing until the duck lands
         cannon.FindProperty("initialDelay").floatValue = 2.5f;
         cannon.FindProperty("interval").floatValue = 5f;
+        cannon.FindProperty("minPlayerDistance").floatValue = 1.2f; // the lane is short: keep firing for the 3 ducks
         cannon.ApplyModifiedPropertiesWithoutUndo();
 
         var fire = Station("5 Throw", 0f, 1.3f);
@@ -658,13 +670,13 @@ public static class GameContentSetup
 
         var steps = new[]
         {
-            new Tutorial.Step { title = "JUMP!", hint = "Jump under the ? block to hit it", actions = new[] { "jump" }, station = jump.gameObject, done = Tutorial.Done.BlocksUsed },
-            new Tutorial.Step { title = "PUNCH!", hint = "Punch the brick in front of you", actions = new[] { "punch" }, station = punch.gameObject, done = Tutorial.Done.BlocksUsed },
-            new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, done = Tutorial.Done.EnemiesCleared },
-            new Tutorial.Step { title = "SQUAT!", hint = "Squat when the cannon glows to duck the Bullet Bill", actions = new[] { "squat" }, station = squat.gameObject, done = Tutorial.Done.DuckUnderBill },
-            new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, done = Tutorial.Done.EnemiesCleared, needsFlower = true },
-            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, throw it", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, done = Tutorial.Done.EnemiesCleared },
-            new Tutorial.Step { title = "JUMP AT THE FLAG!", hint = "Walk to the flag and jump to grab it", actions = new[] { "jump" }, station = flag.gameObject, done = Tutorial.Done.Goal },
+            new Tutorial.Step { title = "JUMP!", hint = "Jump under the ? block to hit it", actions = new[] { "jump" }, station = jump.gameObject, kind = Tutorial.Kind.HitBlock },
+            new Tutorial.Step { title = "PUNCH!", hint = "Punch the brick in front of you", actions = new[] { "punch" }, station = punch.gameObject, kind = Tutorial.Kind.BreakBrick },
+            new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, kind = Tutorial.Kind.StompEnemy },
+            new Tutorial.Step { title = "SQUAT!", hint = "Squat when the cannon glows to duck the Bullet Bill", actions = new[] { "squat" }, station = squat.gameObject, kind = Tutorial.Kind.DuckBill },
+            new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, kind = Tutorial.Kind.FireballEnemy, needsFlower = true },
+            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, throw it at a Goomba", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, kind = Tutorial.Kind.ShellEnemy, removeFlower = true },
+            new Tutorial.Step { title = "JUMP AT THE FLAG!", hint = "Walk to the flag and jump to grab it", actions = new[] { "jump" }, station = flag.gameObject, kind = Tutorial.Kind.Flag, rounds = 1 },
         };
         var tutorial = root.AddComponent<Tutorial>();
         typeof(Tutorial).GetField("steps", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(tutorial, steps);
@@ -1196,6 +1208,15 @@ public static class GameContentSetup
     /// <summary>Enemies are built this much larger again (Oliver 2026-10-29: easier to spot). Hit and contact distances are world metres and don't change.</summary>
     private const float EnemyGrowth = 1.18f;
 
+    /// <summary>Power-ups (fire flower, 1-Up) are built this much larger (Oliver 2026-10-29); the collect radius is world metres and doesn't change.</summary>
+    private const float PowerUpGrowth = 1.5f;
+
+    private static GameObject PowerUp(GameObject root)
+    {
+        root.transform.localScale = Vector3.one * (ObjectScale * PowerUpGrowth);
+        return root;
+    }
+
     private static GameObject Enemy(GameObject root)
     {
         root.transform.localScale = Vector3.one * (ObjectScale * EnemyGrowth);
@@ -1307,6 +1328,9 @@ public static class GameContentSetup
         public readonly Material CannonBarrel = Mat("CannonBarrel", new Color(0.5f, 0.52f, 0.56f));
         public readonly Material CannonRim = Mat("CannonRim", new Color(0.82f, 0.84f, 0.88f));
         public readonly Material CannonBore = Mat("CannonBore", new Color(0.05f, 0.05f, 0.05f));
+        public readonly Material CannonTower = Mat("CannonTower", new Color(0.85f, 0.12f, 0.1f), emission: new Color(0.25f, 0.02f, 0.02f), smoothness: 0.35f);
+        public readonly Material CannonTowerDark = Mat("CannonTowerDark", new Color(0.45f, 0.06f, 0.05f), smoothness: 0.3f);
+        public readonly Material CannonBand = Mat("CannonBand", new Color(1f, 0.85f, 0.1f), emission: new Color(0.3f, 0.25f, 0f), smoothness: 0.3f);
         public readonly Material CannonGlow = Mat("CannonGlow", new Color(1f, 0.6f, 0.2f), emission: new Color(0.9f, 0.45f, 0.1f));
         // World 2 and scenery
         public readonly Material Stair = Mat("StairBlock", Color.white, texture: PixelArt.SpentBlock(), smoothness: 0.15f);
@@ -1322,6 +1346,7 @@ public static class GameContentSetup
         public readonly Material BowserHair = Mat("BowserHair", new Color(0.95f, 0.35f, 0.1f));
         public readonly Material AxeHandle = Mat("AxeHandle", new Color(0.75f, 0.15f, 0.1f));
         public readonly Material BlobShadow = TransparentMat("BlobShadow", PixelArt.BlobShadow());
+        public readonly Material Ghost = TransparentMat("Ghost", null); // ProximityFade tints it per object
         public readonly Material RangeRing = Mat("RangeRing", Color.white, emission: new Color(0.6f, 0.6f, 0.6f), smoothness: 0f);
         public readonly Material EnemyArrow = Mat("EnemyArrow", new Color(1f, 0.12f, 0.08f), emission: new Color(0.9f, 0.05f, 0.02f), smoothness: 0.2f);
 

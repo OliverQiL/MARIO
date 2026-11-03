@@ -5,7 +5,9 @@ using UnityEngine;
 /// GameManager; stage elements read it when they start or spawn something.
 /// Everything is a function of the stage number: stage 1 is the authored
 /// baseline, and each step adds a little, up to a cap. Without a Difficulty
-/// in the scene every stage plays like stage 1.
+/// in the scene every stage plays like stage 1. Enemy and Bullet Bill
+/// **speeds don't scale** (Oliver 2026-10-29: constant through the game);
+/// only the number of enemies and shots and the time between shots do.
 /// </summary>
 public class Difficulty : MonoBehaviour
 {
@@ -13,9 +15,6 @@ public class Difficulty : MonoBehaviour
     [Tooltip("Extra enemies per spawner: +1 every this many stages.")]
     [SerializeField] private int stagesPerExtraEnemy = 2;
     [SerializeField] private int maxExtraEnemies = 3;
-    [Tooltip("Enemy walking speed grows by this fraction per stage.")]
-    [SerializeField] private float enemySpeedPerStage = 0.1f;
-    [SerializeField] private float maxEnemySpeedMultiplier = 1.8f;
 
     [Header("Bullet Bill cannon")]
     [Tooltip("Extra shots per cannon: +1 every this many stages.")]
@@ -24,9 +23,6 @@ public class Difficulty : MonoBehaviour
     [Tooltip("Time between shots shrinks by this fraction per stage.")]
     [SerializeField] private float intervalShrinkPerStage = 0.08f;
     [SerializeField] private float minIntervalMultiplier = 0.5f;
-    [Tooltip("Bill speed grows by this fraction per stage.")]
-    [SerializeField] private float billSpeedPerStage = 0.05f;
-    [SerializeField] private float maxBillSpeedMultiplier = 1.5f;
 
     private static Difficulty s_Instance;
 
@@ -46,8 +42,6 @@ public class Difficulty : MonoBehaviour
     }
 
     public static int ExtraEnemies { get { var d = Current; return d != null ? Mathf.Min(d.maxExtraEnemies, Steps / Mathf.Max(1, d.stagesPerExtraEnemy)) : 0; } }
-    public static float EnemySpeedMultiplier { get { var d = Current; return d != null ? Mathf.Min(d.maxEnemySpeedMultiplier, 1f + d.enemySpeedPerStage * Steps) : 1f; } }
     public static int ExtraShots { get { var d = Current; return d != null ? Mathf.Min(d.maxExtraShots, Steps / Mathf.Max(1, d.stagesPerExtraShot)) : 0; } }
     public static float ShotIntervalMultiplier { get { var d = Current; return d != null ? Mathf.Max(d.minIntervalMultiplier, 1f - d.intervalShrinkPerStage * Steps) : 1f; } }
-    public static float BillSpeedMultiplier { get { var d = Current; return d != null ? Mathf.Min(d.maxBillSpeedMultiplier, 1f + d.billSpeedPerStage * Steps) : 1f; } }
 }

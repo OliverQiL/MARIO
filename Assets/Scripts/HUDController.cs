@@ -294,7 +294,8 @@ public class HUDController : MonoBehaviour
         else if (Tutorial.Active is { Current: { } step } tutorial)
         {
             // Training: the step stays up in the banner.
-            message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {step.hint.ToUpperInvariant()}";
+            string rounds = tutorial.RoundsRequired > 1 ? $" ({tutorial.RoundsDone}/{tutorial.RoundsRequired})" : "";
+            message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {step.hint.ToUpperInvariant()}{rounds}";
             color = Color.white;
         }
         else if (levelGenerator != null && levelGenerator.CurrentStage == null)
@@ -452,7 +453,8 @@ public class HUDController : MonoBehaviour
         _tutorialStep = step;
         if (tutorial == null || tutorial.Current == null) return;
         ShowTitle(tutorial.Current.title, titleColor);
-        if (subtitleText != null) subtitleText.text = $"<size=60%><color=#FFE08A>{tutorial.Current.hint.ToUpperInvariant()}</color></size>";
+        string times = tutorial.RoundsRequired > 1 ? $" — {tutorial.RoundsRequired} TIMES" : "";
+        if (subtitleText != null) subtitleText.text = $"<size=60%><color=#FFE08A>{tutorial.Current.hint.ToUpperInvariant()}{times}</color></size>";
         _introCard = true;
     }
 

@@ -142,6 +142,8 @@ public class LevelGenerator : MonoBehaviour
     public int StagesCompleted { get; private set; }
     /// <summary>True while the player is in a warp pipe's bonus room (the stage is hidden).</summary>
     public bool InBonusRoom => _bonusRoom != null;
+    /// <summary>The live bonus room, or null.</summary>
+    public GameObject BonusRoom => _bonusRoom;
 
     /// <summary>True while placement is deferred waiting for the LiDAR mesh to settle.</summary>
     public bool IsWaitingForMesh { get; private set; }

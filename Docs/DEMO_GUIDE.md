@@ -27,7 +27,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 1. **Launch MARIO Local on the phone** (headset mode is on by default; a two-finger tap toggles it before wearing, see §10). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
 2. **Start the scan with a jump** (key 1, or a real jump: in headset mode the phone detects jumps and squats itself from its height tracking). Walk round looking at the floor.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
-3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag). Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not done in 40 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
+3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag), **3 times each, with only that move counting**. Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not finished in 90 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
 4. **Play with keys 1–6, each one a real `GAME_EVENT` over TLS/WebSocket:**
    - 1 → jump under a ? block → power-up
@@ -62,7 +62,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 
   | Area | Contents |
   |---|---|
-  | Top bar | score (6 digits), coins, stage (0-1 in training, 1-1 … 2-4), lives (heart ×N; `INF` in training), power (flower icon), held item (shell), connection status |
+  | Top bar | score (6 digits), coins, stage (0-1 in training, 1-1 … 2-4), lives (heart ×N; `INF` in training), power (flower icon), held item (shell) — lives, power and held in light highlight boxes — and connection status |
   | Banner | current state: scanning, tracking lost, placing, the training step (`TRAINING 3/7 - …`), flag distance / "JUMP TO GRAB THE FLAG!", bonus room, Bowser's fire warning, the hard-reset countdown |
   | Boss bar | Bowser's health in 2-4 |
   | Centre title | intro cards (WORLD 0-1 TRAINING, WORLD 1-1 with the stage name and a tip), training step cards, STAGE CLEAR! / TRAINING COMPLETE! / WARP! / READY! |
@@ -99,6 +99,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | Body-relative heights | `EyeHeightPlacement` | ? block eyes + 0.35 m; brick 78 %; coin 60 % of eye height |
 | Visual effects | `Burst`, `EnemyWaddle`, `Spinner`, `StageGoal`, `ScreenTransition`, `ScorePopup` | Particles, knock-outs, flag slide, confetti, the iris wipe between stages and through pipes, +score popups |
 | Enemy indicator | `EnemyIndicator` | Red floor arrows towards the nearest approaching enemies, and an edge-of-view arrow when one is out of sight |
+| See-through | `ProximityFade` | Any stage object the head is in or at turns transparent (safety); enemies stay solid |
 | Range ring | `RangeRing` | A floor ring at stomp/clap reach round the feet: green when a stomp would land, gold for a shell to clap |
 | Headset view | `HeadsetView` + `HeadsetLens.shader` | Side-by-side eyes, lens pre-distortion, HUD safe frame |
 
@@ -252,7 +253,7 @@ sequenceDiagram
 - **How is a duplicate detected?** Gate 2 keeps a bounded set of recent `session_id/event_id` keys (1024, FIFO).
 - **What if the classifier sends the same action every window?** The gateway forwards every classification; the phone's gate 2 processes the first of a run of the same action (reports under 0.5 s apart; a run over 1.2 s is a new motion) and ACKs the rest as repeats. It also drops repeated `event_id`s.
 - **The classifier misses jumps. What then?** In the headset the phone sees jumps and squats itself from its tracked head height (`PhoneMotionDetector`); whichever source sees a motion first counts, and the other's report within 1.5 s is a repeat. A held squat keeps the player ducked.
-- **How does a new player learn the moves?** After every scan a training round (WORLD 0-1) shows seven stations one at a time, with infinite lives, tips for misread moves, and a 40 s timeout per step; its flag starts 1-1.
+- **How does a new player learn the moves?** After every scan a training round (WORLD 0-1) shows seven stations one at a time, each done 3 times with only its own move counting, with infinite lives, tips for misread moves, and a 90 s fallback per step; its flag starts 1-1.
 - **How do you avoid placing a stage on a table?** Semantic classification (Floor only), a floor-height tolerance, floor required under all 4 corners and the flag, and on LiDAR devices, room-mesh overlap tests.
 - **What if tracking is lost?** Gate 1 closes, enemies freeze, and the banner says "look around slowly". The stage stays anchored and resumes when ARKit relocalises.
 - **How is the project structured?** See `VISUALIZER_STATUS.md` §3: `Scripts/` (runtime), `Scripts/Gameplay/` (elements), `Editor/` (one-click setup, content builders, headless tests).

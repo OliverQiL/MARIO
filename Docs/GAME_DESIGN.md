@@ -223,21 +223,21 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
 
 ## Training round (WORLD 0-1, 2026-10-21)
 
-After every scan (first launch and every hard reset, not after a game over), a training lane (1.6 × 3.2 m, compressible) teaches the moves before 1-1. Its stations appear one at a time, each with a big card and a banner line (`TRAINING n/7 - ...`):
+After every scan (first launch and every hard reset, not after a game over), a training lane (1.6 × 3.2 m, compressible) teaches the moves before 1-1. Its stations appear one at a time, each with a big card and a banner line (`TRAINING n/7 - ... (2/3)`). **Since 2026-10-29 each step must be done 3 times, and only with the prescribed move**: each round plays a fresh copy of the station, and a target used up any other way (a THROW Goomba stomped, a brick fireballed, a Goomba walking into you) restarts the round with "That one didn't count — use ...".
 
-| # | Card | Teaches | Done when |
+| # | Card | Teaches | A round counts when |
 |---|---|---|---|
-| 1 | JUMP! | jump under a ? block | the block is hit (it always drops the fire flower) |
-| 2 | PUNCH! | punch a brick | the brick breaks |
-| 3 | STOMP! | stomp a half-speed Goomba | it's defeated |
-| 4 | SQUAT! | duck a Bullet Bill (the cannon keeps firing) | a squat while a Bill is coming |
-| 5 | THROW! | fireball at a slow, distant Goomba (the flower is given if missing) | it's defeated |
-| 6 | STOMP, CLAP, THROW! | Koopa: shell, pick up, throw at two Goombas | all three cleared |
-| 7 | JUMP AT THE FLAG! | jump at the goal | the flag is grabbed |
+| 1 | JUMP! | jump under a ? block | a jump hits the ? block (×3) |
+| 2 | PUNCH! | punch a brick | a punch breaks the brick (×3) |
+| 3 | STOMP! | stomp a half-speed Goomba | a stomp defeats it (×3) |
+| 4 | SQUAT! | duck a Bullet Bill (the cannon keeps firing) | a Bill passes over you while you're ducked (×3, each Bill once) |
+| 5 | THROW! | fireball at a slow, distant Goomba (the flower is given if missing) | a fireball hits it (×3) |
+| 6 | STOMP, CLAP, THROW! | Koopa: shell, pick up, throw at a Goomba (the flower is taken away, so throw only throws the shell) | the thrown shell hits a Goomba (×3) |
+| 7 | JUMP AT THE FLAG! | jump at the goal | the flag is grabbed (once) |
 
 - **Infinite lives:** a hit flashes, buzzes and says "Ouch! (no lives lost in training)", but costs no life, flower or held item. The HUD shows `INF`.
 - **Wrong move:** a move the step isn't about (that did nothing) gets "That was STOMP — try JUMP", which also shows what the classifier read.
-- **Never stuck:** a step not done in 40 s says "Let's move on" and the next starts; its leftover enemies and cannon are cleared. The flag doesn't time out (it's the way out); it can't be grabbed while hidden.
+- **Never stuck:** a step not finished in **90 s** (was 40) says "Let's move on" and the next starts, so a misreading classifier can't trap the player; its round and cannon are cleared. The flag doesn't time out (it's the way out); it can't be grabbed while hidden.
 - **Then 1-1, fresh:** "TRAINING COMPLETE!", the iris wipe, and 1-1 with score 0, 3 lives and no flower; no clear bonus or stage count for training. No skip.
 
 ## Jumps and squats from the phone's own tracking (2026-10-22)
@@ -256,4 +256,13 @@ The classifier is still unreliable at jumps and squats, so the phone also detect
 - **Reach.** Stomp and clap both reach **1.0 m** (were 0.7 and 0.8).
 - **Range ring.** A ring on the floor round the player's feet at that reach, with a brighter arc in front for the stomp zone (±70° of where they face), turning with them. It's dim white normally, **green** (pulsing) when a stomp would register right now, and **gold** when there's a shell a clap would pick up. It uses the gate chain's own targeting (`EventResolver.TargetInReach`), so it shows exactly when a stomp or clap will land. Shown while a stage is live (`RangeRing`).
 - **Bigger enemies.** Goombas, Koopas, Bullet Bills, Bowser and his fire are **18 % larger** (on top of the 87 % gameplay scale), so they're easier to spot; hit and contact distances are unchanged.
+
+## Playtest round 2 (2026-10-29)
+
+- **Constant enemy speed.** Goombas, Koopas and Bullet Bills move at the same speed on every stage; `Difficulty` still adds enemies and cannon shots and shortens the time between shots as stages go on.
+- **See-through when you're in something.** For safety in a real room, any stage object the player's head is in or right at (a bush, a block, a pipe, a wall, scenery) turns about 70 % transparent, keeping its colour, until they step out (`ProximityFade`). Enemies never fade.
+- **HUD highlight boxes** round LIVES, POWER and HELD: a light translucent box with a brighter border.
+- **Bigger power-ups.** The fire flower and 1-Up are 1.5× their previous size; they're collected at the same distance.
+- **A clearer Bullet Bill cannon.** A thick red tower with yellow warning bands (column 0.32 m, was 0.14), a red head with white skulls and a bigger warning glow. **One cannon per stage**, at the far end; first shot after 8 s (was 6), a 2 s warning (was 1.5), and it holds fire while the player is within 2 m (was 1.2).
+- **Training needs the real moves, 3 times each** (see "Training round").
 

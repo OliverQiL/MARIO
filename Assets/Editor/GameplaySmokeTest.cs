@@ -277,13 +277,13 @@ public static class GameplaySmokeTest
         cannon.Tick(2f, eye); // 2 s at 120°/s: plenty to turn
         var toEye = eye - cannonHead.position; toEye.y = 0f;
         Check(Vector3.Angle(cannonHead.forward, toEye) < 1f, "cannon turns to face the player");
-        Check(cannon.Tick(4.1f, eye) == null && cannon.IsWarning, "after its initial delay the cannon warns first");
-        var fired = cannon.Tick(1.6f, eye);
+        Check(cannon.Tick(6.1f, eye) == null && cannon.IsWarning, "after its initial delay (8 s) the cannon warns first");
+        var fired = cannon.Tick(2.1f, eye); // a 2 s warning
         Check(fired != null && Vector3.Angle(fired.Direction, toEye) < 1f && fired.State == BulletBill.Phase.Flying, "then fires a Bill along its barrel, at the player");
         var nearCannon = cannonHead.position + (eye - cannonHead.position).normalized * 0.8f;
         nearCannon.y = eye.y;
         UnityEngine.Object.DestroyImmediate(fired.gameObject);
-        Check(cannon.Tick(11f, nearCannon) == null && !cannon.IsWarning, "cannon holds fire while the player is within 1.2 m");
+        Check(cannon.Tick(11f, nearCannon) == null && !cannon.IsWarning, "cannon holds fire while the player is within 2 m");
         UnityEngine.Object.DestroyImmediate(cannon.gameObject);
 
         // ==== pass 3 ====
@@ -395,6 +395,9 @@ public static class GameplaySmokeTest
               "World 1 stages are 2.5 x 4 m, World 2 3 x 5 m; every stage has a goal and coins");
         Check(campaignStages.All(c => c.GetComponentsInChildren<Transform>().Any(t => t.name is "Hill" or "Cloud" or "Pillar" or "Wall")),
               "every campaign stage has scenery");
+        Check(campaignStages.All(c => c.GetComponentsInChildren<BulletBillCannon>(true) is var cannons && cannons.Length <= 1
+                                      && cannons.All(k => k.transform.localPosition.z > 0f)),
+              "every campaign stage has at most one cannon, in its far half (time to react)");
         var firstStage = UnityEngine.Object.Instantiate(campaignStages[0], s_Stage);
         var castleTop = firstStage.transform.Find("Castle").GetComponentsInChildren<Renderer>().Max(x => x.bounds.max.y);
         var flagTop = firstStage.GetComponentInChildren<StageGoal>().GetComponentsInChildren<Renderer>().Max(x => x.bounds.max.y);
@@ -413,14 +416,12 @@ public static class GameplaySmokeTest
         // -- difficulty grows with the stage number, up to caps
         var difficulty = manager.AddComponent<Difficulty>();
         SetField(s_State, "stageIndex", 1);
-        Check(Difficulty.ExtraEnemies == 0 && Difficulty.EnemySpeedMultiplier == 1f && Difficulty.ExtraShots == 0
-              && Difficulty.ShotIntervalMultiplier == 1f && Difficulty.BillSpeedMultiplier == 1f, "stage 1 is the authored baseline");
+        Check(Difficulty.ExtraEnemies == 0 && Difficulty.ExtraShots == 0 && Difficulty.ShotIntervalMultiplier == 1f, "stage 1 is the authored baseline");
         SetField(s_State, "stageIndex", 5);
-        Check(Difficulty.ExtraEnemies == 2 && Mathf.Approximately(Difficulty.EnemySpeedMultiplier, 1.4f) && Difficulty.ExtraShots == 1
-              && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.68f) && Mathf.Approximately(Difficulty.BillSpeedMultiplier, 1.2f), "stage 5 adds enemies, speed and shots");
+        Check(Difficulty.ExtraEnemies == 2 && Difficulty.ExtraShots == 1 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.68f),
+              "stage 5 adds enemies and shots (speeds stay constant)");
         SetField(s_State, "stageIndex", 40);
-        Check(Difficulty.ExtraEnemies == 3 && Mathf.Approximately(Difficulty.EnemySpeedMultiplier, 1.8f) && Difficulty.ExtraShots == 2
-              && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.5f) && Mathf.Approximately(Difficulty.BillSpeedMultiplier, 1.5f), "difficulty is capped");
+        Check(Difficulty.ExtraEnemies == 3 && Difficulty.ExtraShots == 2 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.5f), "difficulty is capped");
 
         SetField(s_State, "stageIndex", 5);
         var dSpawnerGO = new GameObject("DifficultySpawner");
@@ -438,7 +439,7 @@ public static class GameplaySmokeTest
             if (spawnedCount++ == 0) firstSpeed = e.SpeedMultiplier;
             UnityEngine.Object.DestroyImmediate(e.gameObject);
         }
-        Check(spawnedCount == 3 && Mathf.Approximately(firstSpeed, 1.4f), "on stage 5 a 1-enemy spawner spawns 3, walking 1.4× faster");
+        Check(spawnedCount == 3 && Mathf.Approximately(firstSpeed, 1f), "on stage 5 a 1-enemy spawner spawns 3, at the same walking speed as stage 1");
         UnityEngine.Object.DestroyImmediate(dSpawnerGO);
         UnityEngine.Object.DestroyImmediate(difficulty);
         SetField(s_State, "stageIndex", 1);
@@ -607,8 +608,36 @@ public static class GameplaySmokeTest
 
         EnemyIndicatorChecks();
         RangeRingChecks();
+        ProximityFadeChecks();
         PhoneMotionChecks();
         TrainingChecks();
+    }
+
+    /// <summary>Safety: objects the player's head is in or at turn see-through; enemies never do.</summary>
+    private static void ProximityFadeChecks()
+    {
+        var fade = new GameObject("ProximityFade").AddComponent<ProximityFade>();
+        var ghost = AssetDatabase.LoadAssetAtPath<Material>("Assets/Materials/Ghost.mat");
+        SetField(fade, "ghostMaterial", ghost);
+        var scene = new GameObject("FadeScene");
+        var bush = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+        bush.transform.SetParent(scene.transform, false);
+        bush.transform.position = new Vector3(0f, 1.5f, 2f);
+        bush.transform.localScale = Vector3.one * 0.5f;
+        var bushRenderer = bush.GetComponent<Renderer>();
+        var original = bushRenderer.sharedMaterial;
+        var enemy = UnityEngine.Object.Instantiate(Load<Goomba>(GameContentSetup.GoombaPath), new Vector3(0f, 1.3f, 2f), Quaternion.identity, scene.transform);
+        fade.Consider(scene);
+
+        fade.Tick(new Vector3(0f, 1.5f, 0f));
+        Check(ghost != null && fade.GhostedCount == 0 && bushRenderer.sharedMaterial == original, "see-through: nothing fades when the head is clear of everything");
+        fade.Tick(new Vector3(0f, 1.5f, 2f)); // head inside the bush (and right at the Goomba)
+        Check(fade.IsGhosted(bushRenderer) && bushRenderer.sharedMaterial == ghost
+              && enemy.GetComponentsInChildren<Renderer>().All(r => !fade.IsGhosted(r)), "the head inside a bush turns it see-through; the enemy stays solid");
+        fade.Tick(new Vector3(0f, 1.5f, 0f));
+        Check(!fade.IsGhosted(bushRenderer) && bushRenderer.sharedMaterial == original, "stepping out restores it");
+        UnityEngine.Object.DestroyImmediate(scene);
+        UnityEngine.Object.DestroyImmediate(fade.gameObject);
     }
 
     /// <summary>The floor ring at stomp/clap reach: green when a stomp would register, gold for a shell to clap.</summary>
@@ -798,71 +827,145 @@ public static class GameplaySmokeTest
               "training: a hit lands but costs no life (infinite lives); the stage is 0-1");
         SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
 
-        // 1: jump at the ? block.
+        // 1: jump at the ? block, 3 times (a fresh copy each round).
         tutorial.Tick(3f);
         Check(tutorial.StepIndex == -1, "training waits for the intro card before step 1");
         tutorial.Tick(1f);
-        Check(tutorial.StepIndex == 0 && stations[0].gameObject.activeSelf && !stations[1].gameObject.activeSelf, "step 1 (JUMP) shows only its station");
-        RegisterAll(stations[0]);
-        var block = stations[0].GetComponentInChildren<QuestionBlock>();
-        StandAt(block.transform.position);
-        var r = Resolve("stomp");
-        Check(tutorial.WrongMoveTip(new GameEvent("stomp", 0.95f, "x"), r) is { } tip1 && tip1.Contains("STOMP") && tip1.Contains("JUMP"),
-              "a wrong move gets a tip: 'That was STOMP — try JUMP'", r);
-        r = Resolve("jump");
-        tutorial.Tick(0.1f);
-        Check(r.Resolved && r.Target == block && tutorial.StepIndex == 1, "hitting the ? block finishes step 1", r);
+        Check(tutorial.StepIndex == 0 && tutorial.CurrentRound != null && tutorial.CurrentRound.activeSelf && !stations[0].gameObject.activeSelf
+              && tutorial.RoundsRequired == 3, "step 1 (JUMP) plays a copy of its station, 3 rounds");
+        for (int i = 0; i < 3; i++)
+        {
+            var round = tutorial.CurrentRound.transform;
+            RegisterAll(round);
+            var block = round.GetComponentInChildren<QuestionBlock>();
+            StandAt(block.transform.position);
+            if (i == 0)
+            {
+                var wrong = Resolve("stomp");
+                Check(tutorial.WrongMoveTip(new GameEvent("stomp", 0.95f, "x"), wrong) is { } tip1 && tip1.Contains("STOMP") && tip1.Contains("JUMP"),
+                      "a wrong move gets a tip: 'That was STOMP — try JUMP'", wrong);
+            }
+            var jumped = Resolve("jump");
+            Check(jumped.Resolved && jumped.Target == block && tutorial.RoundsDone == i + 1, $"jumping at the ? block counts round {i + 1}/3", jumped);
+            tutorial.Tick(1.1f); // the beat, then the next round (or step)
+        }
+        Check(tutorial.StepIndex == 1, "three ? blocks finish step 1");
 
-        // 2: punch the brick.
-        RegisterAll(stations[1]);
-        var brick = stations[1].GetComponentInChildren<BrickBlock>();
-        s_Cam.transform.position = new Vector3(brick.transform.position.x, 1.5f, brick.transform.position.z - 0.5f);
+        // 2: punch the brick, 3 times; a brick broken some other way doesn't count.
+        var firstBrick = tutorial.CurrentRound.GetComponentInChildren<BrickBlock>();
+        firstBrick.ResolveHit("fireball", s_State);
+        tutorial.Tick(0.1f);
+        Check(tutorial.RoundsDone == 0 && message.Contains("didn't count") && tutorial.CurrentRound.GetComponentInChildren<BrickBlock>() != null,
+              "a brick broken by a fireball doesn't count; a fresh brick appears");
+        for (int i = 0; i < 3; i++)
+        {
+            var round = tutorial.CurrentRound.transform;
+            RegisterAll(round);
+            var brick = round.GetComponentInChildren<BrickBlock>();
+            s_Cam.transform.position = new Vector3(brick.transform.position.x, 1.5f, brick.transform.position.z - 0.5f);
+            FaceForward();
+            var punched = Resolve("punch");
+            Check(punched.Resolved && tutorial.RoundsDone == i + 1, $"punching the brick counts round {i + 1}/3 (hit {(punched.Target != null ? punched.Target.name + " under " + punched.Target.transform.parent?.name : "nothing")})", punched);
+            tutorial.Tick(1.1f);
+        }
+        Check(tutorial.StepIndex == 2, "three bricks finish step 2 (PUNCH)");
+
+        // 3: stomp the Goomba; a fireball kill doesn't count; the 90 s fallback moves on.
+        var stompRound = tutorial.CurrentRound.transform;
+        stompRound.GetComponentInChildren<Goomba>().ResolveHit("fireball", s_State);
+        tutorial.Tick(0.1f);
+        Check(tutorial.RoundsDone == 0 && message.Contains("STOMP"), "a Goomba fireballed in the stomp step doesn't count (\"use STOMP\")");
+        RegisterAll(tutorial.CurrentRound.transform);
+        var stompee = tutorial.CurrentRound.GetComponentInChildren<Goomba>();
+        StandAt(stompee.transform.position + Vector3.back * 0.5f);
+        var stomped = Resolve("stomp");
+        Check(stomped.Resolved && stomped.Target == stompee && tutorial.RoundsDone == 1, "stomping the Goomba counts round 1/3", stomped);
+        tutorial.Tick(1.1f);
+        var leftover = tutorial.CurrentRound;
+        tutorial.Tick(91f);
+        Check(tutorial.StepIndex == 3 && message == "Let's move on" && leftover == null, "a step not finished in 90 s moves on, clearing its round");
+
+        // 4: each Bullet Bill ducked under counts; a squat alone doesn't.
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
         FaceForward();
-        r = Resolve("punch");
-        tutorial.Tick(0.1f);
-        Check(r.Resolved && tutorial.StepIndex == 2, "breaking the brick finishes step 2 (PUNCH)", r);
-
-        // 3: a step not done in 40 s moves on, and its enemy is cleared.
-        var stompGoomba = stations[2].GetComponentInChildren<Goomba>();
-        tutorial.Tick(41f);
-        Check(tutorial.StepIndex == 3 && message == "Let's move on" && stompGoomba == null, "a step not done after 40 s moves on, clearing its enemy");
-
-        // 4: squat while a Bullet Bill is coming.
         Resolve("squat");
         tutorial.Tick(0.1f);
-        Check(tutorial.StepIndex == 3, "a squat with no Bullet Bill coming doesn't finish step 4");
-        var bill = new GameObject("Bill").AddComponent<BulletBill>();
-        Resolve("squat");
-        tutorial.Tick(0.1f);
-        Check(tutorial.StepIndex == 4 && bill == null && !stations[3].GetComponentInChildren<BulletBillCannon>(true).gameObject.activeSelf,
-              "ducking a Bullet Bill finishes step 4; its cannon stops");
+        Check(tutorial.StepIndex == 3 && tutorial.RoundsDone == 0, "a squat with no Bullet Bill doesn't count");
+        var duckedField = typeof(BulletBill).GetField("<DuckedUnder>k__BackingField", BindingFlags.Instance | BindingFlags.NonPublic);
+        for (int i = 0; i < 3; i++)
+        {
+            var bill = new GameObject($"Bill{i}").AddComponent<BulletBill>();
+            duckedField.SetValue(bill, true);
+            tutorial.Tick(0.1f);
+            tutorial.Tick(0.1f); // the same Bill counts once
+            Check(tutorial.RoundsDone == i + 1, $"a Bullet Bill ducked under counts {i + 1}/3");
+        }
+        tutorial.Tick(1.1f);
+        Check(tutorial.StepIndex == 4 && !stations[3].GetComponentInChildren<BulletBillCannon>(true).gameObject.activeSelf && !UnityEngine.Object.FindObjectsByType<BulletBill>().Any(),
+              "three ducks finish step 4; the cannon stops and its Bills go");
 
-        // 5: the fireball step hands out the flower if needed.
+        // 5: fireballs only (the flower is handed out); a stomp doesn't count.
         Check(s_State.HasFireFlower && message == "Here's a fire flower!", "step 5 (THROW) gives the fire flower if the player hasn't got it");
-        foreach (var g in stations[4].GetComponentsInChildren<Goomba>()) g.ResolveHit("fireball", s_State);
+        RegisterAll(tutorial.CurrentRound.transform);
+        var notThisWay = tutorial.CurrentRound.GetComponentInChildren<Goomba>();
+        StandAt(notThisWay.transform.position + Vector3.back * 0.5f);
+        Resolve("stomp");
         tutorial.Tick(0.1f);
-        Check(tutorial.StepIndex == 5, "defeating the Goomba finishes step 5");
+        Check(tutorial.RoundsDone == 0 && message.Contains("THROW"), "stomping the fireball Goomba doesn't count (\"use THROW\")");
+        for (int i = 0; i < 3; i++)
+        {
+            RegisterAll(tutorial.CurrentRound.transform);
+            var target = tutorial.CurrentRound.GetComponentInChildren<Goomba>();
+            s_Cam.transform.position = new Vector3(target.transform.position.x, 1.5f, target.transform.position.z - 1.5f);
+            s_Cam.transform.LookAt(target.HitPoint);
+            Resolve("throw");
+            var fireball = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
+            for (int t = 0; t < 60 && fireball != null && tutorial.RoundsDone == i; t++) fireball.Tick(0.05f);
+            Check(tutorial.RoundsDone == i + 1, $"a fireball hit counts round {i + 1}/3");
+            foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>()) UnityEngine.Object.DestroyImmediate(f.gameObject);
+            tutorial.Tick(1.1f);
+        }
+        Check(tutorial.StepIndex == 5, "three fireball hits finish step 5");
 
-        // 6: the flag isn't there yet.
+        // 6: the shell only (the flower is taken away); the flag isn't there yet.
+        Check(!s_State.HasFireFlower, "step 6 takes the fire flower away, so throw can only throw the shell");
         StandAt(goal.transform.position + Vector3.back * 1f);
         Invoke(goal, "Update"); // arm it (the player starts away from it)
         StandAt(goal.transform.position);
-        r = Resolve("jump");
-        Check(!goal.IsReached && tutorial.StepIndex == 5, "the hidden flag can't be grabbed before its step", r);
-        foreach (var e in stations[5].GetComponentsInChildren<Goomba>().Where(g => !(g is Koopa))) e.ResolveHit("stomp", s_State);
-        foreach (var k in stations[5].GetComponentsInChildren<Koopa>()) k.ResolveHit("stomp", s_State); // into the shell...
-        tutorial.Tick(0.1f);
-        Check(tutorial.StepIndex == 5, "a Koopa still in its shell keeps step 6 going");
-        foreach (var k in stations[5].GetComponentsInChildren<Koopa>()) k.ResolveHit("stomp", s_State); // ...and cleared
-        tutorial.Tick(0.1f);
-        Check(tutorial.StepIndex == 6 && stations[6].gameObject.activeSelf, "clearing the Koopa and Goombas finishes step 6; the flag appears");
+        var early = Resolve("jump");
+        Check(!goal.IsReached && tutorial.StepIndex == 5, "the hidden flag can't be grabbed before its step", early);
+        for (int i = 0; i < 3; i++)
+        {
+            var round = tutorial.CurrentRound.transform;
+            RegisterAll(round);
+            var koopa = round.GetComponentInChildren<Koopa>();
+            StandAt(koopa.transform.position + Vector3.back * 0.5f);
+            if (i == 0)
+            {
+                var noFire = Resolve("throw");
+                Check(noFire.Gate == 3, "no fireballs in the shell step: throw with nothing held is refused", noFire);
+            }
+            Resolve("stomp");
+            var clap = Resolve("clap");
+            var goomba = round.GetComponentsInChildren<Goomba>().First(g => !(g is Koopa));
+            s_Cam.transform.position = new Vector3(goomba.transform.position.x, 1.5f, goomba.transform.position.z - 1f);
+            FaceForward();
+            Resolve("throw");
+            var shellFlying = UnityEngine.Object.FindObjectsByType<ThrownShell>().FirstOrDefault();
+            for (int t = 0; t < 60 && shellFlying != null && tutorial.RoundsDone == i; t++) shellFlying.Tick(0.05f);
+            Check(clap.Resolved && tutorial.RoundsDone == i + 1, $"stomp, clap, throw: the shell's hit counts round {i + 1}/3", clap);
+            foreach (var t in UnityEngine.Object.FindObjectsByType<ThrownShell>()) UnityEngine.Object.DestroyImmediate(t.gameObject);
+            tutorial.Tick(1.1f);
+        }
+        Check(tutorial.StepIndex == 6 && stations[6].gameObject.activeSelf && tutorial.RoundsRequired == 1, "three shell hits finish step 6; the flag appears (once)");
 
-        // 7: the flag never times out; a jump at it ends the round.
+        // 7: the flag never times out; a jump at it ends the training.
         tutorial.Tick(100f);
         Check(tutorial.StepIndex == 6, "the flag step never times out");
         bool reached = false;
         goal.OnReached += _ => reached = true;
-        r = Resolve("jump");
+        StandAt(goal.transform.position);
+        var r = Resolve("jump");
         Check(r.Resolved && r.Reason == EventResolver.GoalReason && reached, "a jump at the flag ends training", r);
 
         // After training: a fresh 1-1.

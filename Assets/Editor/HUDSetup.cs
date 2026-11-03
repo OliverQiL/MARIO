@@ -78,6 +78,13 @@ public static class HUDSetup
         var heldEmpty = Styled(root, "HeldEmpty (TMP)", new Vector2(0f, 1f), new Vector2(x + 20f, valueTop), new Vector2(120f, 60f), 44f, TextAlignmentOptions.TopLeft, font, shadow);
         heldEmpty.text = "-";
 
+        // Light boxes behind the important ones (lives, power-up, held item), so they stand out (Oliver 2026-10-29).
+        var box = PixelArt.HudBox();
+        float livesX = SideMargin + 340f + 260f + 260f;
+        HighlightBox(root, "LivesBox", box, livesX - 18f, 236f, top);
+        HighlightBox(root, "PowerBox", box, livesX + 260f - 18f, 182f, top);
+        HighlightBox(root, "HeldBox", box, livesX + 480f - 18f, 168f, top);
+
         var connection = Styled(root, "Connection (TMP)", new Vector2(1f, 1f), new Vector2(-80f, top), new Vector2(600f, 40f), 22f, TextAlignmentOptions.TopRight, font, shadow);
         // Debug: the last action class the classifier sent (bottom-right, small).
         var lastAction = Styled(root, "LastAction (TMP)", new Vector2(1f, 0f), new Vector2(-SideMargin, 40f), new Vector2(600f, 40f), 22f, TextAlignmentOptions.BottomRight, font, shadow);
@@ -332,6 +339,24 @@ public static class HUDSetup
         image.preserveAspect = true;
         image.raycastTarget = false;
         return image;
+    }
+
+    /// <summary>A 9-sliced highlight box from (x, top + 16) down past the column's value, behind everything else in the HUD.</summary>
+    private static void HighlightBox(Transform parent, string name, Sprite sprite, float x, float width, float top)
+    {
+        var go = EnsureChild(parent, name);
+        var rect = (RectTransform)go.transform;
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0f, 1f);
+        rect.anchoredPosition = new Vector2(x, top + 18f);
+        rect.sizeDelta = new Vector2(width, 104f); // ends just under the values, clear of the banner below
+        var image = go.GetComponent<Image>();
+        if (image == null) image = go.AddComponent<Image>();
+        image.sprite = sprite;
+        image.type = Image.Type.Sliced;
+        image.pixelsPerUnitMultiplier = 0.6f; // a ~7-unit border on the HUD canvas
+        image.color = Color.white;
+        image.raycastTarget = false;
+        rect.SetAsFirstSibling(); // under the labels, icons and values
     }
 
     private static Image Bar(Transform parent, string name, Sprite sprite, Vector2 position, Vector2 size, Color color)

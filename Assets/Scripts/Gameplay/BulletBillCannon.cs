@@ -27,12 +27,12 @@ public class BulletBillCannon : MonoBehaviour
     [SerializeField] private GameObject fireEffect;
 
     [SerializeField] private int maxShots = 2;
-    [SerializeField] private float initialDelay = 6f;
+    [SerializeField] private float initialDelay = 8f;
     [SerializeField] private float interval = 10f;
-    [SerializeField] private float warnSeconds = 1.5f;
+    [SerializeField] private float warnSeconds = 2f;
     [SerializeField] private float turnDegreesPerSecond = 120f;
     [Tooltip("Don't start a shot while the player is closer than this (horizontal metres).")]
-    [SerializeField] private float minPlayerDistance = 1.2f;
+    [SerializeField] private float minPlayerDistance = 2f;
     [Tooltip("Head height below the player's eyes, set when the stage appears.")]
     [SerializeField] private float belowEyes = 0.1f;
     [SerializeField] private float minHeadHeight = 0.6f;
@@ -128,7 +128,7 @@ public class BulletBillCannon : MonoBehaviour
         _fired++;
         var from = muzzle != null ? muzzle : head;
         _current = Instantiate(bulletBillPrefab, from.position, head.rotation, transform.parent);
-        _current.Launch(head.forward, Difficulty.BillSpeedMultiplier);
+        _current.Launch(head.forward); // constant speed through the game
         AudioManager.Play(Sfx.CannonFire);
         if (fireEffect != null) Instantiate(fireEffect, from.position, head.rotation);
         Debug.Log($"[BulletBillCannon] Fired ({_fired}/{MaxShots}).");

@@ -306,6 +306,32 @@ public static class PixelArt
         return Save("KoopaShell", rows, palette);
     }
 
+    /// <summary>A light HUD highlight box: a translucent white fill inside a brighter 2-pixel border with cut corners; a 9-slice sprite (4-pixel borders).</summary>
+    public static Sprite HudBox()
+    {
+        var rows = new string[16];
+        for (int y = 0; y < 16; y++)
+        {
+            var chars = new char[16];
+            for (int x = 0; x < 16; x++)
+            {
+                bool corner = (x == 0 || x == 15) && (y == 0 || y == 15);
+                bool border = x < 2 || x > 13 || y < 2 || y > 13;
+                chars[x] = corner ? '.' : border ? 'B' : 'F';
+            }
+            rows[y] = new string(chars);
+        }
+        var sprite = SaveSprite("HudBox", rows, new Dictionary<char, Color>
+        {
+            ['.'] = Color.clear, ['B'] = new Color(1f, 1f, 1f, 0.85f), ['F'] = new Color(1f, 1f, 1f, 0.2f),
+        });
+        var path = AssetDatabase.GetAssetPath(sprite);
+        var importer = (TextureImporter)AssetImporter.GetAtPath(path);
+        importer.spriteBorder = new Vector4(4f, 4f, 4f, 4f);
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Sprite>(path);
+    }
+
     private static Sprite SaveSprite(string name, string[] rows, Dictionary<char, Color> palette)
     {
         var path = AssetDatabase.GetAssetPath(Save(name, rows, palette));

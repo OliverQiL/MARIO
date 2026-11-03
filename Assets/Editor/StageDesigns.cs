@@ -84,19 +84,19 @@ public static class StageDesigns
         new Design
         {
             Name = "1-3", Title = "BULLET ALLEY", Tip = "Squat or sidestep the Bullet Bills.",
-            Theme = "Bullet alley: two cannons, one firing across the path; squat or sidestep. Coins lead the way.",
+            Theme = "Bullet alley: a cannon at the far end firing down the path; squat or sidestep. Coins lead the way.",
             Pieces = Join(
                 Coins(0f, -1.5f, 0f, 1.2f, 8),
                 P(Kind.Question, 0.45f, -0.6f),
                 P(Kind.Brick, -0.45f, 0.6f),
-                P(Kind.Cannon, -1.0f, 1.7f), P(Kind.Cannon, 1.05f, 0.0f),
+                P(Kind.Cannon, -0.95f, 1.7f), // one cannon per stage, at the far end (most time to react)
                 new[] { new Piece(Kind.Spawner, 0.65f, 1.3f, "G", 1), new Piece(Kind.Pipe, -0.85f, -1.2f, chance: 0.5f) },
                 P(Kind.Flag, 0f, 1.75f)),
         },
         new Design
         {
             Name = "1-4", Title = "FORTRESS", Tip = "Punch bricks. Throw fireballs with a flower.",
-            Theme = "Fortress: everything at once — two spawners, a cannon, a ring of coins, and a warp pipe.",
+            Theme = "Fortress: everything at once — two spawners, a cannon at the far end, a ring of coins, and a warp pipe.",
             Scenery = Scenery.Castle,
             Pieces = Join(
                 P(Kind.Question, -0.5f, -1.2f), P(Kind.Question, 0.5f, 0.0f),
@@ -106,7 +106,7 @@ public static class StageDesigns
                     new Piece(Kind.Spawner, -0.85f, 0.9f, "GKG", 3), new Piece(Kind.Spawner, 0.85f, 1.35f, "K", 1),
                     new Piece(Kind.Pipe, -0.9f, -0.45f, chance: 1f),
                 },
-                P(Kind.Cannon, 1.05f, -0.3f),
+                P(Kind.Cannon, 1.0f, 1.65f),
                 Coins(-0.3f, 0.45f, 0.3f, 0.45f, 3), P(Kind.Coin, -0.3f, 0.75f), P(Kind.Coin, 0.3f, 0.75f), Coins(-0.3f, 1.05f, 0.3f, 1.05f, 3),
                 P(Kind.Flag, 0f, 1.75f)),
         },
@@ -154,13 +154,13 @@ public static class StageDesigns
         },
         new Design
         {
-            Name = "2-3", Title = "SKY ROAD", Tip = "Cannons on both sides - keep moving.",
-            Theme = "Sky road: cannons on both sides, a Koopa for a shell, coin arcs and tall pipes.",
+            Name = "2-3", Title = "SKY ROAD", Tip = "Watch the far cannon - squat or sidestep.",
+            Theme = "Sky road: a cannon at the far end, a Koopa for a shell, coin arcs and tall pipes.",
             Width = 3f, Depth = 5f, Scenery = Scenery.Sky,
             Pieces = Join(
                 Arc(-0.6f, -1.9f, 0.6f, -1.9f, 5),
                 P(Kind.Question, 0f, -1.1f),
-                P(Kind.Cannon, -1.25f, -0.5f), P(Kind.Cannon, 1.25f, 0.9f),
+                P(Kind.Cannon, 1.2f, 2.0f),
                 new[]
                 {
                     new Piece(Kind.TallPipe, 0.6f, -0.4f, count: 4), new Piece(Kind.TallPipe, -0.6f, 0.5f, count: 3),

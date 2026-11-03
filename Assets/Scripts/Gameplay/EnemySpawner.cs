@@ -48,8 +48,7 @@ public class EnemySpawner : MonoBehaviour
         _timer = 0f;
         _spawned++;
         _current = Instantiate(prefab, transform.position, transform.rotation, transform.parent);
-        _current.SpeedMultiplier = Difficulty.EnemySpeedMultiplier;
-        Debug.Log($"[EnemySpawner] Spawned {prefab.name} ({_spawned}/{totalCount + Difficulty.ExtraEnemies}, speed ×{_current.SpeedMultiplier:F2}).");
+        Debug.Log($"[EnemySpawner] Spawned {prefab.name} ({_spawned}/{totalCount + Difficulty.ExtraEnemies}).");
         return _current;
     }
 }

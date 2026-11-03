@@ -21,6 +21,8 @@ public class BulletBill : MonoBehaviour
     public Phase State { get; private set; } = Phase.Idle;
     /// <summary>True once it has passed the player and the hit landed.</summary>
     public bool HitPlayer { get; private set; }
+    /// <summary>True once it has passed over the player while they were ducked (the training's duck step counts these).</summary>
+    public bool DuckedUnder { get; private set; }
     public Vector3 Direction => _direction;
 
     private Vector3 _direction;
@@ -59,7 +61,7 @@ public class BulletBill : MonoBehaviour
             State = Phase.Passed;
             float lateral = Vector3.ProjectOnPlane(toPlayer, _direction).magnitude;
             if (lateral > hitRadius) Debug.Log("[BulletBill] Missed — the player stepped aside.");
-            else if (gs.IsDucked) Debug.Log("[BulletBill] Ducked under.");
+            else if (gs.IsDucked) { DuckedUnder = true; Debug.Log("[BulletBill] Ducked under."); }
             else HitPlayer = gs.TakeHit("Bullet Bill");
             return;
         }
