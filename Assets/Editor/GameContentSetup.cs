@@ -140,6 +140,13 @@ public static class GameContentSetup
         var hardReset = manager.GetComponent<HardReset>();
         if (hardReset == null) hardReset = manager.AddComponent<HardReset>();
         Set(hardReset, "arCamera", Camera.main);
+        // The start menu before the scan: nod to move, clap to pick (training + game, game only, god mode).
+        var startMenu = manager.GetComponent<StartMenu>();
+        if (startMenu == null) startMenu = manager.AddComponent<StartMenu>();
+        Set(startMenu, "arCamera", Camera.main);
+        Set(startMenu, "eventResolver", resolver);
+        Set(startMenu, "sessionManager", session);
+        Set(startMenu, "levelGenerator", levelGenerator);
         // Red arrows showing where approaching enemies are (on the floor, and at the edge of the view).
         var indicator = manager.GetComponent<EnemyIndicator>();
         if (indicator == null) indicator = manager.AddComponent<EnemyIndicator>();
@@ -378,7 +385,9 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Ball", model, Vector3.zero, Vector3.one * 0.075f, m.Fire);
         foreach (var d in new[] { Vector3.up, Vector3.down, Vector3.left, Vector3.right })
             Visual(PrimitiveType.Sphere, "Lick", model, d * 0.035f, Vector3.one * 0.035f, m.FireCore);
-        return Save(Shrink(root), FireballPath);
+        Shrink(root);
+        root.transform.localScale *= FireballGrowth;
+        return Save(root, FireballPath);
     }
 
     /// <summary>Thrown Koopa shell: the green shell with its white rim, spinning about the vertical as it slides.</summary>
@@ -652,10 +661,14 @@ public static class GameContentSetup
         var fire = Station("5 Throw", 0f, 1.3f);
         Enemy(goomba, fire, Vector3.zero, 0.06f); // slow, far: a target for a fireball
 
+        // The Koopa alone first; the Goombas appear once its shell is in hand (Tutorial.RevealOnHoldName).
         var shell = Station("6 Shell", 0f, 1.0f);
         Enemy(koopa, shell, Vector3.zero, 0.06f);
-        Enemy(goomba, shell, new Vector3(-0.45f, 0f, 0.35f), 0.05f);
-        Enemy(goomba, shell, new Vector3(0.45f, 0f, 0.35f), 0.05f);
+        var shellTargets = Group(Tutorial.RevealOnHoldName, shell, Vector3.zero);
+        Enemy(goomba, shellTargets, new Vector3(-0.45f, 0f, 0.35f), 0.05f);
+        Enemy(goomba, shellTargets, new Vector3(0f, 0f, 0.5f), 0.05f);
+        Enemy(goomba, shellTargets, new Vector3(0.45f, 0f, 0.35f), 0.05f);
+        shellTargets.gameObject.SetActive(false);
 
         var flag = Station("7 Flag", 0f, 1.45f);
         Goal(flag, Vector3.zero, m);
@@ -675,7 +688,7 @@ public static class GameContentSetup
             new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, kind = Tutorial.Kind.StompEnemy },
             new Tutorial.Step { title = "SQUAT!", hint = "Squat when the cannon glows to duck the Bullet Bill", actions = new[] { "squat" }, station = squat.gameObject, kind = Tutorial.Kind.DuckBill },
             new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, kind = Tutorial.Kind.FireballEnemy, needsFlower = true },
-            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, throw it at a Goomba", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, kind = Tutorial.Kind.ShellEnemy, removeFlower = true },
+            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, then throw it at a Goomba", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, kind = Tutorial.Kind.ShellEnemy, removeFlower = true },
             new Tutorial.Step { title = "JUMP AT THE FLAG!", hint = "Walk to the flag and jump to grab it", actions = new[] { "jump" }, station = flag.gameObject, kind = Tutorial.Kind.Flag, rounds = 1 },
         };
         var tutorial = root.AddComponent<Tutorial>();
@@ -937,6 +950,8 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.12f, -0.12f), new Vector3(0.22f, 0.18f, 0.2f), m.BowserHair);
         Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.02f, -0.18f), new Vector3(0.2f, 0.18f, 0.16f), m.BowserHair);
         var glow = Visual(PrimitiveType.Sphere, "MouthGlow", head, new Vector3(0f, -0.08f, 0.24f), new Vector3(0.12f, 0.08f, 0.06f), m.CannonGlow);
+        // Where his leap will land: a red target on the floor, its diameter the shockwave's (1.4 m in the world).
+        var marker = Visual(PrimitiveType.Quad, "LandingMarker", root.transform, new Vector3(0f, 0.006f, 0f), Vector3.one, m.BowserLanding, new Vector3(90f, 0f, 0f));
 
         var so = new SerializedObject(boss);
         so.FindProperty("flamePrefab").objectReferenceValue = flame.GetComponent<BulletBill>();
@@ -944,8 +959,15 @@ public static class GameContentSetup
         so.FindProperty("model").objectReferenceValue = model;
         so.FindProperty("hitEffect").objectReferenceValue = Effect(FireBurstPath);
         so.FindProperty("defeatEffect").objectReferenceValue = Effect(ConfettiPath);
+        so.FindProperty("landingMarker").objectReferenceValue = marker;
+        so.FindProperty("landEffect").objectReferenceValue = Effect(SmokePath);
         so.ApplyModifiedPropertiesWithoutUndo();
-        return Save(Enemy(root), BowserPath);
+        Enemy(root);
+        // Sized in the world (after Enemy's growth) to the shockwave: 2 x shockRadius.
+        float shock = so.FindProperty("shockRadius").floatValue;
+        marker.transform.localScale = new Vector3(2f * shock / root.transform.localScale.x, 2f * shock / root.transform.localScale.z, 1f);
+        marker.SetActive(false); // shown while he crouches and leaps
+        return Save(root, BowserPath);
     }
 
     /// <summary>The final goal: an axe on a stone pedestal. Locked while Bowser stands; reaching it ends the game (the axe drops).</summary>
@@ -1211,6 +1233,9 @@ public static class GameContentSetup
     /// <summary>Power-ups (fire flower, 1-Up) are built this much larger (Oliver 2026-10-29); the collect radius is world metres and doesn't change.</summary>
     private const float PowerUpGrowth = 1.5f;
 
+    /// <summary>The fire flower's fireballs are built this much larger (Oliver 2026-11-05: easier to follow in flight); the hit radius is world metres and doesn't change.</summary>
+    private const float FireballGrowth = 1.35f;
+
     private static GameObject PowerUp(GameObject root)
     {
         root.transform.localScale = Vector3.one * (ObjectScale * PowerUpGrowth);
@@ -1346,6 +1371,7 @@ public static class GameContentSetup
         public readonly Material BowserHair = Mat("BowserHair", new Color(0.95f, 0.35f, 0.1f));
         public readonly Material AxeHandle = Mat("AxeHandle", new Color(0.75f, 0.15f, 0.1f));
         public readonly Material BlobShadow = TransparentMat("BlobShadow", PixelArt.BlobShadow());
+        public readonly Material BowserLanding = TransparentMat("BowserLanding", PixelArt.LandingTarget());
         public readonly Material Ghost = TransparentMat("Ghost", null); // ProximityFade tints it per object
         public readonly Material RangeRing = Mat("RangeRing", Color.white, emission: new Color(0.6f, 0.6f, 0.6f), smoothness: 0f);
         public readonly Material EnemyArrow = Mat("EnemyArrow", new Color(1f, 0.12f, 0.08f), emission: new Color(0.9f, 0.05f, 0.02f), smoothness: 0.2f);

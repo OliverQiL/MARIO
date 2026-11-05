@@ -84,6 +84,10 @@ public class GameStateManager : MonoBehaviour
     public string StageName => InTraining ? "0-1" : NameOf(stageIndex);
     /// <summary>The training round (Tutorial) is on: hits cost no lives, and nothing scored carries into 1-1.</summary>
     public bool InTraining { get; private set; }
+    /// <summary>Chosen on the start menu: hits cost no lives in the game either (training always has infinite lives). A setting, so a new game keeps it.</summary>
+    public bool GodMode { get; set; }
+    /// <summary>Hits cost nothing right now: training, or god mode.</summary>
+    public bool InfiniteLives => InTraining || GodMode;
     public static string NameOf(int stage) => $"{(stage - 1) / StagesPerWorld + 1}-{(stage - 1) % StagesPerWorld + 1}";
     public bool HasFireFlower => hasFireFlower;
     public int Coins => coins;
@@ -150,11 +154,11 @@ public class GameStateManager : MonoBehaviour
     {
         if (isGameOver || IsInvulnerable) return false;
 
-        if (InTraining)
+        if (InfiniteLives)
         {
             // Infinite lives: the hit still shows (flash, damage buzz, tip) but costs nothing.
             _invulnerableUntil = Time.time + invulnerableSeconds;
-            Debug.Log($"[GameStateManager] Hit by {source} in training — no life lost.");
+            Debug.Log($"[GameStateManager] Hit by {source} in {(InTraining ? "training" : "god mode")} — no life lost.");
             OnLifeLost?.Invoke(lives);
             return true;
         }

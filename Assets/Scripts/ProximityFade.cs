@@ -57,10 +57,30 @@ public class ProximityFade : MonoBehaviour
             if (near && !_ghosted.ContainsKey(r)) Ghost(r);
         }
 
+        // An object that swapped its own material while ghosted (a ? block going
+        // spent as it's hit from underneath) keeps the new look: adopt it as the
+        // original and re-ghost, so leaving doesn't restore the stale one.
+        _released.Clear();
+        foreach (var kv in _ghosted)
+            if (kv.Key != null && !WearsGhost(kv.Key)) _released.Add(kv.Key);
+        foreach (var r in _released)
+        {
+            _ghosted.Remove(r);
+            r.SetPropertyBlock(null);
+            Ghost(r);
+        }
+
         _released.Clear();
         foreach (var kv in _ghosted)
             if (kv.Key == null || !kv.Key.gameObject.activeInHierarchy || kv.Key.bounds.SqrDistance(eye) > r2) _released.Add(kv.Key);
         foreach (var r in _released) Restore(r);
+    }
+
+    private bool WearsGhost(Renderer r)
+    {
+        foreach (var m in r.sharedMaterials)
+            if (m != ghostMaterial) return false;
+        return true;
     }
 
     /// <summary>Restores everything (stage teardown, disabling).</summary>

@@ -15,15 +15,15 @@ using UnityEngine.XR.ARFoundation;
 ///
 /// With -scan it also plays the opening: it steers the simulated camera
 /// (looking down at the floor, turning and walking a small circle) after
-/// jumping to start the scan, confirms it with another jump as a player would, waits for a stage, then checks
+/// clapping on the start menu's TRAINING + GAME to start the scan, confirms it with a jump as a player would, waits for a stage, then checks
 /// that the training round comes first, plays it through (skipping each
 /// step as its timeout would, then grabbing the flag), checks that the
 /// campaign's 1-1 follows fresh (not a fallback), and reports
 /// the size it fitted at.
 ///
 /// With -scan -reset, once the first stage is up it looks straight up (the
-/// hard-reset gesture) until the game resets, checks it's back at "jump to
-/// start scanning" (no stage, scan not started, eye height cleared, stage 1),
+/// hard-reset gesture) until the game resets, checks it's back at the start
+/// menu (menu open, no stage, scan not started, eye height cleared, stage 1),
 /// then scans again and expects the training round and 1-1 again.
 ///
 ///   Unity -batchmode -projectPath . -executeMethod SimulationSmokeTest.Run [-scan [-reset]]   (no -quit)
@@ -116,10 +116,11 @@ public static class SimulationSmokeTest
                 if (scanNow != null && !scanNow.IsScanStarted)
                 {
                     var fresh = Object.FindAnyObjectByType<ARSessionManager>();
-                    bool back = fresh != null && !fresh.IsScanStarted && !fresh.IsScanComplete && level.CurrentStage == null
+                    var menu = Object.FindAnyObjectByType<StartMenu>();
+                    bool back = fresh != null && menu != null && menu.IsOpen && !fresh.IsScanStarted && !fresh.IsScanComplete && level.CurrentStage == null
                                 && PlayerBody.EyeHeight == null && GameStateManager.Instance != null && GameStateManager.Instance.StageIndex == 1;
                     SessionState.SetString(ResetResultKey, back ? "ok" : "not back at the scan");
-                    Debug.Log($"[SimulationSmokeTest] Hard reset after {round:F1} s looking up; back at 'jump to start scanning': {back}.");
+                    Debug.Log($"[SimulationSmokeTest] Hard reset after {round:F1} s looking up; back at the start menu: {back}.");
                     s_ResetPhase = 2;
                     s_RoundStartedAt = elapsed;
                     s_ScanStartedAt = double.MaxValue;
@@ -160,12 +161,12 @@ public static class SimulationSmokeTest
 
             if (!placed && round < ScanTimeoutSeconds && SessionState.GetString(ResetResultKey, "") is "" or "ok")
             {
-                // As a player would: jump to start scanning, look around, jump again to finish.
+                // As a player would: clap on the start menu (TRAINING + GAME), look around, jump to finish the scan.
                 var scanSession = Object.FindAnyObjectByType<ARSessionManager>();
                 var resolver = Object.FindAnyObjectByType<EventResolver>();
                 if (scanSession != null && resolver != null && !scanSession.IsScanStarted && round > 2)
                 {
-                    resolver.Resolve(new GameEvent("jump", 0.95f, $"scan-start-{s_ResetPhase}", "smoketest"));
+                    resolver.Resolve(new GameEvent("clap", 0.95f, $"menu-pick-{s_ResetPhase}", "smoketest"));
                     s_ScanStartedAt = elapsed;
                 }
                 if (scanSession != null && scanSession.IsScanStarted) SweepCamera((float)(elapsed - s_ScanStartedAt));

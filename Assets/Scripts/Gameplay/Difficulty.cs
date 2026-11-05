@@ -6,16 +6,12 @@ using UnityEngine;
 /// Everything is a function of the stage number: stage 1 is the authored
 /// baseline, and each step adds a little, up to a cap. Without a Difficulty
 /// in the scene every stage plays like stage 1. Enemy and Bullet Bill
-/// **speeds don't scale** (Oliver 2026-10-29: constant through the game);
-/// only the number of enemies and shots and the time between shots do.
+/// **speeds don't scale** (Oliver 2026-10-29: constant through the game), and
+/// **nor does the number of enemies** (2026-11-05: each stage has one wave,
+/// its designed size); only the cannon's shots and the time between them do.
 /// </summary>
 public class Difficulty : MonoBehaviour
 {
-    [Header("Enemies")]
-    [Tooltip("Extra enemies per spawner: +1 every this many stages.")]
-    [SerializeField] private int stagesPerExtraEnemy = 2;
-    [SerializeField] private int maxExtraEnemies = 3;
-
     [Header("Bullet Bill cannon")]
     [Tooltip("Extra shots per cannon: +1 every this many stages.")]
     [SerializeField] private int stagesPerExtraShot = 3;
@@ -41,7 +37,6 @@ public class Difficulty : MonoBehaviour
         }
     }
 
-    public static int ExtraEnemies { get { var d = Current; return d != null ? Mathf.Min(d.maxExtraEnemies, Steps / Mathf.Max(1, d.stagesPerExtraEnemy)) : 0; } }
     public static int ExtraShots { get { var d = Current; return d != null ? Mathf.Min(d.maxExtraShots, Steps / Mathf.Max(1, d.stagesPerExtraShot)) : 0; } }
     public static float ShotIntervalMultiplier { get { var d = Current; return d != null ? Mathf.Max(d.minIntervalMultiplier, 1f - d.intervalShrinkPerStage * Steps) : 1f; } }
 }

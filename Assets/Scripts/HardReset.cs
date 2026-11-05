@@ -4,8 +4,8 @@ using UnityEngine.XR.ARFoundation;
 /// <summary>
 /// Hard reset without touching the phone (it's in the headset): look
 /// straight up at the ceiling and hold it for holdSeconds. The game goes back
-/// to the very start, as if the app had been relaunched: "jump to start
-/// scanning", the scan, a jump to confirm it.
+/// to the very start, as if the app had been relaunched: the start menu,
+/// the scan, a jump to confirm it.
 ///
 /// The countdown appears on the HUD (HUDController reads <see cref="ShowCountdown"/>)
 /// only after showAfterSeconds, so glancing up at a ? block shows nothing;
@@ -15,7 +15,8 @@ using UnityEngine.XR.ARFoundation;
 /// The reset irises out and, while the view is black, puts every system back
 /// as at launch: projectiles cleared, the stage torn down
 /// (LevelGenerator.ResetToScan), a new game's state (GameStateManager.ResetForScan),
-/// the scan back to "jump to start" (ARSessionManager.ResetScan), the
+/// the scan back to the start (ARSessionManager.ResetScan), the start menu
+/// reopened (StartMenu.Open), the
 /// calibrated eye height cleared, the music stopped; on the phone the AR
 /// session is reset too, so the scan starts from no planes. It resets in
 /// place rather than reloading the scene: a reload also unloads XR
@@ -64,7 +65,7 @@ public class HardReset : MonoBehaviour
         return true;
     }
 
-    /// <summary>Resets now: back to "jump to start scanning".</summary>
+    /// <summary>Resets now: back to the start menu.</summary>
     public void Trigger()
     {
         if (_resetting) return;
@@ -84,6 +85,8 @@ public class HardReset : MonoBehaviour
         if (gs != null) gs.ResetForScan();
         var scan = FindAnyObjectByType<ARSessionManager>();
         if (scan != null) scan.ResetScan();
+        var menu = FindAnyObjectByType<StartMenu>();
+        if (menu != null) menu.Open(); // back to the start menu, its last choices kept
         PlayerBody.Reset();
         AudioManager.StopMusic();
 #if !UNITY_EDITOR

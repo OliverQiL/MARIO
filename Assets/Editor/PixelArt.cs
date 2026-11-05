@@ -261,6 +261,37 @@ public static class PixelArt
         return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
     }
 
+    /// <summary>Where Bowser will land: a bold red ring with a faint red fill and a dot in the middle, smooth and clamped.</summary>
+    public static Texture2D LandingTarget()
+    {
+        const int size = 64;
+        var rows = new string[size];
+        var palette = new Dictionary<char, Color>
+        {
+            ['.'] = new Color(0f, 0f, 0f, 0f),
+            ['f'] = new Color(1f, 0.1f, 0.05f, 0.22f),
+            ['R'] = new Color(1f, 0.12f, 0.06f, 0.95f),
+        };
+        for (int y = 0; y < size; y++)
+        {
+            var chars = new char[size];
+            for (int x = 0; x < size; x++)
+            {
+                float dx = (x + 0.5f) / size * 2f - 1f, dy = (y + 0.5f) / size * 2f - 1f;
+                float r = Mathf.Sqrt(dx * dx + dy * dy);
+                chars[x] = r > 1f ? '.' : r > 0.86f || r < 0.12f || (r > 0.5f && r < 0.58f) ? 'R' : 'f';
+            }
+            rows[y] = new string(chars);
+        }
+        var tex = Save("LandingTarget", rows, palette);
+        var importer = (TextureImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(tex));
+        importer.filterMode = FilterMode.Bilinear;
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.alphaIsTransparency = true;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
+    }
+
     /// <summary>
     /// Scan grid tile (white, tinted by the material): a one-pixel line along two
     /// edges, so tiled it draws a grid, over a faint fill. Plane UVs are in metres.

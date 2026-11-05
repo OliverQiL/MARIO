@@ -169,15 +169,21 @@ public class ARSessionManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>Before and during the scan every action is dropped at Gate 1; a jump starts the scan, and a later one confirms it.</summary>
+    /// <summary>
+    /// Before and during the scan every action is dropped at Gate 1; a jump confirms the scan. Without a
+    /// start menu a jump also starts it; with one, picking a game option there does (StartMenu).
+    /// </summary>
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
         if (_scanComplete || evt.actionLabel != "jump" || evt.confidence < confirmMinConfidence || result.IsRepeat) return; // one jump, one step
-        if (!_scanStarted) StartScan();
+        if (!_scanStarted)
+        {
+            if (StartMenu.Active == null) StartScan();
+        }
         else ConfirmScan();
     }
 
-    /// <summary>Hard reset (HardReset): back to before the scan — waiting for a jump to start it.</summary>
+    /// <summary>Hard reset (HardReset): back to before the scan — waiting for the start menu (or a jump) to start it.</summary>
     public void ResetScan()
     {
         _scanStarted = false;
@@ -186,7 +192,7 @@ public class ARSessionManager : MonoBehaviour
         _nextEyeSampleAt = 0f;
         _lastLoggedArea = 0f;
         planeManager.enabled = false;
-        Debug.Log("[ARSessionManager] Hard reset — jump to start scanning.");
+        Debug.Log("[ARSessionManager] Hard reset — back to the start menu.");
     }
 
     /// <summary>Starts the scan: turns plane detection on. The player jumps once they're set up.</summary>

@@ -416,12 +416,12 @@ public static class GameplaySmokeTest
         // -- difficulty grows with the stage number, up to caps
         var difficulty = manager.AddComponent<Difficulty>();
         SetField(s_State, "stageIndex", 1);
-        Check(Difficulty.ExtraEnemies == 0 && Difficulty.ExtraShots == 0 && Difficulty.ShotIntervalMultiplier == 1f, "stage 1 is the authored baseline");
+        Check(Difficulty.ExtraShots == 0 && Difficulty.ShotIntervalMultiplier == 1f, "stage 1 is the authored baseline");
         SetField(s_State, "stageIndex", 5);
-        Check(Difficulty.ExtraEnemies == 2 && Difficulty.ExtraShots == 1 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.68f),
-              "stage 5 adds enemies and shots (speeds stay constant)");
+        Check(Difficulty.ExtraShots == 1 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.68f),
+              "stage 5 adds cannon shots (speeds and enemy counts stay constant)");
         SetField(s_State, "stageIndex", 40);
-        Check(Difficulty.ExtraEnemies == 3 && Difficulty.ExtraShots == 2 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.5f), "difficulty is capped");
+        Check(Difficulty.ExtraShots == 2 && Mathf.Approximately(Difficulty.ShotIntervalMultiplier, 0.5f), "difficulty is capped");
 
         SetField(s_State, "stageIndex", 5);
         var dSpawnerGO = new GameObject("DifficultySpawner");
@@ -439,7 +439,7 @@ public static class GameplaySmokeTest
             if (spawnedCount++ == 0) firstSpeed = e.SpeedMultiplier;
             UnityEngine.Object.DestroyImmediate(e.gameObject);
         }
-        Check(spawnedCount == 3 && Mathf.Approximately(firstSpeed, 1f), "on stage 5 a 1-enemy spawner spawns 3, at the same walking speed as stage 1");
+        Check(spawnedCount == 1 && Mathf.Approximately(firstSpeed, 1f), "on stage 5 a 1-enemy spawner still spawns 1, at the same walking speed as stage 1");
         UnityEngine.Object.DestroyImmediate(dSpawnerGO);
         UnityEngine.Object.DestroyImmediate(difficulty);
         SetField(s_State, "stageIndex", 1);
@@ -491,22 +491,61 @@ public static class GameplaySmokeTest
         var farPlayer = new Vector3(0f, 1.5f, 0.5f);
         BulletBill flame = null;
         bool roared = false;
-        for (int i = 0; i < 60 && flame == null; i++) { flame = bowser.Tick(0.1f, farPlayer); roared |= bowser.IsWarning; }
-        Check(roared && flame != null, "Bowser roars, then breathes fire");
+        bool leapt = false;
+        for (int i = 0; i < 60 && flame == null; i++) { flame = bowser.Tick(0.1f, farPlayer); roared |= bowser.IsWarning; leapt |= bowser.IsJumpAttack; }
+        Check(roared && flame != null && !leapt, $"from afar ({FlatDistance(bowser.transform.position, farPlayer):F1} m) Bowser roars, then breathes fire");
         livesBefore = s_State.Lives;
         s_State.Duck(1f);
         if (flame != null) FlyBill(flame, farPlayer);
         Check(flame != null && !flame.HitPlayer && s_State.Lives == livesBefore, "squatting ducks Bowser's fire");
         if (flame != null) UnityEngine.Object.DestroyImmediate(flame.gameObject);
 
-        // -- punch (1), thrown shell (2), fireball (1), punch (1): defeated, the axe unlocks
-        var bp = bowser.transform.position;
-        s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 0.7f);
+        // -- up close he leaps instead: a crouch (the red target follows the player), the leap, a shockwave, then stunned
+        for (int i = 0; i < 4; i++) s_State.AddLife(); // the leaps below land a hit
+        var post = bowser.transform.position;
+        var nearPlayer = new Vector3(post.x, 1.5f, post.z - 1f);
+        int bTicks = 0;
+        bool breathed = false;
+        while (bowser.State != Bowser.Phase.JumpWarning && bTicks++ < 40) breathed |= bowser.Tick(0.1f, nearPlayer) != null;
+        Check(bowser.State == Bowser.Phase.JumpWarning && !breathed && bTicks <= 13, $"up close (1 m) he crouches to leap within 1.2 s ({bTicks * 0.1f:F1} s), no fire");
+        var marker = bowser.transform.Find("LandingMarker");
+        Check(marker != null && marker.gameObject.activeSelf && FlatDistance(marker.position, nearPlayer) < 0.05f, $"a red target marks where he'll land: the player's spot (marker {(marker != null ? marker.position.ToString("F2") : "none")} active {marker != null && marker.gameObject.activeSelf}, player {nearPlayer:F2})");
+        while (bowser.State == Bowser.Phase.JumpWarning && bTicks++ < 80) bowser.Tick(0.1f, nearPlayer);
+        Check(bowser.State == Bowser.Phase.Leaping && !bowser.RespondsTo("punch") && !bowser.RespondsTo("stomp"), "he leaps; nothing reaches him in the air");
+        var touchdown = bowser.LandingPoint;
+        var sidestep = nearPlayer + Vector3.right;
+        livesBefore = s_State.Lives;
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        ClearAirborne();
+        while (bowser.State == Bowser.Phase.Leaping && bTicks++ < 120) bowser.Tick(0.1f, sidestep);
+        Check(bowser.State == Bowser.Phase.Stunned && s_State.Lives == livesBefore && FlatDistance(bowser.transform.position, touchdown) < 0.01f && !marker.gameObject.activeSelf,
+              "he lands on the target; sidestepping out of it dodges the shockwave");
+        s_Cam.transform.position = new Vector3(touchdown.x, 1.5f, touchdown.z - 0.7f);
         FaceForward();
         r = Resolve("stomp");
-        Check(r.Gate == 4, "Bowser can't be stomped", r);
-        r = Resolve("punch");
-        Check(r.Resolved && r.Target == bowser && bowser.Health == 4, "a punch hurts Bowser (1)", r);
+        Check(r.Resolved && r.Target == bowser && bowser.Health == 4, "stunned, a stomp hurts him (1)", r);
+        while (bowser.State != Bowser.Phase.Pacing && bTicks++ < 200) bowser.Tick(0.1f, farPlayer);
+        Check(bowser.State == Bowser.Phase.Pacing && FlatDistance(bowser.transform.position, post) < 0.4f, "then he hops back to his post");
+
+        // A player who stays in the target is hit; one who jumps as he lands isn't
+        nearPlayer = new Vector3(bowser.transform.position.x, 1.5f, bowser.transform.position.z - 1f);
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        livesBefore = s_State.Lives;
+        while (bowser.State != Bowser.Phase.Stunned && bTicks++ < 300) bowser.Tick(0.1f, nearPlayer);
+        Check(bowser.State == Bowser.Phase.Stunned && s_State.Lives == livesBefore - 1, "staying in the red target: the landing costs a life");
+        while (bowser.State != Bowser.Phase.Pacing && bTicks++ < 400) bowser.Tick(0.1f, farPlayer);
+        nearPlayer = new Vector3(bowser.transform.position.x, 1.5f, bowser.transform.position.z - 1f);
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        livesBefore = s_State.Lives;
+        while (bowser.State != Bowser.Phase.Leaping && bTicks++ < 500) bowser.Tick(0.1f, nearPlayer);
+        s_State.Jump(1f);
+        while (bowser.State == Bowser.Phase.Leaping && bTicks++ < 600) bowser.Tick(0.1f, nearPlayer);
+        Check(bowser.State == Bowser.Phase.Stunned && s_State.Lives == livesBefore, "jumping as he lands dodges the shockwave");
+        ClearAirborne();
+        while (bowser.State != Bowser.Phase.Pacing && bTicks++ < 700) bowser.Tick(0.1f, farPlayer);
+
+        // -- then a thrown shell (2), a fireball (1) and a punch (1): defeated, the axe unlocks
+        var bp = bowser.transform.position;
         s_State.PickUp(HeldItem.Shell);
         s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 2f);
         Resolve("throw");
@@ -571,7 +610,7 @@ public static class GameplaySmokeTest
         r = Resolve("jump");
         Check(r.Resolved && !s_State.IsGameOver && s_State.Lives == 3 && s_State.Score == 0 && s_State.StageIndex == 1, "a jump after the grace period restarts", r);
 
-        // -- spawner: first enemy after the initial delay, one at a time
+        // -- spawner: one wave when the stage starts (the first after the initial delay, the rest 1.5 s apart), then nothing
         s_State.BeginStage();
         var spawnerGO = new GameObject("Spawner");
         spawnerGO.transform.SetParent(s_Stage, false);
@@ -584,9 +623,14 @@ public static class GameplaySmokeTest
         Check(spawner.Tick(1.1f, near) == null, "spawner holds off while the player is near the spawn point");
         var spawned = spawner.Tick(0.1f, far);
         Check(spawned != null, "spawner spawns once the player is clear");
-        Check(spawner.Tick(5f, far) == null, "spawner waits while its enemy is alive");
+        Check(spawner.Tick(1f, far) == null, "the next of the wave waits its spacing (1.5 s)");
+        var second = spawner.Tick(0.6f, far);
+        Check(second is Koopa && spawned != null, "the wave's second enemy (a Koopa) follows while the first is still alive");
         UnityEngine.Object.DestroyImmediate(spawned.gameObject);
-        Check(spawner.Tick(3.1f, far) is Koopa, "spawner's second enemy is a Koopa");
+        UnityEngine.Object.DestroyImmediate(second.gameObject);
+        bool more = false;
+        for (int i = 0; i < 20; i++) more |= spawner.Tick(3f, far) != null;
+        Check(!more && spawner.WaveDone, "once the wave (2) is out and cleared, nothing more spawns");
 
         // -- stage templates are complete
         var large = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.LargeStagePath);
@@ -611,6 +655,65 @@ public static class GameplaySmokeTest
         ProximityFadeChecks();
         PhoneMotionChecks();
         TrainingChecks();
+        StartMenuChecks();
+    }
+
+    /// <summary>The start menu: nod down / tilt up to move (wrapping), clap to pick; god mode means no lives lost in the game.</summary>
+    private static void StartMenuChecks()
+    {
+        var menu = new GameObject("StartMenu").AddComponent<StartMenu>();
+        SetField(menu, "eventResolver", s_Resolver);
+        typeof(StartMenu).GetMethod("OnEnable", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(menu, null); // edit mode: not called
+        Check(menu.IsOpen && StartMenu.Active == menu && menu.Selected == StartMenu.Item.TrainingAndGame && !menu.GodMode,
+              "start menu: open, TRAINING + GAME selected, god mode off");
+
+        static Vector3 Pitch(float degrees) => Quaternion.Euler(-degrees, 0f, 0f) * Vector3.forward;
+        int moved = 0;
+        for (int i = 0; i <= 60; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-i * 0.5f))); // a slow look down to -30° over 3 s
+        for (int i = 0; i < 20; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-30f)));
+        Check(moved == 0 && menu.Selected == StartMenu.Item.TrainingAndGame, "looking round slowly doesn't move the selection");
+
+        int nod = 0;
+        foreach (var p in new[] { -36f, -44f, -52f, -52f, -44f, -36f, -30f, -30f }) nod += menu.Tick(0.05f, Pitch(p)); // a quick nod down and back
+        Check(nod == 1 && menu.Selected == StartMenu.Item.GameOnly, "a quick nod down moves the selection down once");
+        for (int i = 0; i < 40; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-50f))); // nod and stay down: becomes the new neutral
+        for (int i = 0; i < 20; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-50f)));
+        Check(moved == 1 && menu.Selected == StartMenu.Item.GodMode, "nodding and holding the head down moves it once, not again");
+        int tilt = 0;
+        foreach (var p in new[] { -40f, -30f, -30f, -40f, -50f, -50f }) tilt += menu.Tick(0.05f, Pitch(p)); // a quick tilt up and back
+        Check(tilt == -1, "a quick tilt up moves the selection up");
+
+        // Directly: wrap round, then pick
+        while (menu.Selected != StartMenu.Item.TrainingAndGame) menu.Move(1);
+        menu.Move(-1);
+        Check(menu.Selected == StartMenu.Item.GodMode, "moving up from the top wraps to GOD MODE");
+        Resolve("clap", 0.3f);
+        Check(!menu.GodMode, "a low-confidence clap picks nothing");
+        Resolve("clap");
+        Check(menu.GodMode && menu.IsOpen, "clap on GOD MODE turns it on (the menu stays open)");
+        menu.Move(-1);
+        Resolve("clap");
+        Check(!menu.IsOpen && StartMenu.Active == null && s_State.GodMode, "clap on GAME ONLY starts the game with god mode on");
+        menu.Move(1);
+        Resolve("clap");
+        Check(!menu.IsOpen && s_State.GodMode, "a closed menu ignores nods and claps");
+
+        s_State.RestartGame();
+        Check(s_State.GodMode, "god mode survives a new game");
+        s_State.BeginStage();
+        int livesBefore = s_State.Lives;
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        s_State.TakeHit("test");
+        Check(!s_State.InTraining && s_State.InfiniteLives && s_State.Lives == livesBefore, "god mode: a hit in the game costs no life");
+        s_State.GodMode = false;
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        s_State.TakeHit("test");
+        Check(s_State.Lives == livesBefore - 1, "god mode off: a hit costs a life");
+
+        menu.Open();
+        Check(menu.IsOpen && StartMenu.Active == menu && menu.GodMode && menu.Selected == StartMenu.Item.GameOnly, "a hard reset reopens the menu with the last choices");
+        UnityEngine.Object.DestroyImmediate(menu.gameObject);
+        Check(StartMenu.Active == null, "a destroyed menu isn't left active");
     }
 
     /// <summary>Safety: objects the player's head is in or at turn see-through; enemies never do.</summary>
@@ -636,6 +739,22 @@ public static class GameplaySmokeTest
               && enemy.GetComponentsInChildren<Renderer>().All(r => !fade.IsGhosted(r)), "the head inside a bush turns it see-through; the enemy stays solid");
         fade.Tick(new Vector3(0f, 1.5f, 0f));
         Check(!fade.IsGhosted(bushRenderer) && bushRenderer.sharedMaterial == original, "stepping out restores it");
+
+        // A ? block hit from right underneath goes spent while ghosted: stepping out keeps the spent look
+        var source = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("QuestionBlock").gameObject;
+        var qb = UnityEngine.Object.Instantiate(source, new Vector3(3f, 1.8f, 0f), Quaternion.identity, scene.transform).GetComponent<QuestionBlock>();
+        SetField(qb, "oneUpChance", 0f);
+        var spent = (Material)typeof(QuestionBlock).GetField("spentMaterial", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(qb);
+        var qbRenderers = qb.GetComponentsInChildren<Renderer>();
+        fade.Consider(qb.gameObject);
+        fade.Tick(new Vector3(3f, 1.6f, 0f)); // head just under the block
+        bool ghostedBeforeHit = qbRenderers.All(fade.IsGhosted);
+        qb.ResolveHit("jump", s_State);
+        fade.Tick(new Vector3(3f, 1.6f, 0f));
+        bool stillGhosted = qbRenderers.All(r => fade.IsGhosted(r) && r.sharedMaterial == ghost);
+        fade.Tick(new Vector3(3f, 1.5f, -2f));
+        Check(spent != null && ghostedBeforeHit && stillGhosted && qbRenderers.All(r => !fade.IsGhosted(r) && r.sharedMaterial == spent),
+              "a ? block spent while see-through keeps its spent look after stepping out");
         UnityEngine.Object.DestroyImmediate(scene);
         UnityEngine.Object.DestroyImmediate(fade.gameObject);
     }
@@ -945,9 +1064,24 @@ public static class GameplaySmokeTest
                 var noFire = Resolve("throw");
                 Check(noFire.Gate == 3, "no fireballs in the shell step: throw with nothing held is refused", noFire);
             }
+            if (i == 0)
+            {
+                tutorial.Tick(0.1f);
+                Check(!round.GetComponentsInChildren<Goomba>().Any(g => !(g is Koopa)) && tutorial.CurrentRound != null && tutorial.CurrentRound.transform == round,
+                      "the shell step starts with the Koopa alone (no Goombas yet), and waiting doesn't restart it");
+            }
             Resolve("stomp");
+            if (i == 0)
+            {
+                tutorial.Tick(0.1f);
+                Check(!round.GetComponentsInChildren<Goomba>().Any(g => !(g is Koopa)), "a stomped shell on the floor: still no Goombas");
+            }
             var clap = Resolve("clap");
-            var goomba = round.GetComponentsInChildren<Goomba>().First(g => !(g is Koopa));
+            tutorial.Tick(0.1f);
+            RegisterAll(round);
+            var goombas = round.GetComponentsInChildren<Goomba>().Where(g => !(g is Koopa)).ToArray();
+            if (i == 0) Check(clap.Resolved && goombas.Length == 3, "once the shell is in hand, 3 Goombas appear to throw it at", clap);
+            var goomba = goombas.First();
             s_Cam.transform.position = new Vector3(goomba.transform.position.x, 1.5f, goomba.transform.position.z - 1f);
             FaceForward();
             Resolve("throw");
@@ -1046,6 +1180,8 @@ public static class GameplaySmokeTest
     {
         for (int i = 0; i < 200 && bill != null && bill.State != BulletBill.Phase.Passed; i++) bill.Tick(0.05f, player);
     }
+
+    private static float FlatDistance(Vector3 a, Vector3 b) => new Vector2(a.x - b.x, a.z - b.z).magnitude;
 
     private static void ClearAirborne() => SetField(s_State, "_airborneUntil", float.NegativeInfinity);
 

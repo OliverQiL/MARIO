@@ -7,6 +7,7 @@ using UnityEngine.InputSystem;
 /// straight into EventResolver (no network), so responses are instant.
 ///
 ///   1 jump   2 stomp   3 squat   4 throw   5 punch   6 clap
+///   up / down arrows: the start menu's head nods (6, clap, picks)
 ///
 /// Every action is discrete (protocol v2): one event per key press, as the
 /// classifier sends one event per motion.
@@ -49,6 +50,12 @@ public class EditorActionInput : MonoBehaviour
             var result = eventResolver.Resolve(new GameEvent(action, confidence, $"kb-{_nextId++}", "editor"));
             _last = $"{action} → {(result.Resolved ? "ok" : $"gate {result.Gate} ({result.Reason})")}";
         }
+        if (StartMenu.Active is { } menu)
+        {
+            // On a device: tilt the head up / nod it down.
+            if (keyboard[Key.UpArrow].wasPressedThisFrame) { menu.Move(-1); _last = $"menu: {menu.Selected}"; }
+            if (keyboard[Key.DownArrow].wasPressedThisFrame) { menu.Move(1); _last = $"menu: {menu.Selected}"; }
+        }
         if (keyboard[Key.R].wasPressedThisFrame)
         {
             var reset = FindAnyObjectByType<HardReset>(); // on a device: look up for 5 s
@@ -59,7 +66,7 @@ public class EditorActionInput : MonoBehaviour
     private void OnGUI()
     {
         if (!showKeyLegend) return;
-        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap  R hard reset   |   right-drag look, WASD move");
+        GUI.Label(new Rect(12, Screen.height - 44, 900, 22), "Keys: 1 jump  2 stomp  3 squat  4 throw  5 punch  6 clap  R hard reset  arrows menu   |   right-drag look, WASD move");
         GUI.Label(new Rect(12, Screen.height - 24, 900, 22), $"Last: {_last}");
     }
 }

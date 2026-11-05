@@ -148,3 +148,44 @@ A short log of each problem met after the visualizer was connected to John's gat
   - doing it any other way resets the round with "That one didn't count";
   - the shell step takes the fire flower away;
   - a 90 s fallback per step stops a misreading classifier trapping the player.
+
+---
+
+## 2026-11-05 · Playtest round 3
+
+**26. Spent ? blocks kept their "?" look**
+- **Problem:** some ? blocks still looked unspent after being hit (the gameplay side was right: a second jump was refused). The see-through safety fade (21) had saved the block's "?" material when the head came close, and put it back after the hit had swapped in the spent one.
+- **Choice:** when a see-through object changes its own material, the fade adopts the new one, so stepping away restores the current look.
+
+**27. No way to choose how to play**
+- **Problem:** every game went through training, and there was no easier mode for demos or first-timers.
+- **Choice:** a start menu before the scan, replacing "jump to start scanning". The options are:
+  - TRAINING + GAME;
+  - GAME ONLY;
+  - GOD MODE: OFF/ON. On, it gives infinite lives in the game too; training always has them.
+
+  The menu works without touching the phone:
+  - **Nod down / tilt up:** moves the selection (about 15°, quick). A slow look round doesn't move it.
+  - **Clap:** picks the selected option and starts the scan.
+  - **Choices are kept:** a hard reset brings the menu back with the last choices, and god mode carries over to a new game after a game over.
+
+**28. Bowser too passive up close**
+- **Problem:** Bowser only breathed fire, so a player standing next to him could punch him freely. He also couldn't be stomped.
+- **Choice:** his attack depends on distance.
+  - **Beyond 1.5 m:** he breathes fire, as before.
+  - **Up close:** he crouches while a red target on the floor follows the player, then leaps at that spot.
+  - **Landing:** a shockwave hits anyone within 0.7 m who is on the ground. To dodge it, step out of the red target or jump.
+  - **After landing:** he's stunned for 1.6 s, then hops back to his post. Standing close brings a leap within about 1.2 s.
+  - **Hitting him:** punch, **stomp** and fireball do 1 damage, a shell 2. Nothing reaches him in the air.
+
+**29. Fireballs hard to follow**
+- **Problem:** the fire flower's fireballs were small in flight.
+- **Choice:** they're 35 % larger. Bowser's fire and the hit distance are unchanged.
+
+**30. Enemies kept coming**
+- **Problem:** spawners sent a new enemy after each defeat, so stages never felt cleared.
+- **Choice:** one wave per stage, at the start. The enemies come out 1.5 s apart so they don't overlap, and nothing respawns. Waves are the designed sizes: 1 to 4 enemies, 2 Koopas plus Bowser on 2-4. Difficulty no longer adds enemies; later stages still add cannon shots.
+
+**31. Shell training step confusing**
+- **Problem:** the Koopa and the Goombas all appeared together, so it wasn't clear what to do first.
+- **Choice:** only the Koopa appears at first. Once its shell is in hand, three Goombas appear ("Got it! Now throw it at a Goomba"). Each round starts again with the Koopa alone.

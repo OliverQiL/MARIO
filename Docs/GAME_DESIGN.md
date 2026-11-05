@@ -1,6 +1,6 @@
 # Game Design — Actions, Stage Elements, Enemies
 
-Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". **v2 (2026-10-12):** the action set is now six discrete actions, World 2 and Bowser's castle end the game, and the HUD has new elements: see "v2: actions, World 2 and the ending" at the end, which supersedes the older notes on `stand`, `walk`, `fireball` and continuous actions. **Since the first integration test (2026-10-21/22):** the flag needs a jump, an iris wipe between scenes, gameplay objects at 87 %, the `idle` class, a phone-side repeat filter, a look-up hard reset, a training round after every scan, and jumps/squats detected from the phone's own tracking: see the sections from "Gameplay polish" on. All numbers are tunable in the Inspector. The values below are the defaults.
+Status: agreed 2026-09-29. This extends design report §6.4, "Enabling AR of the various events". Passes 1 and 2 are implemented (pass 2 on 2026-09-30: its details under "Pass 2 details" were chosen during implementation and reviewed by Oliver). Pass 3 was implemented and playtested on 2026-09-30: see "Pass 3 details". **v2 (2026-10-12):** the action set is now six discrete actions, World 2 and Bowser's castle end the game, and the HUD has new elements: see "v2: actions, World 2 and the ending" at the end, which supersedes the older notes on `stand`, `walk`, `fireball` and continuous actions. **Since the first integration test (2026-10-21/22):** the flag needs a jump, an iris wipe between scenes, gameplay objects at 87 %, the `idle` class, a phone-side repeat filter, a look-up hard reset, a training round after every scan, and jumps/squats detected from the phone's own tracking: see the sections from "Gameplay polish" on. **2026-11-05:** a start menu with god mode, Bowser's jump-stomp, one enemy wave per stage: see "Start menu" and "Playtest round 3". All numbers are tunable in the Inspector. The values below are the defaults.
 
 ## Constraints that shape the design
 - **Everything is physical.** The player can't really leap onto things or duck quickly, so all interaction happens around them at human scale.
@@ -18,7 +18,7 @@ Every action still passes the six-gate chain (session → validity → capabilit
 | `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
 | `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
 | `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **1.0 m** (the same as stomp) and **±60°** of facing |
-| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. | An enemy **below eye level** within **1.0 m** and **±70°** of facing |
+| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. It also hurts Bowser (1) when he's on the ground. | An enemy **below eye level** within **1.0 m** and **±70°** of facing |
 | `idle` | Nothing: the classifier's catch-all for other movement. Acknowledged (gate 6, reason `idle`) in every state and ignored. | — |
 
 Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
@@ -48,7 +48,7 @@ Enemies spawn from a spawner on the stage, within a bounded distance of the play
 - The player starts with **3 lives**. 1-Ups can raise that to at most **8**.
 - Taking damage costs one life and the fire flower, and gives **2 s of invulnerability**.
 - At 0 lives it's **game over**: the stage and enemies are removed and every action is ignored, except `jump` after 2 s, which restarts. Restarting resets score, lives and stage, then re-anchors and places 1-1 (no training round).
-- In the **training round** lives are infinite: a hit costs nothing (see "Training round").
+- In the **training round** lives are infinite: a hit costs nothing (see "Training round"). With **god mode** on (start menu) the game's lives are infinite too: lives show INF and a hit says "god mode - no life lost".
 
 ## Stage templates
 LevelGenerator tries larger templates first. A placement is valid only if:
@@ -63,7 +63,7 @@ Each template's +Z axis points away from the player.
 | Template | Footprint | Contents |
 |---|---|---|
 | **Large** (pass 3) | 2.0 × 3.0 m | 2 "?" blocks, 2 bricks, enemy spawner (3 enemies: Goomba, Koopa, Goomba), Bullet Bill cannon, warp pipe (near half), flag (far end) |
-| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), enemy spawner (far side: a Goomba, then a Koopa, one at a time), Bullet Bill cannon (far corner), warp pipe, flag (far end) |
+| **Standard** | 1.2 × 2.0 m | "?" block (near side), brick (side), enemy spawner (far side: a Goomba, then a Koopa, as one wave), Bullet Bill cannon (far corner), warp pipe, flag (far end) |
 | **Compact** | 0.6 × 1.0 m | "?" block, flag. This is the fallback for cramped spaces. |
 
 ## Feedback
@@ -115,7 +115,6 @@ Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
 
   | | Per stage | Cap |
   |---|---|---|
-  | Extra enemies per spawner | +1 every 2 stages | +3 |
   | Enemy walking speed | +10 % | ×1.8 |
   | Extra cannon shots | +1 every 3 stages | +2 |
   | Time between cannon shots | −8 % | ×0.5 |
@@ -204,7 +203,7 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
   - underground: blue-brick ceiling rows at 2.35 m, thick pillars along the sides, a brick wall at the far end
   - sky: big clouds overhead, a cloud floor along the edges, giant mushrooms
   - castle: grey crenellated walls with lava moats inside them, a high back wall, flickering torches
-- **Bowser** (2-4). About 1 m tall, 5 health. He paces side to side, faces the player and touching him costs a life. Every 4.5 s (first after 3 s) he **roars** (mouth glow, warning sound, HUD "BOWSER'S FIRE - SQUAT!") for 1 s, then breathes a fireball at head height that flies like a Bullet Bill: squat or sidestep. Punch or fireball = 1 damage, a thrown shell = 2; he can't be stomped. Defeated: +5000, knocked out, and the **axe** unlocks (until then the banner says "BEAT BOWSER TO REACH THE AXE" and jumping at the axe does nothing). Jumping at the axe: it drops, confetti, the GAME CLEAR fanfare, and after 4 s the stage is cleared away.
+- **Bowser** (2-4). About 1 m tall, 5 health. He paces side to side, faces the player and touching him costs a life. Every 4.5 s (first after 3 s) he **roars** (mouth glow, warning sound, HUD "BOWSER'S FIRE - SQUAT!") for 1 s, then breathes a fireball at head height that flies like a Bullet Bill: squat or sidestep. Punch, stomp or fireball = 1 damage, a thrown shell = 2. **Since 2026-11-05 this is his long-range attack only: up close he jumps at the player instead** (see "Playtest round 3"). Defeated: +5000, knocked out, and the **axe** unlocks (until then the banner says "BEAT BOWSER TO REACH THE AXE" and jumping at the axe does nothing). Jumping at the axe: it drops, confetti, the GAME CLEAR fanfare, and after 4 s the stage is cleared away.
 - **HUD and graphics.**
   - HELD slot in the top bar (shell icon), and the held shell shown in the bottom-right of the 3D view.
   - Boss health bar under the banner while Bowser is on the stage.
@@ -219,7 +218,7 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
 - **Scene changes iris out and in.** Between stages and through warp pipes, the view closes to black in a circle, the scene changes, and it opens again (`ScreenTransition`, about 1 s in all). For safety in a real room it's never black for more than about 1.2 s; the HUD text stays on top.
 - **Sizes.** Gameplay objects (blocks, pipes, cannons, enemies, pickups, coins, the flag and the axe) are 13 % smaller than before, for comfort; reach and hit distances are unchanged. Scenery is sized to fill the space round the stage, outside the play area or overhead: the 1-1 castle is about 2.3 m tall, behind the flag; giant mushrooms, cloud banks, cave pillars and walls, and castle walls with lava moats. The overworld hills and bushes were then halved again (2026-10-21, too big in the room).
 - **One event per motion, filtered on the phone.** The gateway forwards every classification, so one motion arrives as a run of events with the same action. `EventResolver` processes the first and drops the rest at Gate 2 (`repeat of the same motion`), in every state: a report within 0.5 s of the previous one of that action continues the run; a run over 1.2 s is a new motion (two stomps back to back). The scan ignores repeated jumps, so one jump never starts and confirms it at once.
-- **Hard reset from inside the headset.** Look straight up (more than 65° above the horizon) for **5 s**. The HUD counts down ("KEEP LOOKING UP TO RESTART... 4") after the first second, so glancing up at a ? block shows nothing; looking down cancels. The game irises out and goes back to the very start: "jump to start scanning", the scan, a jump to confirm. Score, lives and stage are reset; on the phone the AR session is reset too, so the scan starts from no planes.
+- **Hard reset from inside the headset.** Look straight up (more than 65° above the horizon) for **5 s**. The HUD counts down ("KEEP LOOKING UP TO RESTART... 4") after the first second, so glancing up at a ? block shows nothing; looking down cancels. The game irises out and goes back to the very start: the start menu (since 2026-11-05; it was "jump to start scanning"), the scan, a jump to confirm. Score, lives and stage are reset; on the phone the AR session is reset too, so the scan starts from no planes.
 
 ## Training round (WORLD 0-1, 2026-10-21)
 
@@ -266,3 +265,36 @@ The classifier is still unreliable at jumps and squats, so the phone also detect
 - **A clearer Bullet Bill cannon.** A thick red tower with yellow warning bands (column 0.32 m, was 0.14), a red head with white skulls and a bigger warning glow. **One cannon per stage**, at the far end; first shot after 8 s (was 6), a 2 s warning (was 1.5), and it holds fire while the player is within 2 m (was 1.2).
 - **Training needs the real moves, 3 times each** (see "Training round").
 
+## Start menu (2026-11-05)
+
+The app opens on a menu, before the scan (it replaces "jump to start scanning"); a hard reset brings it back with the last choices.
+
+| Item | Clap does |
+|---|---|
+| **TRAINING + GAME** (default) | starts the scan; the training round, then 1-1 |
+| **GAME ONLY** | starts the scan; straight to 1-1 |
+| **GOD MODE: OFF/ON** | toggles. On: infinite lives in the game too (training always has them). Kept for new games after a game over. |
+
+- **Moving:** a quick **nod down** moves the selection down, a quick **tilt up** moves it up (wrapping). The head must dip about **15°** from a neutral pitch that slowly follows it, so looking round slowly doesn't move it; each nod counts once, and holding the head away for 1.5 s becomes the new neutral.
+- **Picking:** a `clap` with confidence ≥ 0.6 (repeats ignored). A line under the items says what the selected one does.
+- While the menu is open a jump doesn't start the scan. In the Editor the arrow keys stand in for nods.
+
+## Playtest round 3 (2026-11-05)
+
+- **Bowser up close.** Beyond **1.5 m** he roars and breathes fire as before. Closer, he **jump-stomps**:
+  1. He crouches for **0.9 s** while a **red target** on the floor follows the player. The banner says "BOWSER'S JUMPING - GET OUT OF THE RED!".
+  2. He leaps at the spot the player was on when he took off: a 0.9 s arc, 0.9 m high, at most 2 m. The target stays there, and his shadow crosses the floor under him.
+  3. Landing sends a **shockwave**: a player on the ground within **0.7 m** loses a life. Stepping out of the target, or jumping as he lands, avoids it.
+  4. He's **stunned for 1.6 s**, with no contact damage. The banner says "BOWSER'S STUNNED - HIT HIM!". Then he hops back to his post.
+
+  A player who walks up to him gets a leap within about **1.2 s**, so there are no free punches. **Stomp** now hurts him (1), like a punch or fireball; a shell does 2. Nothing reaches him in the air.
+- **One enemy wave per stage.** Each spawner releases its whole wave as the stage starts: the first after 2 s, the rest **1.5 s apart** from the same spot. Nothing respawns: clear the wave and the stage has no more walkers. Waves are the designed sizes on every stage:
+
+  | Stage | 1-1 | 1-2 | 1-3 | 1-4 | 2-1 | 2-2 | 2-3 | 2-4 |
+  |---|---|---|---|---|---|---|---|---|
+  | Enemies | 1 | 2 | 1 | 4 | 4 | 3 | 2 | 2 Koopas, plus Bowser |
+
+  Difficulty no longer adds enemies; later stages still add cannon shots and shorten the time between them.
+- **Bigger fireballs.** The fire flower's fireballs are **35 % larger**. The hit distance and Bowser's fire are unchanged.
+- **Shell training step, staged.** Only the Koopa is out at first. Stomp it, then clap to hold the shell. **Once the shell is held, 3 Goombas appear** ("Got it! Now throw it at a Goomba"). Losing the shell restarts the round, with the Koopa alone again.
+- **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.

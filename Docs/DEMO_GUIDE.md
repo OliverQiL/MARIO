@@ -24,10 +24,10 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 
 ## 2. Live demo runbook (about 8 minutes)
 
-1. **Launch MARIO Local on the phone** (headset mode is on by default; a two-finger tap toggles it before wearing, see §10). The HUD shows **GET READY – JUMP TO START SCANNING**. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
-2. **Start the scan with a jump** (key 1, or a real jump: in headset mode the phone detects jumps and squats itself from its height tracking). Walk round looking at the floor.
+1. **Launch MARIO Local on the phone** (headset mode is on by default; a two-finger tap toggles it before wearing, see §10). The HUD shows the **start menu**: TRAINING + GAME, GAME ONLY, GOD MODE: OFF/ON. Nod down / tilt up to move (arrow keys in the Editor), **clap** to pick: god mode toggles; a game option starts the scan. Pick TRAINING + GAME for a first-time player, or GAME ONLY with god mode on to show the later stages quickly. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
+2. **The scan starts with the menu's clap** (key 6 in the Editor). Walk round looking at the floor. Jumps from here on can be key 1 or a real jump: in headset mode the phone detects jumps and squats itself from its height tracking.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
-3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag), **3 times each, with only that move counting**. Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not finished in 90 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
+3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag), **3 times each, with only that move counting**. In the shell step only the Koopa is out until its shell is held; then 3 Goombas appear to throw it at. Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not finished in 90 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
 4. **Play with keys 1–6, each one a real `GAME_EVENT` over TLS/WebSocket:**
    - 1 → jump under a ? block → power-up
@@ -39,7 +39,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - The bottom-right **LAST ACTION** shows each class received, its confidence and the outcome (`(KEY)` for keys, `(PHONE)` for the phone's own jump/squat detection).
    - Red floor arrows point at approaching enemies (and an arrow at the edge of the view when one is out of sight); the ring round your feet turns **green** when a stomp would land and **gold** for a shell to clap.
    - Each stage appears centred in the scanned floor, facing away from you with its flag on the far side.
-   - The campaign runs 1-1 to 2-4; 2-4 is Bowser's castle (punch, fireball or shell him; squat his fire), and its axe is GAME CLEAR.
+   - The campaign runs 1-1 to 2-4; 2-4 is Bowser's castle: from afar he breathes fire (squat); up close he jumps at you (get out of the red target or jump as he lands), then he's stunned: punch, stomp, fireball or shell him. Its axe is GAME CLEAR. Each stage has one wave of enemies, with no respawns.
 5. **Dummy data, randomised:** quit the keys gateway (`q`) and run `python3 tools/mock_gateway.py --dummy --every 2`. Random packets arrive and the HUD shows each outcome: accepted (green), refused with a reason (orange), low confidence (grey), duplicates silent. The terminal shows the matching ACK colour and the gate that decided it.
 6. **"Change the dummy packets":** edit `tools/dummy_packets.json` (for example add `{ "action": "squat", "confidence": 0.3 }` or change an action). The gateway **re-reads it on the next pick**, with no restart, and logs `loaded N dummy packets`. Restarting the gateway also works.
 7. **Show robustness:**
@@ -47,7 +47,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - Cover the camera → TRACKING LOST, and the game pauses (Gate 1).
    - Lose all lives (not possible in training) → the GAME OVER screen with stats → jump to restart (straight to 1-1).
    - Send a burst of the same action (`--script "stomp,rep,rep"`) → one stomp; the rest ACK as `repeat of the same motion`.
-   - Look straight up for 5 s → the countdown, then a **hard reset** back to "jump to start scanning" (and the training round again).
+   - Look straight up for 5 s → the countdown, then a **hard reset** back to the start menu (with the last choices).
 
 ## 3. GUI design with dummy inputs: what to show and say
 
@@ -63,7 +63,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
   | Area | Contents |
   |---|---|
   | Top bar | score (6 digits), coins, stage (0-1 in training, 1-1 … 2-4), lives (heart ×N; `INF` in training), power (flower icon), held item (shell) — lives, power and held in light highlight boxes — and connection status |
-  | Banner | current state: scanning, tracking lost, placing, the training step (`TRAINING 3/7 - …`), flag distance / "JUMP TO GRAB THE FLAG!", bonus room, Bowser's fire warning, the hard-reset countdown |
+  | Banner | current state: scanning, tracking lost, placing, the training step (`TRAINING 3/7 - …`), flag distance / "JUMP TO GRAB THE FLAG!", bonus room, Bowser's fire / jump warnings and "STUNNED", the hard-reset countdown |
   | Boss bar | Bowser's health in 2-4 |
   | Centre title | intro cards (WORLD 0-1 TRAINING, WORLD 1-1 with the stage name and a tip), training step cards, STAGE CLEAR! / TRAINING COMPLETE! / WARP! / READY! |
   | Feedback | action results: green for hits and +score, orange for refused with a reason, grey for "move not recognised" and training tips ("That was STOMP — try JUMP"); red flash on damage; world-space +score popups |
@@ -82,7 +82,8 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 | Floor detection | `ARSessionManager` (`IsFloorPlane`, `RecalculateTotalArea`) | Horizontal planes; ARKit's *semantic classification* keeps `Floor` and rejects Table/Seat. Unclassified planes count only at floor height (±0.15 m). Floor level = the largest Floor plane. |
 | Player-controlled scan | `ARSessionManager.StartScan / ConfirmScan` (jumps) | Plane detection is off until the first jump; confirming needs at least 3 m² |
 | Jumps and squats from tracking | `PhoneMotionDetector` | Head height vs standing (floor + eye height): up 10 cm at 0.5 m/s = jump; down 28 cm = squat, held = stays ducked; backs up the classifier, one motion counts once |
-| Hard reset | `HardReset` | Looking up ≥ 65° for 5 s resets in place to "jump to start scanning" (on the phone also `ARSession.Reset`) |
+| Hard reset | `HardReset` | Looking up ≥ 65° for 5 s resets in place to the start menu (on the phone also `ARSession.Reset`) |
+| Start menu | `StartMenu` | Before the scan: training + game / game only / god mode; head nods move, a clap picks |
 | Player height | `ARSessionManager.SampleEyeHeight` → `PlayerBody` | Median camera height above the floor while scanning |
 | Tracking loss and relocalisation | `ARSessionManager.PollTrackingState` | `OnTrackingLost` closes Gate 1 (the game pauses); `OnTrackingRestored` reopens it |
 | Room mesh and occlusion (LiDAR iPhones) | `ARMeshManager` (AR Meshes), `RenderManager` + `AROcclusionManager` | Real furniture hides virtual objects; the mesh rejects obstructed placements. The base iPhone 17 has no LiDAR, so this falls back gracefully. |
@@ -232,7 +233,7 @@ sequenceDiagram
 | Time | Show | Say / point at |
 |---|---|---|
 | 0:00–0:40 | Title, then the system diagram (§6) | Role in the system: the phone receives classified actions over WSS and renders the AR game |
-| 0:40–2:30 | **Phone:** get ready → jump → scan → jump → the training round appears | Floor-only detection, the m² meter, eye-height calibration, anchoring; walk round the stage; a station or two of training (§4) |
+| 0:40–2:30 | **Phone:** start menu (nod, clap TRAINING + GAME) → scan → jump → the training round appears | Floor-only detection, the m² meter, eye-height calibration, anchoring; walk round the stage; a station or two of training (§4) |
 | 2:30–4:30 | **Phone plus terminal side by side:** `--dummy --every 2`, then edit `dummy_packets.json` | Real packet format, random choice, colour-coded ACKs by gate, HUD feedback colours (§3) |
 | 4:30–6:00 | **Phone:** play 1-2 with keys: power-up, punch or fireball, stomp, Koopa, warp to the bonus room and back, Bullet Bill and squat | AR effects, particles, audio |
 | 6:00–7:30 | **Code:** `EventResolver.RunGates`, `GameStateManager`, state diagram (§5) | Where state lives, the 6 gates, events vs polling |
@@ -262,7 +263,7 @@ sequenceDiagram
 
 | Problem | Fallback |
 |---|---|
-| Game stuck, or need to start over mid-demo (phone in the headset) | **Hard reset: look straight up at the ceiling for 5 s.** A countdown appears after 1 s; looking down cancels. The game goes back to "jump to start scanning". In the Editor, press **R**. |
+| Game stuck, or need to start over mid-demo (phone in the headset) | **Hard reset: look straight up at the ceiling for 5 s.** A countdown appears after 1 s; looking down cancels. The game goes back to the start menu. In the Editor, press **R**. |
 | Headset is uncomfortable or disorienting | Demo handheld. Two-finger tap before wearing toggles headset mode; it's on by default on the phone. |
 | Wi-Fi blocked or unstable | MARIO Local: Personal Hotspot from the phone, with the Mac joined. MARIO: it already uses John's laptop hotspot. Or, in the Editor, keys 1–6 drive `EventResolver` directly in the Museum simulation. |
 | Classifier misreads moves | Watch the bottom-right LAST ACTION to see what it sent. Jumps and squats still work through the phone's own detection (headset mode). |

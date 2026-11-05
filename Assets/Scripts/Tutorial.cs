@@ -18,7 +18,10 @@ using UnityEngine;
 ///   DuckBill       a Bullet Bill passes over the ducked player (BulletBill.DuckedUnder)
 ///   FireballEnemy  a fireball hits the Goomba (the flower is handed out)
 ///   ShellEnemy     a thrown shell hits a Goomba (the flower is taken away, so
-///                  throw can only throw the shell)
+///                  throw can only throw the shell). Only the Koopa is out at
+///                  first; the Goombas (the station's hidden "Targets" group)
+///                  appear once the shell is in hand (Oliver 2026-11-05: all
+///                  of them at once was confusing)
 ///   Flag           the flag is grabbed (ends the round; LevelGenerator)
 /// For the target kinds the step's station is a hidden template and each
 /// round plays a fresh copy of it; if the copy's target is used up any other
@@ -36,6 +39,8 @@ using UnityEngine;
 public class Tutorial : MonoBehaviour
 {
     public enum Kind { HitBlock, BreakBrick, StompEnemy, DuckBill, FireballEnemy, ShellEnemy, Flag }
+    /// <summary>A station's child group hidden until the player holds a shell (the shell step's Goombas).</summary>
+    public const string RevealOnHoldName = "Targets";
 
     [Serializable]
     public class Step
@@ -145,6 +150,8 @@ public class Tutorial : MonoBehaviour
             }
             return;
         }
+
+        if (step.kind == Kind.ShellEnemy) RevealTargetsOnHold();
 
         if (UsesCopies(step.kind) && !_roundCounted && TargetSpent(step))
         {
@@ -261,13 +268,27 @@ public class Tutorial : MonoBehaviour
                 return !targets.OfType<Goomba>().Any(t => !(t is Koopa) && t.IsActionable);
             case Kind.ShellEnemy:
             {
-                bool goombasLeft = targets.OfType<Goomba>().Any(t => !(t is Koopa) && t.IsActionable);
                 bool shellAvailable = targets.OfType<Koopa>().Any(k => k.IsActionable)
                                       || GameStateManager.Instance is { Held: HeldItem.Shell } || ThrownShell.InFlight > 0;
-                return !goombasLeft || !shellAvailable;
+                if (!shellAvailable) return true;
+                var hidden = CurrentRound.transform.Find(RevealOnHoldName);
+                if (hidden != null && !hidden.gameObject.activeSelf) return false; // the Goombas aren't out yet
+                return !targets.OfType<Goomba>().Any(t => !(t is Koopa) && t.IsActionable);
             }
             default: return false;
         }
+    }
+
+    /// <summary>The shell step: once the player holds the shell, the round's Goombas appear to throw it at.</summary>
+    private void RevealTargetsOnHold()
+    {
+        if (CurrentRound == null || GameStateManager.Instance is not { Held: HeldItem.Shell }) return;
+        var hidden = CurrentRound.transform.Find(RevealOnHoldName);
+        if (hidden == null || hidden.gameObject.activeSelf) return;
+        hidden.gameObject.SetActive(true);
+        AudioManager.Play(Sfx.PowerUpAppear);
+        OnMessage?.Invoke("Got it! Now throw it at a Goomba");
+        Debug.Log("[Tutorial] Shell in hand: Goombas out.");
     }
 
     private bool InRound(Component target)

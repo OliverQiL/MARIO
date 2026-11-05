@@ -16,8 +16,10 @@ using TMPro;
 /// - banner (top-centre): the current *state* — scanning, tracking lost, no
 ///                       room to place a stage, placing, distance to the flag.
 ///                       Highest priority wins; polled every frame.
-/// - scan panel:         "GET READY … JUMP TO START SCANNING" until the player
-///                       jumps; then "SCAN THE FLOOR", the floor found so far
+/// - start menu:         before the scan (StartMenu): TRAINING + GAME, GAME ONLY,
+///                       GOD MODE: OFF/ON, the selected one highlighted with a
+///                       line describing it; nod to move, clap to pick
+/// - scan panel:         once a game option is picked: "SCAN THE FLOOR", the floor found so far
 ///                       (a meter against what a full-size stage likes), and
 ///                       "JUMP WHEN DONE" once enough is found — the player
 ///                       confirms the scan; "READY!" pops in when they do
@@ -85,6 +87,14 @@ public class HUDController : MonoBehaviour
     [SerializeField] private TMP_Text scanHintText;
     [SerializeField] private float hintSeconds = 3.5f;
 
+    [Header("Start menu")]
+    [SerializeField] private StartMenu startMenu;
+    [SerializeField] private GameObject menuPanel;
+    [Tooltip("The three items, one per line; the selected one is highlighted.")]
+    [SerializeField] private TMP_Text menuItemsText;
+    [Tooltip("Under the items: what the selected one does.")]
+    [SerializeField] private TMP_Text menuDescriptionText;
+
     [Header("Damage")]
     [SerializeField] private Image damageFlash;
     [SerializeField] private float damageFlashSeconds = 0.5f;
@@ -133,6 +143,7 @@ public class HUDController : MonoBehaviour
         if (levelGenerator == null) levelGenerator = FindAnyObjectByType<LevelGenerator>();
         if (gameState == null) gameState = FindAnyObjectByType<GameStateManager>();
         if (eventResolver == null) eventResolver = FindAnyObjectByType<EventResolver>();
+        if (startMenu == null) startMenu = FindAnyObjectByType<StartMenu>();
         if (networkClient == null) networkClient = FindAnyObjectByType<NetworkClient>();
     }
 
@@ -189,6 +200,7 @@ public class HUDController : MonoBehaviour
         UpdateTitle();
         UpdateGameOver();
         UpdateDamage();
+        UpdateMenu();
         UpdateScan();
         UpdateBoss();
     }
@@ -214,7 +226,7 @@ public class HUDController : MonoBehaviour
         if (scoreText != null) scoreText.text = Mathf.Min(gameState.Score, 999999).ToString("D6");
         if (coinsText != null) coinsText.text = $"x{gameState.Coins:D2}";
         if (stageText != null) stageText.text = gameState.StageName;
-        if (livesText != null) livesText.text = gameState.InTraining ? "INF" : $"x{Mathf.Max(0, gameState.Lives)}"; // training: infinite lives
+        if (livesText != null) livesText.text = gameState.InfiniteLives ? "INF" : $"x{Mathf.Max(0, gameState.Lives)}"; // training or god mode: infinite lives
         if (powerIcon != null) powerIcon.enabled = gameState.HasFireFlower;
         if (powerEmptyText != null) powerEmptyText.enabled = !gameState.HasFireFlower;
         bool holding = gameState.Held != HeldItem.None;
@@ -310,6 +322,16 @@ public class HUDController : MonoBehaviour
         {
             message = "BOWSER'S FIRE - SQUAT!";
             color = warningColor;
+        }
+        else if (boss != null && !boss.IsDefeated && boss.IsJumpAttack)
+        {
+            message = "BOWSER'S JUMPING - GET OUT OF THE RED!";
+            color = warningColor;
+        }
+        else if (boss != null && !boss.IsDefeated && boss.IsStunned)
+        {
+            message = "BOWSER'S STUNNED - HIT HIM!";
+            color = goodColor;
         }
         else if (levelGenerator != null && levelGenerator.CurrentGoal != null && levelGenerator.CurrentGoal.Locked)
         {
@@ -462,9 +484,9 @@ public class HUDController : MonoBehaviour
 
     private void HandleLifeLost(int livesLeft)
     {
-        if (gameState != null && gameState.InTraining)
+        if (gameState != null && gameState.InfiniteLives)
         {
-            ShowFeedback("Ouch! (no lives lost in training)", warningColor);
+            ShowFeedback(gameState.InTraining ? "Ouch! (no lives lost in training)" : "Ouch! (god mode - no life lost)", warningColor);
             _damageAt = Time.time;
             return;
         }
@@ -511,12 +533,52 @@ public class HUDController : MonoBehaviour
         if (PlayerBody.EyeHeight is { } eyes) ShowFeedback($"Eye height {eyes:F2} m", quietColor); // stages are sized to it
     }
 
+    // ---- start menu ----
+
+    private static readonly string[] MenuDescriptions =
+    {
+        "LEARN THE MOVES FIRST, THEN WORLD 1-1",
+        "STRAIGHT TO WORLD 1-1",
+    };
+
+    private void UpdateMenu()
+    {
+        if (menuPanel == null) return;
+        bool open = startMenu != null && startMenu.IsOpen;
+        if (menuPanel.activeSelf != open) menuPanel.SetActive(open);
+        if (!open) return;
+
+        var selected = startMenu.Selected;
+        if (menuItemsText != null)
+        {
+            var lines = new System.Text.StringBuilder();
+            for (int i = 0; i < StartMenu.ItemCount; i++)
+            {
+                var item = (StartMenu.Item)i;
+                string label = item switch
+                {
+                    StartMenu.Item.TrainingAndGame => "TRAINING + GAME",
+                    StartMenu.Item.GameOnly => "GAME ONLY",
+                    _ => $"GOD MODE: {(startMenu.GodMode ? "<color=#4CFF66>ON</color>" : "OFF")}",
+                };
+                lines.Append(item == selected ? $"<color=#FFD733>> {label} <</color>" : $"<color=#FFFFFFB0>  {label}  </color>");
+                if (i < StartMenu.ItemCount - 1) lines.Append('\n');
+            }
+            menuItemsText.text = lines.ToString();
+        }
+        if (menuDescriptionText != null)
+            menuDescriptionText.text = selected == StartMenu.Item.GodMode
+                ? (startMenu.GodMode ? "ON: INFINITE LIVES IN TRAINING AND THE GAME" : "OFF: INFINITE LIVES IN TRAINING ONLY")
+                : MenuDescriptions[(int)selected];
+    }
+
     // ---- scan panel ----
 
     private void UpdateScan()
     {
         if (scanPanel == null || sessionManager == null) return;
-        bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsFinished);
+        bool scanning = sessionManager.IsTracking && !sessionManager.IsScanComplete && (gameState == null || !gameState.IsFinished)
+                        && (startMenu == null || !startMenu.IsOpen); // the menu comes first
         if (scanPanel.activeSelf != scanning) scanPanel.SetActive(scanning);
         if (!scanning) return;
 

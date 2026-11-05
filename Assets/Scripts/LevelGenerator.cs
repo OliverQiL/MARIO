@@ -638,6 +638,9 @@ public class LevelGenerator : MonoBehaviour
         Debug.Log("[LevelGenerator] Game over — loop halted.");
     }
 
+    /// <summary>The start menu's choice: whether the first stage after the scan is the training round.</summary>
+    public void PlayTrainingNext(bool training) => _trainingPending = training;
+
     /// <summary>Hard reset (HardReset): clears the stage and waits, like at launch, for the next scan to complete (HandleScanComplete).</summary>
     public void ResetToScan()
     {

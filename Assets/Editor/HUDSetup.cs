@@ -153,6 +153,33 @@ public static class HUDSetup
         hint.text = "SWEEP THE CAMERA SLOWLY OVER THE FLOOR";
         hint.color = new Color(1f, 0.92f, 0.75f);
 
+        // ---- start menu: before the scan (StartMenu); nod to move, clap to pick ----
+        var menu = EnsureChild(root, "MenuPanel");
+        var menuRect = (RectTransform)menu.transform;
+        menuRect.anchorMin = menuRect.anchorMax = menuRect.pivot = new Vector2(0.5f, 0.5f);
+        menuRect.anchoredPosition = new Vector2(0f, -20f);
+        menuRect.sizeDelta = new Vector2(1300f, 620f);
+        var menuBack = menu.GetComponent<Image>();
+        if (menuBack == null) menuBack = menu.AddComponent<Image>();
+        menuBack.sprite = PixelArt.HudBox();
+        menuBack.type = Image.Type.Sliced;
+        menuBack.pixelsPerUnitMultiplier = 0.4f;
+        menuBack.color = new Color(0.05f, 0.04f, 0.1f, 0.75f); // the room stays visible behind it
+        menuBack.raycastTarget = false;
+        var menuTitle = Styled(menu.transform, "MenuTitle (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 220f), new Vector2(1300f, 110f), 88f, TextAlignmentOptions.Center, font, shadow);
+        menuTitle.text = "MARIO";
+        menuTitle.color = new Color(1f, 0.85f, 0.2f);
+        var menuItems = Styled(menu.transform, "MenuItems (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, 20f), new Vector2(1300f, 260f), 44f, TextAlignmentOptions.Center, font, shadow);
+        menuItems.richText = true;
+        menuItems.lineSpacing = 60f;
+        menuItems.text = "> TRAINING + GAME <\nGAME ONLY\nGOD MODE: OFF";
+        var menuDescription = Styled(menu.transform, "MenuDescription (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -150f), new Vector2(1300f, 50f), 26f, TextAlignmentOptions.Center, font, shadow);
+        menuDescription.text = "LEARN THE MOVES FIRST, THEN WORLD 1-1";
+        menuDescription.color = new Color(1f, 0.92f, 0.75f);
+        var menuHint = Styled(menu.transform, "MenuHint (TMP)", new Vector2(0.5f, 0.5f), new Vector2(0f, -240f), new Vector2(1300f, 50f), 24f, TextAlignmentOptions.Center, font, shadow);
+        menuHint.text = "NOD DOWN / TILT UP TO MOVE - CLAP TO SELECT";
+        menuHint.color = new Color(0.8f, 0.8f, 0.8f);
+
         // ---- damage flash: full screen, behind the text ----
         var flashGO = EnsureChild(root, "DamageFlash");
         var flashRect = (RectTransform)flashGO.transform;
@@ -231,6 +258,10 @@ public static class HUDSetup
         so.FindProperty("gameOverPanel").objectReferenceValue = panel;
         so.FindProperty("gameOverStatsText").objectReferenceValue = overStats;
         so.FindProperty("gameOverPromptText").objectReferenceValue = overPrompt;
+        so.FindProperty("startMenu").objectReferenceValue = Object.FindAnyObjectByType<StartMenu>();
+        so.FindProperty("menuPanel").objectReferenceValue = menu;
+        so.FindProperty("menuItemsText").objectReferenceValue = menuItems;
+        so.FindProperty("menuDescriptionText").objectReferenceValue = menuDescription;
         so.ApplyModifiedPropertiesWithoutUndo();
 
         // Headset (phone VR viewer) mode: side-by-side eyes with lens pre-distortion; on by default on a device.
@@ -259,7 +290,7 @@ public static class HUDSetup
         EditorSceneManager.MarkSceneDirty(scene);
         EditorSceneManager.SaveScene(scene);
         AssetDatabase.SaveAssets();
-        Debug.Log("[HUDSetup] Done. Styled HUD (Press Start 2P) with top bar (incl. HELD), banner, boss bar, title + intro card, feedback and end screen.");
+        Debug.Log("[HUDSetup] Done. Styled HUD (Press Start 2P) with top bar (incl. HELD), start menu, banner, boss bar, title + intro card, feedback and end screen.");
     }
 
     // ---- font ----
