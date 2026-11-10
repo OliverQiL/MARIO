@@ -273,6 +273,7 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
 |---|---|
 | **TRAINING + GAME** (default) | starts the scan; the training round, then 1-1 |
 | **GAME ONLY** | starts the scan; straight to 1-1 |
+| **GAME: FULL/SHORT** (2026-11-10) | toggles. **Full** (default): all eight stages. **Short**: World 1 (1-1 to 1-4), then straight to Bowser's castle (2-4), so a demo reaches the boss sooner. Kept for new games, like god mode. |
 | **GOD MODE: OFF/ON** | toggles. On: infinite lives in the game too (training always has them). Kept for new games after a game over. |
 
 - **Moving:** a quick **nod down** moves the selection down, a quick **tilt up** moves it up (wrapping). The head must dip about **15°** from a neutral pitch that slowly follows it, so looking round slowly doesn't move it; each nod counts once, and holding the head away for 1.5 s becomes the new neutral.
@@ -297,4 +298,5 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
   Difficulty no longer adds enemies; later stages still add cannon shots and shorten the time between them.
 - **Bigger fireballs.** The fire flower's fireballs are **35 % larger**. The hit distance and Bowser's fire are unchanged.
 - **Shell training step, staged.** Only the Koopa is out at first. Stomp it, then clap to hold the shell. **Once the shell is held, 3 Goombas appear** ("Got it! Now throw it at a Goomba"). Losing the shell restarts the round, with the Koopa alone again.
+- **Bowser's hitbox (2026-11-10).** A fireball hits him anywhere on his body art (a box round his model, legs to horns), not just within 0.3 m of his head as before. Other targets still use their single hit point. Nothing hits him mid-leap.
 - **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.
