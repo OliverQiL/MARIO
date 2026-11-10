@@ -22,6 +22,9 @@ public abstract class InteractableBase : MonoBehaviour, IInteractable
     /// <summary>The point used for range checks and projectile hits.</summary>
     public virtual Vector3 HitPoint => transform.position;
 
+    /// <summary>Whether a projectile of <paramref name="radius"/> at <paramref name="point"/> (a fireball) hits it. Defaults to the distance to HitPoint; a big target (Bowser) checks its whole body.</summary>
+    public virtual bool IsHitAt(Vector3 point, float radius) => (HitPoint - point).sqrMagnitude <= radius * radius;
+
     /// <summary>Whether something sliding along the floor at <paramref name="point"/> (a thrown shell) touches it.</summary>
     public virtual bool TouchesFloorAt(Vector3 point, float radius)
     {

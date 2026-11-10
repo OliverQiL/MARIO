@@ -95,12 +95,53 @@ public class Bowser : InteractableBase
     private Vector3 _knockVelocity;
     private StageGoal _goal;
     private Vector3 _modelPosition, _modelScale;
+    private Bounds _bodyBox;
+    private bool _bodyBoxSet;
 
     public override bool IsActionable => !IsDefeated;
     public override bool RespondsTo(string actionLabel) =>
         !IsAirborne && (actionLabel == "fireball" || actionLabel == "punch" || actionLabel == "stomp" || actionLabel == ThrownShell.HitLabel);
     /// <summary>Chest height, scaled to the player, so a punch reaches it and a fireball aimed at it hits.</summary>
     public override Vector3 HitPoint => transform.position + Vector3.up * (0.6f * PlayerBody.EyeHeightOr(1.55f));
+
+    /// <summary>A fireball anywhere on his body art (legs to horns, shell to snout) hits, not just near HitPoint (his head).</summary>
+    public override bool IsHitAt(Vector3 point, float radius)
+    {
+        if (IsAirborne) return false;
+        var box = BodyBox();
+        var local = transform.InverseTransformPoint(point);
+        float distance = (box.ClosestPoint(local) - local).magnitude * transform.lossyScale.x;
+        return distance <= radius;
+    }
+
+    /// <summary>
+    /// The body art's box in Bowser's local space: every mesh of the model (legs to horns, shell to snout), not the
+    /// shadow or the landing target. Measured standing (Awake, or the first shot outside a crouch) and kept, since
+    /// the hit flicker hides the model and the crouch squashes it.
+    /// </summary>
+    private Bounds BodyBox()
+    {
+        if (_bodyBoxSet) return _bodyBox;
+        var box = new Bounds(Vector3.up * 0.5f, new Vector3(0.6f, 1f, 0.6f)); // no art: about his size
+        bool first = true;
+        foreach (var filter in (model != null ? model : transform).GetComponentsInChildren<MeshFilter>(true))
+        {
+            if (filter.sharedMesh == null) continue;
+            var mesh = filter.sharedMesh.bounds;
+            var toLocal = transform.worldToLocalMatrix * filter.transform.localToWorldMatrix;
+            for (int i = 0; i < 8; i++)
+            {
+                var corner = mesh.center + Vector3.Scale(mesh.extents, new Vector3((i & 1) == 0 ? -1 : 1, (i & 2) == 0 ? -1 : 1, (i & 4) == 0 ? -1 : 1));
+                var p = toLocal.MultiplyPoint3x4(corner);
+                if (first) { box = new Bounds(p, Vector3.zero); first = false; }
+                else box.Encapsulate(p);
+            }
+        }
+        if (_phase == Phase.JumpWarning) return box; // squashed: use it, but measure again standing
+        _bodyBox = box;
+        _bodyBoxSet = true;
+        return _bodyBox;
+    }
 
     public override bool TouchesFloorAt(Vector3 point, float radius)
     {
@@ -116,6 +157,7 @@ public class Bowser : InteractableBase
         if (warningGlow != null) warningGlow.SetActive(false);
         if (landingMarker != null) landingMarker.SetActive(false);
         if (model != null) { _modelPosition = model.localPosition; _modelScale = model.localScale; }
+        BodyBox(); // standing
     }
 
     protected override void OnEnable()

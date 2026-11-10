@@ -17,7 +17,7 @@ using TMPro;
 ///                       room to place a stage, placing, distance to the flag.
 ///                       Highest priority wins; polled every frame.
 /// - start menu:         before the scan (StartMenu): TRAINING + GAME, GAME ONLY,
-///                       GOD MODE: OFF/ON, the selected one highlighted with a
+///                       GAME: FULL/SHORT, GOD MODE: OFF/ON, the selected one highlighted with a
 ///                       line describing it; nod to move, clap to pick
 /// - scan panel:         once a game option is picked: "SCAN THE FLOOR", the floor found so far
 ///                       (a meter against what a full-size stage likes), and
@@ -559,6 +559,7 @@ public class HUDController : MonoBehaviour
                 {
                     StartMenu.Item.TrainingAndGame => "TRAINING + GAME",
                     StartMenu.Item.GameOnly => "GAME ONLY",
+                    StartMenu.Item.GameLength => $"GAME: {(startMenu.ShortGame ? "<color=#4CFF66>SHORT</color>" : "FULL")}",
                     _ => $"GOD MODE: {(startMenu.GodMode ? "<color=#4CFF66>ON</color>" : "OFF")}",
                 };
                 lines.Append(item == selected ? $"<color=#FFD733>> {label} <</color>" : $"<color=#FFFFFFB0>  {label}  </color>");
@@ -567,9 +568,12 @@ public class HUDController : MonoBehaviour
             menuItemsText.text = lines.ToString();
         }
         if (menuDescriptionText != null)
-            menuDescriptionText.text = selected == StartMenu.Item.GodMode
-                ? (startMenu.GodMode ? "ON: INFINITE LIVES IN TRAINING AND THE GAME" : "OFF: INFINITE LIVES IN TRAINING ONLY")
-                : MenuDescriptions[(int)selected];
+            menuDescriptionText.text = selected switch
+            {
+                StartMenu.Item.GodMode => startMenu.GodMode ? "ON: INFINITE LIVES IN TRAINING AND THE GAME" : "OFF: INFINITE LIVES IN TRAINING ONLY",
+                StartMenu.Item.GameLength => startMenu.ShortGame ? "SHORT: WORLD 1, THEN BOWSER'S CASTLE" : "FULL: WORLDS 1 AND 2, THEN BOWSER",
+                _ => MenuDescriptions[(int)selected],
+            };
     }
 
     // ---- scan panel ----

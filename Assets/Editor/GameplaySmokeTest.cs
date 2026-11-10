@@ -552,13 +552,22 @@ public static class GameplaySmokeTest
         shell = UnityEngine.Object.FindObjectsByType<ThrownShell>().FirstOrDefault();
         for (int i = 0; i < 60 && shell != null; i++) shell.Tick(0.05f);
         Check(bowser.Health == 2, "a thrown shell hits Bowser once, for 2");
+        // His hitbox is his whole body art, not just near HitPoint (his head): legs, belly, head hit; beside or above him misses
+        var bodyUp = bowser.transform.up;
+        var bodySide = bowser.transform.right;
+        float bodyScale = bowser.transform.lossyScale.y;
+        Check(bowser.IsHitAt(bp + bodyUp * (0.12f * bodyScale), 0.05f) && bowser.IsHitAt(bp + bodyUp * (0.45f * bodyScale), 0.05f)
+              && bowser.IsHitAt(bp + bodyUp * (0.9f * bodyScale), 0.05f),
+              "a fireball anywhere on Bowser's body hits: legs, belly, head");
+        Check(!bowser.IsHitAt(bp + bodySide * 0.9f + bodyUp * 0.45f, 0.3f) && !bowser.IsHitAt(bp + bodyUp * 1.6f, 0.3f),
+              "a fireball beside or above him misses");
         s_State.SetFireFlower(true);
-        s_Cam.transform.LookAt(bowser.HitPoint);
+        s_Cam.transform.LookAt(bp + Vector3.up * (0.35f * bodyScale)); // at his belly, well below HitPoint (his head)
         Resolve("throw");
         fb = UnityEngine.Object.FindObjectsByType<Fireball>().FirstOrDefault();
         hit = null;
         for (int i = 0; i < 40 && fb != null && hit == null; i++) hit = fb.Tick(0.05f);
-        Check(hit == bowser && bowser.Health == 1, "a fireball hurts Bowser (1)");
+        Check(hit == bowser && bowser.Health == 1, "a fireball at his belly hurts Bowser (1)");
         s_Cam.transform.position = new Vector3(bp.x, 1.5f, bp.z - 0.7f);
         FaceForward();
         scoreBefore = s_State.Score;
@@ -678,7 +687,7 @@ public static class GameplaySmokeTest
         Check(nod == 1 && menu.Selected == StartMenu.Item.GameOnly, "a quick nod down moves the selection down once");
         for (int i = 0; i < 40; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-50f))); // nod and stay down: becomes the new neutral
         for (int i = 0; i < 20; i++) moved += Mathf.Abs(menu.Tick(0.05f, Pitch(-50f)));
-        Check(moved == 1 && menu.Selected == StartMenu.Item.GodMode, "nodding and holding the head down moves it once, not again");
+        Check(moved == 1 && menu.Selected == StartMenu.Item.GameLength, "nodding and holding the head down moves it once, not again");
         int tilt = 0;
         foreach (var p in new[] { -40f, -30f, -30f, -40f, -50f, -50f }) tilt += menu.Tick(0.05f, Pitch(p)); // a quick tilt up and back
         Check(tilt == -1, "a quick tilt up moves the selection up");
@@ -692,14 +701,31 @@ public static class GameplaySmokeTest
         Resolve("clap");
         Check(menu.GodMode && menu.IsOpen, "clap on GOD MODE turns it on (the menu stays open)");
         menu.Move(-1);
+        Check(!menu.ShortGame, "the full game by default");
         Resolve("clap");
-        Check(!menu.IsOpen && StartMenu.Active == null && s_State.GodMode, "clap on GAME ONLY starts the game with god mode on");
+        Check(menu.Selected == StartMenu.Item.GameLength && menu.ShortGame && menu.IsOpen, "clap on GAME: FULL switches to the short game (the menu stays open)");
+        menu.Move(-1);
+        Resolve("clap");
+        Check(!menu.IsOpen && StartMenu.Active == null && s_State.GodMode && s_State.ShortGame, "clap on GAME ONLY starts the short game with god mode on");
         menu.Move(1);
         Resolve("clap");
         Check(!menu.IsOpen && s_State.GodMode, "a closed menu ignores nods and claps");
 
         s_State.RestartGame();
-        Check(s_State.GodMode, "god mode survives a new game");
+        Check(s_State.GodMode && s_State.ShortGame, "god mode and the short game survive a new game");
+
+        // The short game: 1-1 to 1-4, then straight to Bowser's castle (2-4); the full game plays every stage
+        Check(GameStateManager.FinalStage == StageDesigns.Campaign.Length && GameStateManager.NameOf(GameStateManager.FinalStage) == "2-4",
+              "the final stage is the campaign's last, 2-4");
+        var shortRun = new List<string>();
+        for (int i = 0; i < 6 && s_State.StageIndex <= GameStateManager.FinalStage; i++) { shortRun.Add(s_State.StageName); s_State.CompleteStage(); }
+        Check(string.Join(",", shortRun) == "1-1,1-2,1-3,1-4,2-4", $"short game: {string.Join(", ", shortRun)}");
+        s_State.ShortGame = false;
+        s_State.RestartGame();
+        var fullRun = new List<string>();
+        for (int i = 0; i < 10 && s_State.StageIndex <= GameStateManager.FinalStage; i++) { fullRun.Add(s_State.StageName); s_State.CompleteStage(); }
+        Check(fullRun.Count == 8 && fullRun[4] == "2-1" && fullRun[7] == "2-4", $"full game: {string.Join(", ", fullRun)}");
+        s_State.RestartGame();
         s_State.BeginStage();
         int livesBefore = s_State.Lives;
         SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
@@ -711,7 +737,7 @@ public static class GameplaySmokeTest
         Check(s_State.Lives == livesBefore - 1, "god mode off: a hit costs a life");
 
         menu.Open();
-        Check(menu.IsOpen && StartMenu.Active == menu && menu.GodMode && menu.Selected == StartMenu.Item.GameOnly, "a hard reset reopens the menu with the last choices");
+        Check(menu.IsOpen && StartMenu.Active == menu && menu.GodMode && menu.ShortGame && menu.Selected == StartMenu.Item.GameOnly, "a hard reset reopens the menu with the last choices");
         UnityEngine.Object.DestroyImmediate(menu.gameObject);
         Check(StartMenu.Active == null, "a destroyed menu isn't left active");
     }

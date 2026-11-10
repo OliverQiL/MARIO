@@ -173,7 +173,7 @@ public static class StageDesigns
         },
         new Design
         {
-            Name = "2-4", Title = "BOWSER'S CASTLE", Tip = "Punch, fireball or shell him (a shell counts 2). Squat his fire!",
+            Name = "2-4", Title = "BOWSER'S CASTLE", Tip = "Squat his fire. Dodge his jump, then hit him!",
             Theme = "Bowser's castle (final): power up, get a shell, beat Bowser (5 hits; dodge his fire), then reach the axe.",
             Width = 3f, Depth = 5f, Scenery = Scenery.Castle,
             Pieces = Join(

@@ -8,10 +8,12 @@ using UnityEngine;
 ///
 ///   TRAINING + GAME   the training round (WORLD 0-1), then 1-1
 ///   GAME ONLY         straight to 1-1
+///   GAME: FULL/SHORT  toggles; short is World 1 (1-1 to 1-4), then straight to
+///                     Bowser's castle (2-4), so a demo reaches the boss sooner
 ///   GOD MODE: OFF/ON  toggles; on, the game has infinite lives too (training always has)
 ///
 /// Picking either game option sets the training choice (LevelGenerator),
-/// god mode (GameStateManager) and starts the scan (ARSessionManager); the
+/// god mode and the game length (GameStateManager) and starts the scan (ARSessionManager); the
 /// rest is unchanged (scan, jump to confirm, play). While the menu is open
 /// (<see cref="Active"/>), a jump doesn't start the scan.
 ///
@@ -25,8 +27,8 @@ using UnityEngine;
 /// </summary>
 public class StartMenu : MonoBehaviour
 {
-    public enum Item { TrainingAndGame, GameOnly, GodMode }
-    public const int ItemCount = 3;
+    public enum Item { TrainingAndGame, GameOnly, GameLength, GodMode }
+    public const int ItemCount = 4;
 
     [SerializeField] private Camera arCamera;
     [SerializeField] private EventResolver eventResolver;
@@ -51,6 +53,8 @@ public class StartMenu : MonoBehaviour
     public bool IsOpen { get; private set; } = true;
     public Item Selected { get; private set; } = Item.TrainingAndGame;
     public bool GodMode { get; private set; }
+    /// <summary>World 1, then Bowser's castle (instead of both worlds).</summary>
+    public bool ShortGame { get; private set; }
 
     /// <summary>Raised whenever the selection, god mode or open state changes (the HUD redraws, a blip plays).</summary>
     public event System.Action Changed;
@@ -125,7 +129,7 @@ public class StartMenu : MonoBehaviour
         Changed?.Invoke();
     }
 
-    /// <summary>Picks the selected item: toggles god mode, or starts the game (with or without training).</summary>
+    /// <summary>Picks the selected item: toggles god mode or the game length, or starts the game (with or without training).</summary>
     public void Confirm()
     {
         if (!IsOpen) return;
@@ -137,15 +141,27 @@ public class StartMenu : MonoBehaviour
             Changed?.Invoke();
             return;
         }
+        if (Selected == Item.GameLength)
+        {
+            ShortGame = !ShortGame;
+            AudioManager.Play(Sfx.PowerUp);
+            Debug.Log($"[StartMenu] {(ShortGame ? "Short" : "Full")} game.");
+            Changed?.Invoke();
+            return;
+        }
 
         bool training = Selected == Item.TrainingAndGame;
         IsOpen = false;
         if (Active == this) Active = null;
         var gs = GameStateManager.Instance;
-        if (gs != null) gs.GodMode = GodMode;
+        if (gs != null)
+        {
+            gs.GodMode = GodMode;
+            gs.ShortGame = ShortGame;
+        }
         if (levelGenerator != null) levelGenerator.PlayTrainingNext(training);
         AudioManager.Play(Sfx.OneUp);
-        Debug.Log($"[StartMenu] {(training ? "Training + game" : "Game only")}, god mode {(GodMode ? "on" : "off")} — scan next.");
+        Debug.Log($"[StartMenu] {(training ? "Training + game" : "Game only")}, {(ShortGame ? "short" : "full")} game, god mode {(GodMode ? "on" : "off")} — scan next.");
         if (sessionManager != null) sessionManager.StartScan();
         Changed?.Invoke();
     }

@@ -86,6 +86,10 @@ public class GameStateManager : MonoBehaviour
     public bool InTraining { get; private set; }
     /// <summary>Chosen on the start menu: hits cost no lives in the game either (training always has infinite lives). A setting, so a new game keeps it.</summary>
     public bool GodMode { get; set; }
+    /// <summary>Chosen on the start menu: World 1, then straight to Bowser's castle (the final stage). A setting, so a new game keeps it.</summary>
+    public bool ShortGame { get; set; }
+    /// <summary>The campaign's last stage (2-4, Bowser's castle): StageDesigns.Campaign's length.</summary>
+    public const int FinalStage = 2 * StagesPerWorld;
     /// <summary>Hits cost nothing right now: training, or god mode.</summary>
     public bool InfiniteLives => InTraining || GodMode;
     public static string NameOf(int stage) => $"{(stage - 1) / StagesPerWorld + 1}-{(stage - 1) % StagesPerWorld + 1}";
@@ -283,13 +287,16 @@ public class GameStateManager : MonoBehaviour
         Debug.Log($"[GameStateManager] Stage {StageName} started.");
     }
 
-    /// <summary>Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances the stage counter.</summary>
+    /// <summary>
+    /// Wired to LevelGenerator.OnStageCompleted: closes Gate 1 for the transition, awards the clear bonus, advances
+    /// the stage counter. In the short game, the end of World 1 goes straight to the final stage (Bowser's castle).
+    /// </summary>
     public void CompleteStage()
     {
         isStageActive = false;
         Debug.Log($"[GameStateManager] Stage {StageName} cleared.");
         AddScore(stageClearBonus);
-        stageIndex++;
+        stageIndex = ShortGame && stageIndex == StagesPerWorld ? FinalStage : stageIndex + 1;
     }
 }
 

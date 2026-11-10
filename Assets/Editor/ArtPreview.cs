@@ -105,7 +105,7 @@ public static class ArtPreview
 
         RenderStages(outDir);
         RenderHud(outDir);
-        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, boss.png, stage_*.png, bonus_room.png, hud_scan.png, hud.png, hud_gameover.png, hud_gameclear.png to {Path.GetFullPath(outDir)}");
+        Debug.Log($"[ArtPreview] Wrote blocks.png, enemies.png, items.png, closeup.png, boss.png, stage_*.png, bonus_room.png, hud_menu.png, hud_scan.png, hud.png, hud_gameover.png, hud_gameclear.png to {Path.GetFullPath(outDir)}");
     }
 
     /// <summary>
@@ -206,10 +206,23 @@ public static class ArtPreview
         canvas.worldCamera = cam;
         canvas.planeDistance = 1f;
 
-        // Scanning.
+        // The start menu (the HUD draws the items from StartMenu at runtime; here, a sample with GAME: SHORT selected).
         var scanPanel = (GameObject)so.FindProperty("scanPanel").objectReferenceValue;
         var gameOver = (GameObject)so.FindProperty("gameOverPanel").objectReferenceValue;
+        var menuPanel = (GameObject)so.FindProperty("menuPanel").objectReferenceValue;
         gameOver.SetActive(false);
+        scanPanel.SetActive(false);
+        menuPanel.SetActive(true);
+        T("scoreText").text = "000000";
+        T("bannerText").text = "";
+        T("titleText").text = "";
+        T("feedbackText").text = "";
+        T("menuItemsText").text = "<color=#FFFFFFB0>  TRAINING + GAME  </color>\n<color=#FFFFFFB0>  GAME ONLY  </color>\n<color=#FFD733>> GAME: <color=#4CFF66>SHORT</color> <</color>\n<color=#FFFFFFB0>  GOD MODE: OFF  </color>";
+        T("menuDescriptionText").text = "SHORT: WORLD 1, THEN BOWSER'S CASTLE";
+        ShootCanvas(cam, Path.Combine(outDir, "hud_menu.png"));
+        menuPanel.SetActive(false);
+
+        // Scanning.
         scanPanel.SetActive(true);
         ((Image)so.FindProperty("scanFill").objectReferenceValue).fillAmount = 0.45f;
         T("scanPercentText").text = "45%";
@@ -230,7 +243,7 @@ public static class ArtPreview
         T("bannerText").color = new Color(0.8f, 0.8f, 0.8f);
         T("titleText").text = "WORLD 2-4";
         T("titleText").color = Color.white;
-        T("subtitleText").text = "BOWSER'S CASTLE\n<size=60%><color=#FFE08A>PUNCH, FIREBALL OR SHELL HIM (A SHELL COUNTS 2). SQUAT HIS FIRE!</color></size>";
+        T("subtitleText").text = "BOWSER'S CASTLE\n<size=60%><color=#FFE08A>SQUAT HIS FIRE. DODGE HIS JUMP, THEN HIT HIM!</color></size>";
         T("subtitleText").color = Color.white;
         ((Image)so.FindProperty("heldIcon").objectReferenceValue).enabled = true;
         T("heldEmptyText").enabled = false;

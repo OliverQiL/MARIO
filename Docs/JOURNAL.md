@@ -189,3 +189,19 @@ A short log of each problem met after the visualizer was connected to John's gat
 **31. Shell training step confusing**
 - **Problem:** the Koopa and the Goombas all appeared together, so it wasn't clear what to do first.
 - **Choice:** only the Koopa appears at first. Once its shell is in hand, three Goombas appear ("Got it! Now throw it at a Goomba"). Each round starts again with the Koopa alone.
+
+---
+
+## 2026-11-10 · Demo prep
+
+**32. The boss is too far in for a demo**
+- **Problem:** reaching Bowser meant clearing all seven stages before him, too long for a demo.
+- **Choice:** a **GAME: FULL / SHORT** option on the start menu, toggled with a clap.
+  - **Short:** World 1 (1-1 to 1-4), then straight to Bowser's castle (2-4).
+  - **Full** (the default): all eight stages.
+
+  The choice carries over to a new game and survives a hard reset, like god mode.
+
+**33. Fireballs passed through Bowser's body**
+- **Problem:** only fireballs near Bowser's head hit him. A fireball checked its distance to a single point on each target, and his was at head height, so shots at his belly or legs missed.
+- **Choice:** each target decides whether a shot hits it. Bowser's hitbox is now a box round his whole body art, legs to horns, so a fireball anywhere on him hits. Other targets are unchanged. His intro tip was also updated for his jump attack.
