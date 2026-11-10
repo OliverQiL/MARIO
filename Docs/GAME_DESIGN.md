@@ -18,8 +18,10 @@ Every action still passes the six-gate chain (session → validity → capabilit
 | `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
 | `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
 | `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **1.0 m** (the same as stomp) and **±60°** of facing |
-| `stomp` | A downward attack on an enemy at the player's feet. A Koopa needs two stomps: the first shells it. It also hurts Bowser (1) when he's on the ground. | An enemy **below eye level** within **1.0 m** and **±70°** of facing |
+| `stomp` | A downward attack on an enemy at the player's feet. A stomp shells a Koopa; the shell can't be stomped (since 2026-11-10: clap to pick it up). It also hurts Bowser (1) when he's on the ground. | An enemy **below eye level** within **1.0 m** and **±70°** of facing |
 | `idle` | Nothing: the classifier's catch-all for other movement. Acknowledged (gate 6, reason `idle`) in every state and ignored. | — |
+
+**Arm moves (2026-11-10).** `clap`, `throw` and `punch` look alike to the classifier, so they're one "arm" move: when exactly one of them would do something right now, that one resolves whatever was read (see "Demo prep"); otherwise the reading stands.
 
 Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
 
@@ -41,7 +43,7 @@ Enemies spawn from a spawner on the stage, within a bounded distance of the play
 | Enemy | Pass | Behaviour | Defeat | Damage |
 |---|---|---|---|---|
 | **Goomba** | 1 | Walks along the floor at 0.25 m/s | `stomp` or fireball (+100) | Contact within 0.35 m while the player isn't airborne. The Goomba is removed after the hit. If the player **is** airborne, it passes by, keeps going for 1.2 s, then turns back. |
-| **Koopa** | 2 | Same as a Goomba | A `stomp` turns it into a harmless shell; a second stomp clears it (+200). A fireball defeats it outright. | Contact while it's still walking |
+| **Koopa** | 2 | Same as a Goomba | A `stomp` turns it into a harmless shell; a second stomp cleared it (+200) until 2026-11-10, when shells became clap-only (see "Demo prep"). A fireball defeats it outright. | Contact while it's still walking |
 | **Bullet Bill** | 2 | Flies at head height from about 5 m away. A warning marker appears first, giving about 3 s to react. | Can't be defeated | Passes through the player's position while the player isn't **ducked** |
 
 ## Lives and game over
@@ -185,7 +187,7 @@ Decided with Oliver: a hand-designed campaign, full-size stages of about 2.5 × 
 ## v2: actions, World 2 and the ending (2026-10-12)
 Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Protocol version 2.
 - **Actions.** Six discrete actions; see the Action → outcome table above. Limbs for haptics: throw / punch / clap → wrist, stomp → ankle, others → both. Every refusal at gates 3–5 now gets a "denied" haptic, a bonk and a HUD reason ("Nothing to throw — clap to pick up a shell", "Hands full — throw it first", "Fireballs recharging").
-- **Koopa shells.** Stomp a Koopa once: it becomes a shell. Then either stomp again (+200) or **clap** to pick it up and **throw** it: it slides along the floor, hitting each enemy it touches once (Goombas and Koopas knocked out, +100 each plus a chain bonus of +100 × hits so far; Bowser takes 2 damage).
+- **Koopa shells.** Stomp a Koopa once: it becomes a shell. Then either stomp again (+200; removed 2026-11-10, shells are clap-only) or **clap** to pick it up and **throw** it: it slides along the floor, hitting each enemy it touches once (Goombas and Koopas knocked out, +100 each plus a chain bonus of +100 × hits so far; Bowser takes 2 damage).
 - **The campaign** is now 8 stages and **ends**: completing the last stage (2-4) is **GAME CLEAR**, whether the castle or a fallback template was played for it.
 
   | Stage | Size | Scenery | Theme |
@@ -298,5 +300,20 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
   Difficulty no longer adds enemies; later stages still add cannon shots and shorten the time between them.
 - **Bigger fireballs.** The fire flower's fireballs are **35 % larger**. The hit distance and Bowser's fire are unchanged.
 - **Shell training step, staged.** Only the Koopa is out at first. Stomp it, then clap to hold the shell. **Once the shell is held, 3 Goombas appear** ("Got it! Now throw it at a Goomba"). Losing the shell restarts the round, with the Koopa alone again.
+
+## Demo prep (2026-11-10)
+
+- **Short game** (start menu, see above) and **Bowser's whole body is his hitbox**: a fireball anywhere on him, legs to horns, hits.
+- **Shells can't be stomped.** A stomp shells a Koopa; after that the shell can only be **clapped** (picked up) and thrown. A stomp on it is refused (gate 5, "Clap to pick up the shell") so an accidental stomp doesn't waste it. A fireball still clears it (+200).
+- **Arm moves resolve to what fits.** `clap`, `throw` and `punch` are one "arm" move to the game:
+
+  | Move | Fits when |
+  |---|---|
+  | `punch` | a brick or Bowser in punch reach |
+  | `clap` | hands empty and a shell in clap reach |
+  | `throw` | a shell held, or a fire flower with a fireball free |
+
+  If exactly one fits, it resolves even if the classifier read another (a throw in front of a brick breaks the brick), and LAST ACTION shows `(READ AS THROW)`. If several fit, or none, the classifier's reading stands. A run of arm moves is one move for the repeat filter, and the start menu picks on any arm move.
+- **Training rounds move about.** Each round of a step (? block, brick, Goomba, fireball Goomba, Koopa) appears somewhere new: the first at the station, then about 0.5 m to one side, then the other, so the player walks over each time. A restarted round keeps its spot.
 - **Bowser's hitbox (2026-11-10).** A fireball hits him anywhere on his body art (a box round his model, legs to horns), not just within 0.3 m of his head as before. Other targets still use their single hit point. Nothing hits him mid-leap.
 - **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.

@@ -171,7 +171,7 @@ public static class GameplaySmokeTest
 
         // ==== pass 2 ====
 
-        // -- Koopa: stomp → shell (harmless); a second stomp clears it (+200)
+        // -- Koopa: stomp → shell (harmless); a shell can't be stomped, only picked up
         var k1 = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 0.5f));
         scoreBefore = s_State.Score;
         r = Resolve("stomp");
@@ -182,7 +182,9 @@ public static class GameplaySmokeTest
         k1.Tick(0.02f, s_Cam.transform.position);
         Check(s_State.Lives == livesBefore && k1.transform.position.z == 0.1f, "a shell doesn't move or hurt");
         r = Resolve("stomp");
-        Check(r.Resolved && r.Target == k1 && !k1.IsActionable && s_State.Score == scoreBefore + 200, "a second stomp clears the shell (+200)", r);
+        Check(r.Gate == 5 && r.Reason == EventResolver.ShellStompReason && k1 != null && k1.InShell && k1.IsActionableFor("clap") && s_State.Score == scoreBefore,
+              "a second stomp on the shell is refused (Gate 5: clap to pick it up); the shell stays", r);
+        UnityEngine.Object.DestroyImmediate(k1.gameObject);
 
         // -- clap picks up a shell; throw sends it sliding through a line of Goombas
         s_State.SetFireFlower(false);
@@ -192,8 +194,7 @@ public static class GameplaySmokeTest
         Resolve("stomp");
         r = Resolve("clap");
         Check(r.Resolved && r.Target == k3 && s_State.Held == HeldItem.Shell, "clap picks up a Koopa shell", r);
-        r = Resolve("clap");
-        Check(r.Gate == 3 && r.Reason == "hands full", "clap while holding a shell is Gate 3", r);
+        // (A clap while holding it would throw it: the only arm action that fits; see ArmActionChecks.)
         var line1 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(0.05f, 0f, 1.2f));
         var line2 = SpawnPrefab<Goomba>(GameContentSetup.GoombaPath, new Vector3(-0.05f, 0f, 1.8f));
         scoreBefore = s_State.Score;
@@ -659,6 +660,7 @@ public static class GameplaySmokeTest
         Check(large.GetComponent<StageFootprint>().FootprintArea > standard.GetComponent<StageFootprint>().FootprintArea
               && standard.GetComponent<StageFootprint>().FootprintArea > compact.GetComponent<StageFootprint>().FootprintArea, "templates are tried Large, Standard, Compact");
 
+        ArmActionChecks();
         EnemyIndicatorChecks();
         RangeRingChecks();
         ProximityFadeChecks();
@@ -818,7 +820,7 @@ public static class GameplaySmokeTest
         Check(ring.Current == RangeRing.State.Clap, "a shell in reach: gold, a clap would pick it up");
         s_State.PickUp(HeldItem.Shell);
         ring.Tick(0.1f);
-        Check(ring.Current == RangeRing.State.Stomp, "hands full: no clap, but the shell can still be stomped (green)");
+        Check(ring.Current == RangeRing.State.Idle, "hands full: no clap, and a shell can't be stomped: idle");
         s_State.ThrowHeld();
         UnityEngine.Object.DestroyImmediate(koopa.gameObject);
 
@@ -832,6 +834,62 @@ public static class GameplaySmokeTest
     }
 
     /// <summary>Red arrows towards approaching enemies: on the floor, and at the edge of the view when out of sight.</summary>
+    /// <summary>Punch, clap and throw are one "arm" motion: whichever alone would do something here is resolved, whatever was read.</summary>
+    private static void ArmActionChecks()
+    {
+        s_State.BeginStage();
+        s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+        FaceForward();
+        s_State.SetFireFlower(false);
+        foreach (var t in UnityEngine.Object.FindObjectsByType<InteractableBase>()) if (t is Goomba || t is BrickBlock) UnityEngine.Object.DestroyImmediate(t.gameObject);
+
+        // Only a punch fits (a brick in front, nothing to throw or pick up): a throw or a clap is a punch
+        var brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
+        var r = Resolve("throw");
+        Check(r.Resolved && r.Target == brick && r.ReadAs == "throw", "arm: a throw in front of a brick (nothing to throw) resolves as a punch, read as throw", r);
+        brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
+        r = Resolve("clap");
+        Check(r.Resolved && r.Target == brick && r.ReadAs == "clap", "arm: a clap in front of a brick resolves as a punch", r);
+
+        // Only a clap fits (a shell on the floor in front): a punch picks it up
+        var koopa = SpawnPrefab<Koopa>(GameContentSetup.KoopaPath, new Vector3(0f, 0f, 0.5f));
+        Resolve("stomp");
+        r = Resolve("punch");
+        Check(r.Resolved && r.Target == koopa && r.ReadAs == "punch" && s_State.Held == HeldItem.Shell, "arm: a punch at a shell on the floor picks it up (a clap)", r);
+
+        // Holding the shell, only a throw fits: a clap or a punch throws it
+        r = Resolve("clap");
+        Check(r.ThrewShell && r.ReadAs == "clap" && s_State.Held == HeldItem.None, "arm: holding a shell, a clap throws it", r);
+        foreach (var t in UnityEngine.Object.FindObjectsByType<ThrownShell>()) UnityEngine.Object.DestroyImmediate(t.gameObject);
+
+        // Several fit (a flower and a brick): the classifier's label stands
+        s_State.SetFireFlower(true);
+        brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
+        r = Resolve("punch");
+        Check(r.Resolved && r.Target == brick && r.ReadAs == null, "arm: a punch where a punch and a throw both fit stays a punch", r);
+        foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>()) UnityEngine.Object.DestroyImmediate(f.gameObject);
+        brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
+        r = Resolve("clap");
+        Check(!r.Resolved && r.ReadAs == null && brick != null && brick.IsActionable, "arm: a clap where a punch and a throw both fit stays a clap (and does nothing)", r);
+        UnityEngine.Object.DestroyImmediate(brick.gameObject);
+
+        // Only a throw fits (the flower, nothing in reach): a punch throws a fireball
+        r = Resolve("punch");
+        Check(r.LaunchedProjectile && r.ReadAs == "punch", "arm: with a flower and nothing in reach, a punch throws a fireball", r);
+        foreach (var f in UnityEngine.Object.FindObjectsByType<Fireball>()) UnityEngine.Object.DestroyImmediate(f.gameObject);
+
+        // None fits: the classifier's label stands
+        s_State.SetFireFlower(false);
+        r = Resolve("punch");
+        Check(r.Gate == 4 && r.ReadAs == null, "arm: when nothing fits, the punch stands (Gate 4)", r);
+
+        // One arm motion read as several arm actions is one motion
+        brick = Spawn<BrickBlock>(GameContentSetup.StandardStagePath, "BrickBlock", new Vector3(0.1f, 1.15f, 0.5f));
+        r = Resolve("throw");
+        var again = ResolveAfter(0.2, "punch");
+        Check(r.Resolved && again.IsRepeat, "arm: a punch report 0.2 s after a throw is the same arm motion (repeat)", again);
+    }
+
     private static void EnemyIndicatorChecks()
     {
         s_State.BeginStage();
@@ -978,11 +1036,13 @@ public static class GameplaySmokeTest
         tutorial.Tick(1f);
         Check(tutorial.StepIndex == 0 && tutorial.CurrentRound != null && tutorial.CurrentRound.activeSelf && !stations[0].gameObject.activeSelf
               && tutorial.RoundsRequired == 3, "step 1 (JUMP) plays a copy of its station, 3 rounds");
+        var blockSpots = new List<Vector3>();
         for (int i = 0; i < 3; i++)
         {
             var round = tutorial.CurrentRound.transform;
             RegisterAll(round);
             var block = round.GetComponentInChildren<QuestionBlock>();
+            blockSpots.Add(block.transform.position);
             StandAt(block.transform.position);
             if (i == 0)
             {
@@ -995,6 +1055,8 @@ public static class GameplaySmokeTest
             tutorial.Tick(1.1f); // the beat, then the next round (or step)
         }
         Check(tutorial.StepIndex == 1, "three ? blocks finish step 1");
+        Check(FlatDistance(blockSpots[0], blockSpots[1]) > 0.3f && FlatDistance(blockSpots[1], blockSpots[2]) > 0.3f && FlatDistance(blockSpots[0], blockSpots[2]) > 0.3f,
+              "each ? block round stands somewhere new (walk over to it)");
 
         // 2: punch the brick, 3 times; a brick broken some other way doesn't count.
         var firstBrick = tutorial.CurrentRound.GetComponentInChildren<BrickBlock>();

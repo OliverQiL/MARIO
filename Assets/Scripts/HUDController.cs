@@ -375,6 +375,7 @@ public class HUDController : MonoBehaviour
         // Debug corner: what the classifier last said. Idle (several a second) and repeats would hide it.
         if (lastActionText != null && evt.actionLabel != EventResolver.IdleAction && !result.IsRepeat)
             lastActionText.text = $"LAST ACTION: {evt.actionLabel.ToUpperInvariant()} " +
+                                  (result.ReadAs != null ? $"(READ AS {result.ReadAs.ToUpperInvariant()}) " : "") +
                                   (evt.sessionId == EventResolver.PhoneMotionSession ? "(PHONE) " : evt.sessionId == "editor" ? "(KEY) " : $"{evt.confidence:F2} ") +
                                   $"<color=#{(result.Resolved ? "4CFF66>OK" : $"FFB020>GATE {result.Gate}")}</color>";
 
@@ -430,6 +431,9 @@ public class HUDController : MonoBehaviour
                 break;
             case 4:
                 ShowFeedback($"{action}: nothing in range", deniedColor);
+                break;
+            case 5 when result.Reason == EventResolver.ShellStompReason:
+                ShowFeedback("Clap to pick up the shell", deniedColor);
                 break;
             case 5:
                 ShowFeedback($"{action}: already used", deniedColor);

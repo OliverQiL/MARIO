@@ -681,14 +681,28 @@ public static class GameContentSetup
         }
         Cloud(root.transform, new Vector3(-0.4f, 2.4f, 0.4f), 1.6f, m);
 
+        // Each round's copy stands somewhere new (Tutorial.Step.roundOffsets): the first at the
+        // station, then a short walk to one side and the other. The lane is 1.6 m wide (x within ±0.8).
+        Vector3[] Spots(params float[] xz)
+        {
+            var spots = new Vector3[xz.Length / 2];
+            for (int i = 0; i < spots.Length; i++) spots[i] = new Vector3(xz[2 * i], 0f, xz[2 * i + 1]);
+            return spots;
+        }
+        var jumpSpots = Spots(0f, 0f, -0.5f, 0.15f, 0.5f, 0.3f);       // ? block: x 0, -0.5, 0.5
+        var punchSpots = Spots(0f, 0f, -0.75f, 0.1f, -0.3f, 0.25f);    // brick: x 0.3, -0.45, 0
+        var stompSpots = Spots(0f, 0f, 0.6f, -0.1f, 0.25f, 0.2f);      // Goomba: x -0.15, 0.45, 0.1
+        var fireSpots = Spots(0f, 0f, -0.5f, -0.1f, 0.5f, -0.1f);      // Goomba: x 0, -0.5, 0.5
+        var shellSpots = Spots(0f, 0f, -0.3f, -0.15f, 0.3f, -0.15f);   // Koopa (Goombas ±0.45 round it): x 0, -0.3, 0.3
+
         var steps = new[]
         {
-            new Tutorial.Step { title = "JUMP!", hint = "Jump under the ? block to hit it", actions = new[] { "jump" }, station = jump.gameObject, kind = Tutorial.Kind.HitBlock },
-            new Tutorial.Step { title = "PUNCH!", hint = "Punch the brick in front of you", actions = new[] { "punch" }, station = punch.gameObject, kind = Tutorial.Kind.BreakBrick },
-            new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, kind = Tutorial.Kind.StompEnemy },
+            new Tutorial.Step { title = "JUMP!", hint = "Jump under the ? block to hit it", actions = new[] { "jump" }, station = jump.gameObject, kind = Tutorial.Kind.HitBlock, roundOffsets = jumpSpots },
+            new Tutorial.Step { title = "PUNCH!", hint = "Punch the brick in front of you", actions = new[] { "punch" }, station = punch.gameObject, kind = Tutorial.Kind.BreakBrick, roundOffsets = punchSpots },
+            new Tutorial.Step { title = "STOMP!", hint = "Wait for the Goomba, stomp it at your feet", actions = new[] { "stomp" }, station = stomp.gameObject, kind = Tutorial.Kind.StompEnemy, roundOffsets = stompSpots },
             new Tutorial.Step { title = "SQUAT!", hint = "Squat when the cannon glows to duck the Bullet Bill", actions = new[] { "squat" }, station = squat.gameObject, kind = Tutorial.Kind.DuckBill },
-            new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, kind = Tutorial.Kind.FireballEnemy, needsFlower = true },
-            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, then throw it at a Goomba", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, kind = Tutorial.Kind.ShellEnemy, removeFlower = true },
+            new Tutorial.Step { title = "THROW!", hint = "Throw a fireball at the Goomba", actions = new[] { "throw" }, station = fire.gameObject, kind = Tutorial.Kind.FireballEnemy, needsFlower = true, roundOffsets = fireSpots },
+            new Tutorial.Step { title = "STOMP, CLAP, THROW!", hint = "Stomp the Koopa, clap to grab its shell, then throw it at a Goomba", actions = new[] { "stomp", "clap", "throw" }, station = shell.gameObject, kind = Tutorial.Kind.ShellEnemy, removeFlower = true, roundOffsets = shellSpots },
             new Tutorial.Step { title = "JUMP AT THE FLAG!", hint = "Walk to the flag and jump to grab it", actions = new[] { "jump" }, station = flag.gameObject, kind = Tutorial.Kind.Flag, rounds = 1 },
         };
         var tutorial = root.AddComponent<Tutorial>();

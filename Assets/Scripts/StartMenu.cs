@@ -4,7 +4,8 @@ using UnityEngine;
 /// The start menu, before the scan (it replaces "jump to start scanning";
 /// a hard reset brings it back). Touch-free, like everything in the headset:
 /// a quick head nod down moves the selection down, a quick tilt up moves it
-/// up (wrapping round), and a clap picks the selected item.
+/// up (wrapping round), and a clap picks the selected item (any arm action:
+/// the classifier confuses clap, throw and punch, and here only a pick makes sense).
 ///
 ///   TRAINING + GAME   the training round (WORLD 0-1), then 1-1
 ///   GAME ONLY         straight to 1-1
@@ -178,7 +179,7 @@ public class StartMenu : MonoBehaviour
 
     private void HandleEventProcessed(GameEvent evt, ResolutionResult result)
     {
-        if (!IsOpen || evt.actionLabel != "clap" || evt.confidence < confirmMinConfidence || result.IsRepeat) return;
+        if (!IsOpen || !EventResolver.IsArmAction(evt.actionLabel) || evt.confidence < confirmMinConfidence || result.IsRepeat) return;
         Confirm();
     }
 }

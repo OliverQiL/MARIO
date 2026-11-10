@@ -71,7 +71,7 @@ public static class StageDesigns
         },
         new Design
         {
-            Name = "1-2", Title = "KOOPA ROAD", Tip = "Stomp a Koopa twice - or clap to grab its shell.",
+            Name = "1-2", Title = "KOOPA ROAD", Tip = "Stomp a Koopa, then clap to grab its shell.",
             Theme = "Koopa road: a Goomba then a Koopa, a zigzag of coins, and a warp pipe to a bonus room.",
             Pieces = Join(
                 P(Kind.Question, -0.5f, -1.0f), P(Kind.Question, 0.5f, -1.0f),

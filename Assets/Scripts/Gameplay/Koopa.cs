@@ -1,9 +1,11 @@
 using UnityEngine;
 
 /// <summary>
-/// Koopa (Docs/GAME_DESIGN.md): walks and hurts like a Goomba. The first stomp
-/// knocks it into a harmless, stationary shell; a second stomp clears it (+200).
-/// A fireball or a thrown shell defeats it outright, walking or shelled.
+/// Koopa (Docs/GAME_DESIGN.md): walks and hurts like a Goomba. A stomp knocks
+/// it into a harmless, stationary shell, which can't be stomped (Gate 5,
+/// EventResolver.ShellStompReason; Oliver 2026-11-10: an accidental second
+/// stomp threw the shell away), only picked up. A fireball or a thrown shell
+/// defeats it outright, walking or shelled.
 ///
 /// A shell on the floor can be picked up with a clap: it leaves the stage and
 /// the player holds it (GameStateManager.Held) until they throw it, when it
@@ -32,6 +34,7 @@ public class Koopa : Goomba
             var gs = GameStateManager.Instance;
             return _inShell && (gs == null || gs.Held == HeldItem.None);
         }
+        if (actionLabel == "stomp") return !_inShell; // a shell is picked up, not stomped
         return true;
     }
 

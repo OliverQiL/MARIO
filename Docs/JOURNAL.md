@@ -205,3 +205,18 @@ A short log of each problem met after the visualizer was connected to John's gat
 **33. Fireballs passed through Bowser's body**
 - **Problem:** only fireballs near Bowser's head hit him. A fireball checked its distance to a single point on each target, and his was at head height, so shots at his belly or legs missed.
 - **Choice:** each target decides whether a shot hits it. Bowser's hitbox is now a box round his whole body art, legs to horns, so a fireball anywhere on him hits. Other targets are unchanged. His intro tip was also updated for his jump attack.
+
+**34. Shells stomped by accident**
+- **Problem:** a player stepping up to pick up a shell often stomped it by accident, clearing it before they could clap.
+- **Choice:** a shell can't be stomped. The only way to use it is to clap, pick it up and throw it. A stomp on a shell is refused with "Clap to pick up the shell". A fireball still clears one.
+
+**35. Clap, throw and punch confused by the classifier**
+- **Problem:** the three arm movements look alike, so the classifier often read one as another, and the move did nothing (e.g. a throw in front of a brick).
+- **Choice:** clap, throw and punch are treated as one "arm" move, and the game picks the one that makes sense right now:
+  - **Exactly one fits** (a brick or Bowser in reach for punch; a shell in reach with empty hands for clap; a held shell or a ready fire flower for throw): that one resolves, whatever was read. LAST ACTION shows `(READ AS THROW)`.
+  - **Several fit, or none:** the classifier's reading stands, as before.
+  - **Repeats:** a run of arm moves counts as one move, whichever labels it mixes. In the start menu any arm move picks.
+
+**36. Training rounds all in the same spot**
+- **Problem:** each training step's three rounds put the ? block, brick or enemy in the same place, so the player never had to move.
+- **Choice:** each round's copy stands somewhere new: the first where it was, then a short walk to one side and the other (about 0.5 m apart, within the lane). A round that restarts stays at its spot.

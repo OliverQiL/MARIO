@@ -24,7 +24,9 @@ using UnityEngine;
 ///                  of them at once was confusing)
 ///   Flag           the flag is grabbed (ends the round; LevelGenerator)
 /// For the target kinds the step's station is a hidden template and each
-/// round plays a fresh copy of it; if the copy's target is used up any other
+/// round plays a fresh copy of it, each round a little further along
+/// (<see cref="Step.roundOffsets"/>; Oliver 2026-11-10: walk over to each
+/// one rather than three in the same spot); if the copy's target is used up any other
 /// way (stomped instead of fireballed, a Goomba walking into the player), the
 /// round restarts with a tip. The duck and flag steps use the station itself
 /// (the cannon keeps firing; the flag is LevelGenerator's goal).
@@ -58,6 +60,8 @@ public class Tutorial : MonoBehaviour
         public bool needsFlower;
         [Tooltip("Takes the fire flower away at the start, so throw only throws a held shell (the shell step).")]
         public bool removeFlower;
+        [Tooltip("Where each round's copy stands, as offsets from the station (round n uses entry n, cycling), so the player walks over to each one.")]
+        public Vector3[] roundOffsets = Array.Empty<Vector3>();
     }
 
     [SerializeField] private Step[] steps = Array.Empty<Step>();
@@ -227,11 +231,16 @@ public class Tutorial : MonoBehaviour
         _roundCounted = false;
         if (step.station == null) return;
         CurrentRound = Instantiate(step.station, step.station.transform.parent);
+        CurrentRound.transform.localPosition = step.station.transform.localPosition + RoundOffset(step, RoundsDone);
         CurrentRound.name = $"{step.station.name} (round {RoundsDone + 1})";
         CurrentRound.SetActive(true);
         _roundTargets.Clear();
         _roundTargets.AddRange(CurrentRound.GetComponentsInChildren<InteractableBase>(true));
     }
+
+    /// <summary>Where round <paramref name="round"/> (0-based) stands relative to the station; a restarted round keeps its spot.</summary>
+    public static Vector3 RoundOffset(Step step, int round) =>
+        step.roundOffsets is { Length: > 0 } offsets ? offsets[round % offsets.Length] : Vector3.zero;
 
     private void Count(Step step)
     {

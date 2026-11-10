@@ -39,6 +39,11 @@ public readonly struct ResolutionResult
     public readonly Component Target;
     /// <summary>Resolved as a player-state change only (a duck, a jump that hit nothing): no target, no feedback, no haptic.</summary>
     public readonly bool StateOnly;
+    /// <summary>
+    /// The classifier's label when the arm-action check resolved a different arm action (the event's actionLabel is
+    /// the action resolved): e.g. "throw" when a throw was read in front of a brick and resolved as a punch. Null otherwise.
+    /// </summary>
+    public readonly string ReadAs;
 
     public bool Resolved => Gate == 6;
     /// <summary>Gates 1-2: the action was never registered (wrong phase, low confidence, duplicate).</summary>
@@ -52,13 +57,17 @@ public readonly struct ResolutionResult
     /// <summary>A held shell was thrown.</summary>
     public bool ThrewShell => Resolved && Reason == EventResolver.ShellReason;
 
-    public ResolutionResult(int gate, string reason, Component target = null, bool stateOnly = false)
+    public ResolutionResult(int gate, string reason, Component target = null, bool stateOnly = false, string readAs = null)
     {
         Gate = gate;
         Reason = reason;
         Target = target;
         StateOnly = stateOnly;
+        ReadAs = readAs;
     }
+
+    /// <summary>This result, noting that the classifier read the action as <paramref name="readAs"/>.</summary>
+    public ResolutionResult WithReadAs(string readAs) => new(Gate, Reason, Target, StateOnly, readAs);
 
     public static ResolutionResult State(string reason) => new(6, reason, null, true);
 }
@@ -72,13 +81,21 @@ public readonly struct ResolutionResult
 /// is discrete (one event per motion; protocol v2):
 /// - jump: airborne window; grabs the stage goal (flag or axe) if the player
 ///   is at it, else hits an overhead block if there is one
-/// - stomp: attack on an enemy at the player's feet (a Koopa takes two)
+/// - stomp: attack on an enemy at the player's feet (a Koopa's first stomp
+///   shells it; a shell can't be stomped, only picked up with a clap)
 /// - squat: ducked window; enters a warp pipe if the player is standing on one
 /// - throw: throws the held item (a shell) if there is one, else a fireball
 ///   with the fire flower (Gate 3 caps how many are in flight); else Gate 3
 /// - punch: forward punch on a brick (or the boss) in reach at chest height
 /// - clap: picks up a Koopa shell from the floor in front (Gate 3 if the
 ///   hands are already full)
+/// Arm actions (punch, clap, throw) look alike to the classifier, so they're
+/// treated as one "arm" motion: if exactly one of them would do something
+/// right now (a brick to punch, a shell to pick up, something to throw), that
+/// one is resolved, whichever arm action was read; the event's actionLabel
+/// becomes it and ResolutionResult.ReadAs keeps the classifier's label. If
+/// several or none would, the classifier's label stands. The repeat filter
+/// also treats them as one motion. (Oliver 2026-11-10.)
 /// - idle: the classifier's catch-all for other movement; resolved state-only
 ///   in any state and otherwise ignored
 /// The gateway forwards every classification, so one motion arrives as a run
@@ -106,6 +123,11 @@ public class EventResolver : MonoBehaviour
 
     /// <summary>The v2 action labels the classifier sends (Docs/GATEWAY_PROTOCOL.md).</summary>
     public static readonly string[] Actions = { "jump", "stomp", "squat", "throw", "punch", "clap" };
+    /// <summary>The arm actions, which the classifier confuses with each other: resolved as whichever makes sense (see the class summary).</summary>
+    public static readonly string[] ArmActions = { "punch", "clap", "throw" };
+    public static bool IsArmAction(string action) => Array.IndexOf(ArmActions, action) >= 0;
+    /// <summary>Gate 5 reason for a stomp on a Koopa shell: shells are picked up (clap), not stomped.</summary>
+    public const string ShellStompReason = "shells are picked up, not stomped";
 
     [Header("References")]
     [SerializeField] private GameStateManager gameState;
@@ -175,20 +197,21 @@ public class EventResolver : MonoBehaviour
 
     public ResolutionResult Resolve(GameEvent evt)
     {
-        var result = RunGates(evt);
+        var result = RunGates(ref evt); // an arm action may come back as the one that made sense (result.ReadAs)
         gameState.RecordAction(result.Resolved && !result.StateOnly, result.NotPermitted);
 
+        string readAs = result.ReadAs != null ? $" (read as '{result.ReadAs}')" : "";
         if (evt.actionLabel == IdleAction) { } // several a second: not logged
         else if (result.Resolved)
-            Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}' ({(result.Target != null ? "on " + result.Target.name : result.Reason)})");
+            Debug.Log($"[EventResolver] RESOLVED: '{evt.actionLabel}'{readAs} ({(result.Target != null ? "on " + result.Target.name : result.Reason)})");
         else
-            Debug.Log($"[EventResolver] REJECTED @ Gate {result.Gate} ({result.Reason}): '{evt.actionLabel}'");
+            Debug.Log($"[EventResolver] REJECTED @ Gate {result.Gate} ({result.Reason}): '{evt.actionLabel}'{readAs}");
 
         OnEventProcessed?.Invoke(evt, result);
         return result;
     }
 
-    private ResolutionResult RunGates(GameEvent evt)
+    private ResolutionResult RunGates(ref GameEvent evt)
     {
         // Idle: the player moved, but not one of the six actions. Acknowledged and ignored in every
         // state — no gates, no haptic, no HUD feedback, not counted towards accuracy.
@@ -222,7 +245,44 @@ public class EventResolver : MonoBehaviour
         if (!MarkSeen(Key(evt)))
             return new ResolutionResult(2, $"duplicate event_id '{evt.eventId}'");
 
-        // Gates 3-6, per action.
+        // Arm actions look alike to the classifier: if exactly one would do something here, it's the one meant.
+        if (IsArmAction(evt.actionLabel) && OnlyArmActionThatFits() is { } meant && meant != evt.actionLabel)
+        {
+            string read = evt.actionLabel;
+            evt.actionLabel = meant;
+            return ResolveAction(evt).WithReadAs(read);
+        }
+        return ResolveAction(evt);
+    }
+
+    /// <summary>The one arm action that would do something right now, or null if none or several would.</summary>
+    private string OnlyArmActionThatFits()
+    {
+        string only = null;
+        foreach (var action in ArmActions)
+        {
+            if (!ArmActionFits(action)) continue;
+            if (only != null) return null; // several: the classifier's label stands
+            only = action;
+        }
+        return only;
+    }
+
+    /// <summary>Whether this arm action would resolve (not be refused) right now. No side effects.</summary>
+    private bool ArmActionFits(string action) => action switch
+    {
+        "punch" => PunchTarget() is { } t && t.IsActionableFor("punch"),
+        "clap" => gameState.Held == HeldItem.None && ClapTarget() is { } t && t.IsActionableFor("clap"),
+        "throw" => gameState.Held == HeldItem.Shell || (gameState.HasFireFlower && Fireball.InFlight < maxFireballsInFlight),
+        _ => false,
+    };
+
+    private InteractableBase PunchTarget() => FindTarget("punch", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f);
+    private InteractableBase ClapTarget() => FindTarget("clap", clapRange, clapHalfAngle, dy => dy < -0.5f);
+
+    /// <summary>Gates 3-6, per action.</summary>
+    private ResolutionResult ResolveAction(GameEvent evt)
+    {
         switch (evt.actionLabel)
         {
             case "squat":
@@ -262,13 +322,13 @@ public class EventResolver : MonoBehaviour
                 return new ResolutionResult(6, ProjectileReason);
 
             case "punch":
-                return Hit(FindTarget("punch", strikeRange, strikeHalfAngle, dy => dy > -0.9f && dy < 0.3f), "punch");
+                return Hit(PunchTarget(), "punch");
 
             case "clap":
                 // Gate 3 — capability: one item at a time.
                 if (gameState.Held != HeldItem.None)
                     return new ResolutionResult(3, "hands full");
-                return Hit(FindTarget("clap", clapRange, clapHalfAngle, dy => dy < -0.5f), "clap");
+                return Hit(ClapTarget(), "clap");
 
             case "stomp":
                 return Hit(FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f), "stomp");
@@ -284,7 +344,8 @@ public class EventResolver : MonoBehaviour
         // Gate 4 — Spatial gating
         if (target == null) return new ResolutionResult(4, "no target in range/facing");
         // Gate 5 — Target state
-        if (!target.IsActionableFor(label)) return new ResolutionResult(5, "target not actionable");
+        if (!target.IsActionableFor(label))
+            return new ResolutionResult(5, label == "stomp" && target is Koopa { InShell: true } ? ShellStompReason : "target not actionable");
         // Gate 6 — Resolution
         target.ResolveHit(label, gameState);
         return new ResolutionResult(6, "resolved", target);
@@ -343,7 +404,7 @@ public class EventResolver : MonoBehaviour
         InteractableBase target = action switch
         {
             "stomp" => FindTarget("stomp", stompRange, stompHalfAngle, dy => dy < -0.5f),
-            "clap" => gameState != null && gameState.Held != HeldItem.None ? null : FindTarget("clap", clapRange, clapHalfAngle, dy => dy < -0.5f),
+            "clap" => gameState != null && gameState.Held != HeldItem.None ? null : ClapTarget(),
             _ => null,
         };
         return target != null && target.IsActionableFor(action) ? target : null;
@@ -383,7 +444,7 @@ public class EventResolver : MonoBehaviour
     /// </summary>
     private bool IsRepeat(GameEvent evt)
     {
-        string action = evt.actionLabel;
+        string action = IsArmAction(evt.actionLabel) ? "arm" : evt.actionLabel; // one arm motion, however it was read
         bool phone = evt.sessionId == PhoneMotionSession;
         double now = Clock();
         if (_runs.TryGetValue(action, out var run) && now - run.last < repeatReleaseSeconds && now - run.start < repeatMaxRunSeconds)

@@ -27,11 +27,11 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
 1. **Launch MARIO Local on the phone** (headset mode is on by default; a two-finger tap toggles it before wearing, see §10). The HUD shows the **start menu**: TRAINING + GAME, GAME ONLY, GAME: FULL/SHORT, GOD MODE: OFF/ON. Nod down / tilt up to move (arrow keys in the Editor), **clap** to pick: the game length and god mode toggle; a game option starts the scan. Pick TRAINING + GAME for a first-time player. **For a timed demo, set GAME: SHORT** (1-1 to 1-4, then Bowser's castle), and god mode on if the boss must be reached. On the Mac: `python3 tools/mock_gateway.py --keys`, and the terminal shows `[phone1 …] connected`.
 2. **The scan starts with the menu's clap** (key 6 in the Editor). Walk round looking at the floor. Jumps from here on can be key 1 or a real jump: in headset mode the phone detects jumps and squats itself from its height tracking.
    - **What to point out:** only *floor* is highlighted (gold grid). Tables and beds are rejected (ARKit semantic classification). The m² counter and meter grow.
-3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag), **3 times each, with only that move counting**. In the shell step only the Koopa is out until its shell is held; then 3 Goombas appear to throw it at. Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not finished in 90 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
+3. **Finish the scan with another jump.** "READY!" appears, then the eye height (calibrated during the scan). The **training round** comes first ("WORLD 0-1 / TRAINING"): seven stations, one at a time, each teaching a move (jump, punch, stomp, squat, throw, stomp-clap-throw, jump at the flag), **3 times each, with only that move counting**, each round at a new spot a short walk away. In the shell step only the Koopa is out until its shell is held; then 3 Goombas appear to throw it at. Lives are infinite (`INF`), a misread move gets "That was X — try Y", and a step not finished in 90 s moves on. Grabbing its flag starts a fresh **WORLD 1-1 / FIRST STEPS**, its stage **anchored to the floor**.
    - **What to point out:** walk round it and it stays put (world tracking and anchors). ? blocks are overhead, bricks at chest height, coins at waist height, all scaled to *your* height.
 4. **Play with keys 1–6, each one a real `GAME_EVENT` over TLS/WebSocket:**
    - 1 → jump under a ? block → power-up
-   - 2 → stomp a Goomba; stomp a Koopa into its shell
+   - 2 → stomp a Goomba; stomp a Koopa into its shell (a shell can't be stomped again: clap it)
    - 6 → clap to pick up the shell (HELD on the HUD), then 4 → throw it at enemies
    - 4 → throw a fireball (with the flower); 5 → punch a brick
    - 3 → squat to dodge a Bullet Bill
@@ -67,7 +67,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
   | Boss bar | Bowser's health in 2-4 |
   | Centre title | intro cards (WORLD 0-1 TRAINING, WORLD 1-1 with the stage name and a tip), training step cards, STAGE CLEAR! / TRAINING COMPLETE! / WARP! / READY! |
   | Feedback | action results: green for hits and +score, orange for refused with a reason, grey for "move not recognised" and training tips ("That was STOMP — try JUMP"); red flash on damage; world-space +score popups |
-  | Bottom-right (debug) | LAST ACTION: class, confidence (or `(PHONE)`/`(KEY)`), OK or the gate |
+  | Bottom-right (debug) | LAST ACTION: class, confidence (or `(PHONE)`/`(KEY)`), OK or the gate; `(READ AS X)` when a clap/throw/punch was resolved as the arm move that fit |
   | End screen | GAME OVER / GAME CLEAR! with score, coins, enemies, time, accuracy, and the restart prompt |
 
   The HUD **only reads** game state. It never changes it (see §5).
