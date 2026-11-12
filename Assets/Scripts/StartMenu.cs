@@ -11,7 +11,7 @@ using UnityEngine;
 ///   GAME ONLY         straight to 1-1
 ///   GAME: FULL/SHORT  toggles; short is World 1 (1-1 to 1-4), then straight to
 ///                     Bowser's castle (2-4), so a demo reaches the boss sooner
-///   GOD MODE: OFF/ON  toggles; on, the game has infinite lives too (training always has)
+///   GOD MODE: ON/OFF  toggles, on by default; on, the game has infinite lives too (training always has)
 ///
 /// Picking either game option sets the training choice (LevelGenerator),
 /// god mode and the game length (GameStateManager) and starts the scan (ARSessionManager); the
@@ -53,7 +53,8 @@ public class StartMenu : MonoBehaviour
 
     public bool IsOpen { get; private set; } = true;
     public Item Selected { get; private set; } = Item.TrainingAndGame;
-    public bool GodMode { get; private set; }
+    /// <summary>On by default (Oliver 2026-11-12: demos shouldn't end in a game over).</summary>
+    public bool GodMode { get; private set; } = true;
     /// <summary>World 1, then Bowser's castle (instead of both worlds).</summary>
     public bool ShortGame { get; private set; }
 

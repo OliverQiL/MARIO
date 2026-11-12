@@ -72,13 +72,13 @@ public static class StageDesigns
         new Design
         {
             Name = "1-2", Title = "KOOPA ROAD", Tip = "Stomp a Koopa, then clap to grab its shell.",
-            Theme = "Koopa road: a Goomba then a Koopa, a zigzag of coins, and a warp pipe to a bonus room.",
+            Theme = "Koopa road: a Koopa then a Goomba, a zigzag of coins, and a warp pipe to a bonus room.",
             Pieces = Join(
                 P(Kind.Question, -0.5f, -1.0f), P(Kind.Question, 0.5f, -1.0f),
                 new[] { new Piece(Kind.Pipe, 0.9f, -0.5f, chance: 1f) },
                 Coins(-0.6f, -0.4f, -0.3f, -0.1f, 2), Coins(0f, 0.2f, 0.6f, 0.8f, 3),
                 P(Kind.Brick, -0.6f, 0.45f),
-                new[] { new Piece(Kind.Spawner, -0.75f, 1.2f, "GK", 2) },
+                new[] { new Piece(Kind.Spawner, -0.75f, 1.2f, "KG", 2) },
                 P(Kind.Flag, 0.3f, 1.75f)),
         },
         new Design
@@ -96,14 +96,14 @@ public static class StageDesigns
         new Design
         {
             Name = "1-4", Title = "FORTRESS", Tip = "Punch bricks. Throw fireballs with a flower.",
-            Theme = "Fortress: everything at once — two spawners, a cannon at the far end, a ring of coins, and a warp pipe.",
+            Theme = "Fortress: everything at once — a Koopa and a Goomba, a cannon at the far end, a ring of coins, and a warp pipe.",
             Scenery = Scenery.Castle,
             Pieces = Join(
                 P(Kind.Question, -0.5f, -1.2f), P(Kind.Question, 0.5f, 0.0f),
                 P(Kind.Brick, 0f, -1.2f), P(Kind.Brick, -0.5f, 0.0f),
                 new[]
                 {
-                    new Piece(Kind.Spawner, -0.85f, 0.9f, "GKG", 3), new Piece(Kind.Spawner, 0.85f, 1.35f, "K", 1),
+                    new Piece(Kind.Spawner, -0.85f, 0.9f, "KG", 2),
                     new Piece(Kind.Pipe, -0.9f, -0.45f, chance: 1f),
                 },
                 P(Kind.Cannon, 1.0f, 1.65f),
@@ -115,8 +115,8 @@ public static class StageDesigns
 
         new Design
         {
-            Name = "2-1", Title = "SHELL HILLS", Tip = "Clap a shell, throw it down the Goomba line.",
-            Theme = "Shell hills: Koopas to stomp, pick up (clap) and throw down a line of Goombas; a staircase to the flag.",
+            Name = "2-1", Title = "SHELL HILLS", Tip = "Clap a shell, throw it at the Goomba.",
+            Theme = "Shell hills: a Koopa to stomp, pick up (clap) and throw at a Goomba; a staircase to the flag.",
             Width = 3f, Depth = 5f,
             Pieces = Join(
                 Coins(0f, -2.1f, 0f, -1.5f, 4),
@@ -124,7 +124,7 @@ public static class StageDesigns
                 new[]
                 {
                     new Piece(Kind.Spawner, -1.0f, -0.2f, "K", 1),
-                    new Piece(Kind.Spawner, 0.3f, 1.0f, "G", 3),
+                    new Piece(Kind.Spawner, 0.3f, 1.0f, "G", 1), // after the Koopa (EnemySpawner)
                     new Piece(Kind.TallPipe, 1.15f, -0.6f, count: 3), new Piece(Kind.TallPipe, -1.2f, 0.7f, count: 2),
                 },
                 Arc(-0.7f, 0.1f, 0.7f, 0.1f, 6),
@@ -136,7 +136,7 @@ public static class StageDesigns
         new Design
         {
             Name = "2-2", Title = "UNDERGROUND", Tip = "Weave between the pillars. Punch the bricks.",
-            Theme = "Underground: pillars to weave between, Goomba waves, bricks to punch and a warp pipe to coins.",
+            Theme = "Underground: pillars to weave between, a Koopa and a Goomba, bricks to punch and a warp pipe to coins.",
             Width = 3f, Depth = 5f, Scenery = Scenery.Underground,
             Pieces = Join(
                 Coins(-0.9f, -2.0f, 0.9f, -2.0f, 6),
@@ -144,7 +144,7 @@ public static class StageDesigns
                 new[]
                 {
                     new Piece(Kind.Stairs, -0.8f, -0.5f, count: 2), new Piece(Kind.Stairs, 0.8f, -0.5f, count: 2),
-                    new Piece(Kind.Spawner, 0f, 0.4f, "GGK", 3),
+                    new Piece(Kind.Spawner, 0f, 0.4f, "KG", 2),
                     new Piece(Kind.Pipe, 1.1f, 0.6f, chance: 1f),
                     new Piece(Kind.Stairs, -0.8f, 1.2f, count: 3), new Piece(Kind.Stairs, 0.8f, 1.2f, count: 3),
                 },

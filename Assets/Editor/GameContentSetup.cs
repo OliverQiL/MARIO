@@ -51,6 +51,7 @@ public static class GameContentSetup
     public const string StandardStagePath = StageDir + "/StandardStage.prefab";
     public const string TrainingStagePath = StageDir + "/TrainingStage.prefab";
     public const string EnemyArrowPath = PrefabDir + "/EnemyArrow.prefab";
+    public const string ObjectiveArrowPath = PrefabDir + "/ObjectiveArrow.prefab";
     private const string ArrowMeshPath = PrefabDir + "/ArrowMesh.asset";
     public const string CompactStagePath = StageDir + "/CompactStage.prefab";
     public const string LargeStagePath = StageDir + "/LargeStage.prefab";
@@ -152,6 +153,12 @@ public static class GameContentSetup
         if (indicator == null) indicator = manager.AddComponent<EnemyIndicator>();
         Set(indicator, "arrowPrefab", BuildEnemyArrow(m));
         Set(indicator, "arCamera", Camera.main);
+        // Gold arrows to what to go to: the training objective (marker, floor arrow) and an unseen stage (edge pointer).
+        var objective = manager.GetComponent<ObjectiveIndicator>();
+        if (objective == null) objective = manager.AddComponent<ObjectiveIndicator>();
+        Set(objective, "arrowPrefab", BuildObjectiveArrow(m));
+        Set(objective, "arCamera", Camera.main);
+        Set(objective, "levelGenerator", levelGenerator);
         // Safety: whatever the player's head is in or at (a bush, a block, a wall) turns see-through.
         var fade = manager.GetComponent<ProximityFade>();
         if (fade == null) fade = manager.AddComponent<ProximityFade>();
@@ -417,6 +424,15 @@ public static class GameContentSetup
         return Save(root, EnemyArrowPath);
     }
 
+    /// <summary>The gold version of the enemy arrow, for ObjectiveIndicator (the training objective and an unseen stage).</summary>
+    private static GameObject BuildObjectiveArrow(Mats m)
+    {
+        var root = new GameObject("ObjectiveArrow");
+        var shape = Visual(PrimitiveType.Quad, "Arrow", root.transform, Vector3.zero, Vector3.one, m.ObjectiveArrow);
+        shape.GetComponent<MeshFilter>().sharedMesh = ArrowMesh();
+        return Save(root, ObjectiveArrowPath);
+    }
+
     /// <summary>A flat arrow in the XZ plane facing up (+Y): a shaft and a wide triangular head, 0.3 m long, tip at +Z.</summary>
     private static Mesh ArrowMesh()
     {
@@ -509,7 +525,7 @@ public static class GameContentSetup
         spawner.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
         var es = spawner.AddComponent<EnemySpawner>();
         var so = new SerializedObject(es);
-        so.FindProperty("totalCount").intValue = 3;
+        so.FindProperty("totalCount").intValue = 2; // at most 2 enemies a stage
         var seq = so.FindProperty("enemyPrefabs");
         seq.arraySize = 2;
         seq.GetArrayElementAtIndex(0).objectReferenceValue = goomba.GetComponent<Goomba>();
@@ -654,7 +670,7 @@ public static class GameContentSetup
         var cannon = new SerializedObject(squat.GetComponentInChildren<BulletBillCannon>(true));
         cannon.FindProperty("maxShots").intValue = 20; // keeps firing until the duck lands
         cannon.FindProperty("initialDelay").floatValue = 2.5f;
-        cannon.FindProperty("interval").floatValue = 5f;
+        cannon.FindProperty("interval").floatValue = 2.5f; // twice the rate it was (Oliver 2026-11-12): less waiting between ducks
         cannon.FindProperty("minPlayerDistance").floatValue = 1.2f; // the lane is short: keep firing for the 3 ducks
         cannon.ApplyModifiedPropertiesWithoutUndo();
 
@@ -1389,6 +1405,7 @@ public static class GameContentSetup
         public readonly Material Ghost = TransparentMat("Ghost", null); // ProximityFade tints it per object
         public readonly Material RangeRing = Mat("RangeRing", Color.white, emission: new Color(0.6f, 0.6f, 0.6f), smoothness: 0f);
         public readonly Material EnemyArrow = Mat("EnemyArrow", new Color(1f, 0.12f, 0.08f), emission: new Color(0.9f, 0.05f, 0.02f), smoothness: 0.2f);
+        public readonly Material ObjectiveArrow = Mat("ObjectiveArrow", new Color(1f, 0.82f, 0.1f), emission: new Color(0.95f, 0.7f, 0.05f), smoothness: 0.2f);
 
         /// <summary>Unlit, alpha-blended, no depth write: for soft shadows on the floor.</summary>
         private static Material TransparentMat(string name, Texture2D texture)

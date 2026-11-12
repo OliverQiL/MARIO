@@ -307,8 +307,17 @@ public class HUDController : MonoBehaviour
         {
             // Training: the step stays up in the banner.
             string rounds = tutorial.RoundsRequired > 1 ? $" ({tutorial.RoundsDone}/{tutorial.RoundsRequired})" : "";
-            message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {step.hint.ToUpperInvariant()}{rounds}";
-            color = Color.white;
+            if (ObjectiveIndicator.Active is { LookHint: { } look })
+            {
+                // The objective is out of view: say which way first (ObjectiveIndicator).
+                message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {look}: FOLLOW THE GOLD ARROW";
+                color = titleColor;
+            }
+            else
+            {
+                message = $"TRAINING {tutorial.StepIndex + 1}/{tutorial.StepCount} - {step.hint.ToUpperInvariant()}{rounds}";
+                color = Color.white;
+            }
         }
         else if (levelGenerator != null && levelGenerator.CurrentStage == null)
         {
@@ -317,6 +326,12 @@ public class HUDController : MonoBehaviour
                     : levelGenerator.IsWaitingForMesh ? "MAPPING THE ROOM..."
                     : "PLACING STAGE...";
             color = recentlyFailed ? warningColor : Color.white;
+        }
+        else if (ObjectiveIndicator.Active is { StageUnseen: true, LookHint: { } lookForStage })
+        {
+            // A new stage not yet seen (it may be beside or behind the player).
+            message = $"{lookForStage} - THE STAGE IS THIS WAY";
+            color = titleColor;
         }
         else if (boss != null && !boss.IsDefeated && boss.IsWarning)
         {
@@ -534,7 +549,7 @@ public class HUDController : MonoBehaviour
     private void HandleScanComplete()
     {
         ShowTitle("READY!", goodColor);
-        if (PlayerBody.EyeHeight is { } eyes) ShowFeedback($"Eye height {eyes:F2} m", quietColor); // stages are sized to it
+        if (PlayerBody.EyeHeight is { } eyes) ShowFeedback($"Eye height {eyes:F2} m", quietColor); // jumps and squats are measured from it (stages use a fixed 1.70 m)
     }
 
     // ---- start menu ----

@@ -9,7 +9,8 @@ using UnityEngine;
 /// after every scan (first launch and hard reset), before 1-1; LevelGenerator
 /// places it and, when its flag is grabbed, starts 1-1 fresh.
 ///
-/// Each step is played as <see cref="Step.rounds"/> rounds (3; the flag 1),
+/// Each step is played as <see cref="Step.rounds"/> rounds (2, was 3 until
+/// 2026-11-12; the flag 1),
 /// and a round only counts when the step's own move does it (Oliver
 /// 2026-10-29: a fireball Goomba stomped doesn't teach the fireball):
 ///   HitBlock       a jump hits the ? block
@@ -55,7 +56,7 @@ public class Tutorial : MonoBehaviour
         public GameObject station;
         public Kind kind;
         [Tooltip("How many times the move must be done (the flag: 1).")]
-        public int rounds = 3;
+        public int rounds = 2;
         [Tooltip("Gives the fire flower at the start if the player hasn't got it (the fireball step).")]
         public bool needsFlower;
         [Tooltip("Takes the fire flower away at the start, so throw only throws a held shell (the shell step).")]
@@ -74,7 +75,7 @@ public class Tutorial : MonoBehaviour
 
     /// <summary>The live training round, if any.</summary>
     public static Tutorial Active { get; private set; }
-    /// <summary>Short notes for the HUD's feedback line ("Nice! 1/3", "Let's move on", ...).</summary>
+    /// <summary>Short notes for the HUD's feedback line ("Nice! 1/2", "Let's move on", ...).</summary>
     public static event Action<string> OnMessage;
 
     /// <summary>The current step (0-based), or -1 before the first one starts.</summary>
@@ -237,6 +238,54 @@ public class Tutorial : MonoBehaviour
         _roundTargets.Clear();
         _roundTargets.AddRange(CurrentRound.GetComponentsInChildren<InteractableBase>(true));
     }
+
+    /// <summary>
+    /// What the player should go to right now (ObjectiveIndicator points at it): the
+    /// round's ? block, brick or Goomba; in the shell step the Koopa, then (shell in
+    /// hand) the nearest Goomba; the cannon for the duck; the flag. Null between
+    /// rounds, while a thrown shell is sliding, or before the first step.
+    /// </summary>
+    public GameObject Objective
+    {
+        get
+        {
+            var step = Current;
+            if (step == null || _beat >= 0f || CurrentRound == null) return null;
+            var targets = CurrentRound.GetComponentsInChildren<InteractableBase>();
+            switch (step.kind)
+            {
+                case Kind.HitBlock: return First(targets.OfType<QuestionBlock>());
+                case Kind.BreakBrick: return First(targets.OfType<BrickBlock>());
+                case Kind.StompEnemy:
+                case Kind.FireballEnemy: return First(targets.OfType<Goomba>().Where(g => !(g is Koopa)));
+                case Kind.ShellEnemy:
+                {
+                    if (ThrownShell.InFlight > 0) return null;
+                    if (GameStateManager.Instance is { Held: HeldItem.Shell })
+                    {
+                        var eye = Camera.main != null ? Camera.main.transform.position : CurrentRound.transform.position;
+                        return targets.OfType<Goomba>().Where(g => !(g is Koopa) && g.IsActionable)
+                            .OrderBy(g => (g.transform.position - eye).sqrMagnitude).Select(g => g.gameObject).FirstOrDefault();
+                    }
+                    return First(targets.OfType<Koopa>());
+                }
+                case Kind.DuckBill:
+                {
+                    var cannon = CurrentRound.GetComponentInChildren<BulletBillCannon>();
+                    return cannon != null ? cannon.gameObject : null;
+                }
+                case Kind.Flag:
+                {
+                    var goal = CurrentRound.GetComponentInChildren<StageGoal>();
+                    return goal != null ? goal.gameObject : null;
+                }
+                default: return null;
+            }
+        }
+    }
+
+    private static GameObject First<T>(IEnumerable<T> targets) where T : InteractableBase =>
+        targets.Where(t => t.IsActionable).Select(t => t.gameObject).FirstOrDefault();
 
     /// <summary>Where round <paramref name="round"/> (0-based) stands relative to the station; a restarted round keeps its spot.</summary>
     public static Vector3 RoundOffset(Step step, int round) =>

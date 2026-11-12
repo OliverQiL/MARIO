@@ -1,11 +1,11 @@
 using UnityEngine;
 
 /// <summary>
-/// Sets this object's height from the player's body when the stage appears,
-/// so pieces suit a short or a tall player: the eye height calibrated during
-/// the scan (PlayerBody), or, before calibration, the camera's height now.
-/// - fractionOfEyes > 0: a height proportional to the body, e.g. coins at
-///   waist height (0.6) and bricks at chest height (0.78).
+/// Sets this object's height when the stage appears, from a fixed eye height
+/// (PlayerBody.StageEyeHeight, 1.70 m; Oliver 2026-11-12: until then it was the
+/// eye height calibrated during the scan, so stages changed with whoever scanned):
+/// - fractionOfEyes > 0: a height proportional to it, e.g. coins at waist
+///   height (0.6) and bricks at chest height (0.78).
 /// - otherwise offsetFromEyes above/below eye level, e.g. ? blocks at +0.35,
 ///   so their bottom clears the player's head and they're reached by jumping.
 /// The stage root sits on the floor.
@@ -23,13 +23,11 @@ public class EyeHeightPlacement : MonoBehaviour
 
     private void Start() => Place();
 
-    /// <summary>Public so headless tests can place with a chosen eye height.</summary>
+    /// <summary>Public so headless tests can place it.</summary>
     public void Place()
     {
-        var cam = Camera.main;
         float floorY = transform.parent != null ? transform.parent.position.y : 0f;
-        float live = cam != null ? cam.transform.position.y - floorY : 1.55f;
-        float eyes = PlayerBody.EyeHeightOr(live);
+        const float eyes = PlayerBody.StageEyeHeight;
         float above = (fractionOfEyes > 0f ? eyes * fractionOfEyes : eyes + offsetFromEyes) + extraHeight;
         var p = transform.position;
         transform.position = new Vector3(p.x, floorY + Mathf.Max(above, minHeightAboveFloor), p.z);

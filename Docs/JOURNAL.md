@@ -220,3 +220,33 @@ A short log of each problem met after the visualizer was connected to John's gat
 **36. Training rounds all in the same spot**
 - **Problem:** each training step's three rounds put the ? block, brick or enemy in the same place, so the player never had to move.
 - **Choice:** each round's copy stands somewhere new: the first where it was, then a short walk to one side and the other (about 0.5 m apart, within the lane). A round that restarts stays at its spot.
+
+---
+
+## 2026-11-12 · Finding things, a fixed stage height
+
+**37. New players couldn't find the targets or the stage**
+- **Problem:** after the scan, players rarely stood at an edge facing the stage, and it could appear beside or behind them. In the game the red enemy arrows lead to the stage, but in training players spent a while looking for the ? block, the brick or the shell.
+- **Choice:** gold arrows to the objective (red stays for enemies):
+  - **In training:** a gold arrow bobs above the current target, pointing down at it; a gold floor arrow points towards it; and when it's out of view an arrow at the edge of the view points to it while the banner says "TURN AROUND / LOOK LEFT …: FOLLOW THE GOLD ARROW".
+  - **Not for walking enemies:** a walking Goomba or Koopa already has the red arrows, so it gets no gold ones. The ? block, brick, shell, cannon and flag do.
+  - **A new stage:** until it has been in view once, the edge arrow points to it and the banner says "TURN AROUND - THE STAGE IS THIS WAY". Then it goes quiet.
+
+**38. The training squat step dragged**
+- **Problem:** the cannon fired every 5 s, so the squat rounds were mostly waiting.
+- **Choice:** the training cannon fires every 2.5 s. Campaign cannons are unchanged.
+
+**39. Stages changed with whoever scanned**
+- **Problem:** stage heights came from the eye height measured during the scan, so the same stage looked different for each player, and a phone held low made everything low.
+- **Choice:** stages are always built for a **1.70 m** eye height (? blocks at 2.05 m, bricks 1.33 m, coins 1.02 m). The measured eye height is still used where it must be personal: jump and squat detection, and the floor estimate for targeting.
+
+**40. Training too long**
+- **Problem:** with 3 rounds per step, training took too long for a demo.
+- **Choice:** 2 rounds per step (the flag still 1).
+
+**41. Too many enemies, Koopa lost in the crowd**
+- **Problem:** up to 4 enemies at once was hard to handle, and the Koopa (the shell's source) often came last.
+- **Choice:** at most **2 enemies per stage** (Bowser aside). Koopas spawn first: a spawner sends its Koopas before its Goombas, and a spawner about to send a Goomba waits while another on the stage still has a Koopa to send.
+
+**42. Demos ending in a game over**
+- **Choice:** god mode is **on by default** in the start menu; a clap on it turns it off.

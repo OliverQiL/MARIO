@@ -131,6 +131,30 @@ public static class ArtPreview
         arrow.transform.localScale = Vector3.one * 1.2f;
         ShootLayout(arrowShot, Path.Combine(outDir, "enemy_arrow.png"), 0.35f);
 
+        // The objective indicator: training's ? block with the gold marker above it and the gold floor arrow towards it.
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var objectiveShot = new GameObject("ObjectiveShot");
+        var trainingLane = Object.Instantiate(Load(GameContentSetup.TrainingStagePath));
+        var jumpStation = trainingLane.transform.Find("1 Jump");
+        jumpStation.SetParent(objectiveShot.transform, false);
+        jumpStation.localPosition = new Vector3(0.3f, 0f, 0.9f);
+        jumpStation.gameObject.SetActive(true);
+        Object.DestroyImmediate(trainingLane);
+        var blockTop = jumpStation.GetComponentInChildren<QuestionBlock>(true).transform.position + Vector3.up * 0.15f;
+        var marker = Object.Instantiate(Load(GameContentSetup.ObjectiveArrowPath), objectiveShot.transform);
+        marker.transform.SetPositionAndRotation(blockTop + Vector3.up * 0.27f, Quaternion.LookRotation(Vector3.down, Vector3.back));
+        marker.transform.localScale = Vector3.one * 0.9f;
+        var floorArrow = Object.Instantiate(Load(GameContentSetup.ObjectiveArrowPath), objectiveShot.transform);
+        floorArrow.transform.SetLocalPositionAndRotation(new Vector3(0f, 0.012f, 0.05f), Quaternion.LookRotation(new Vector3(0.3f, 0f, 0.85f)));
+        floorArrow.transform.localScale = Vector3.one * 1.1f;
+        // From the player's eyes, looking up at the block: the marker is above it.
+        var objectiveFloor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        objectiveFloor.transform.localScale = new Vector3(0.4f, 1f, 0.6f);
+        var objectiveFloorRenderer = objectiveFloor.GetComponent<Renderer>();
+        objectiveFloorRenderer.sharedMaterial = new Material(objectiveFloorRenderer.sharedMaterial) { color = new Color(0.72f, 0.66f, 0.58f) };
+        Shoot(Path.Combine(outDir, "objective_arrow.png"), new Vector3(-0.2f, 1.5f, -1.4f), blockTop + Vector3.down * 0.5f, 1600, 1200);
+        Object.DestroyImmediate(objectiveFloor);
+
         // The range ring, green: a Goomba within stomp reach in front of the player.
         EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
         var ringShot = new GameObject("RingShot");

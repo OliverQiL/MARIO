@@ -26,14 +26,14 @@ Every action still passes the six-gate chain (session → validity → capabilit
 Game over and game clear: the gate chain is suspended, and a `jump`, at least 2 s after, starts a new game.
 
 ## Stage elements (pass 1)
-- **"?" block.** Floats **0.35 m above the player's calibrated eye height**. A `jump` underneath hits it:
+- **"?" block.** Floats **0.35 m above eye height** (a fixed 1.70 m since 2026-11-12, so 2.05 m). A `jump` underneath hits it:
   - it drops a **random power-up**: a **fire flower** or a **1-Up mushroom** (+1 life, pass 2), 50/50
   - the power-up falls from the block and lands 0.5 m past it, on the side away from the player (straight down it would land on the player and be collected unseen)
   - if the roll would be wasted (a flower while the player holds one, or a 1-Up at the life cap), it drops the other one
   - if both would be wasted, a **coin** pops out instead (+100)
 
   It then becomes spent: brown, and it can't be hit again (Gate 5, "already used").
-- **Brick block.** Sits at **chest height** (78 % of eye height). A bare-handed strike or a fireball breaks it for +50.
+- **Brick block.** Sits at **chest height** (78 % of the 1.70 m eye height). A bare-handed strike or a fireball breaks it for +50.
 - **Fire flower.** Collected by walking to it (within 0.45 m). It enables fireball projectiles and is **lost when the player takes damage**.
 - **Flag.** Each stage ends at a flag, whatever state the enemies are in (report §6.4). The player grabs it by **jumping within 0.5 m of it** (since 2026-10-21; walking up to it isn't enough). The HUD shows "JUMP TO GRAB THE FLAG!" while they're in reach.
 
@@ -144,6 +144,7 @@ Defaults chosen and playtested on 2026-09-30. All are tunable in the Inspector.
     - **bricks** at 78 % (chest)
     - **? blocks** 0.35 m above the eyes, so the block's bottom clears the top of the player's head and they reach it by jumping
   - A shorter player therefore gets lower pieces, and a taller player higher ones.
+  - **Since 2026-11-12 stages use a fixed 1.70 m eye height** (`PlayerBody.StageEyeHeight`), so every stage is the same for everyone. The measured eye height is still used for jump/squat detection and the floor estimate.
 - **The flag** is tall (about 1.7 m to the ball, since gameplay objects went to 87 %) with a larger pennant, so it's easy to spot across a room.
 
 ## Maps and layouts (2026-09-30)
@@ -224,7 +225,7 @@ Implements VISUALIZER_STATUS §7.2 (A actions, B maps, C HUD and graphics). Prot
 
 ## Training round (WORLD 0-1, 2026-10-21)
 
-After every scan (first launch and every hard reset, not after a game over), a training lane (1.6 × 3.2 m, compressible) teaches the moves before 1-1. Its stations appear one at a time, each with a big card and a banner line (`TRAINING n/7 - ... (2/3)`). **Since 2026-10-29 each step must be done 3 times, and only with the prescribed move**: each round plays a fresh copy of the station, and a target used up any other way (a THROW Goomba stomped, a brick fireballed, a Goomba walking into you) restarts the round with "That one didn't count — use ...".
+After every scan (first launch and every hard reset, not after a game over), a training lane (1.6 × 3.2 m, compressible) teaches the moves before 1-1. Its stations appear one at a time, each with a big card and a banner line (`TRAINING n/7 - ... (2/3)`). **Since 2026-10-29 each step must be done 3 times (2 since 2026-11-12), and only with the prescribed move**: each round plays a fresh copy of the station, and a target used up any other way (a THROW Goomba stomped, a brick fireballed, a Goomba walking into you) restarts the round with "That one didn't count — use ...".
 
 | # | Card | Teaches | A round counts when |
 |---|---|---|---|
@@ -276,7 +277,7 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
 | **TRAINING + GAME** (default) | starts the scan; the training round, then 1-1 |
 | **GAME ONLY** | starts the scan; straight to 1-1 |
 | **GAME: FULL/SHORT** (2026-11-10) | toggles. **Full** (default): all eight stages. **Short**: World 1 (1-1 to 1-4), then straight to Bowser's castle (2-4), so a demo reaches the boss sooner. Kept for new games, like god mode. |
-| **GOD MODE: OFF/ON** | toggles. On: infinite lives in the game too (training always has them). Kept for new games after a game over. |
+| **GOD MODE: ON/OFF** | toggles; **on by default** since 2026-11-12. On: infinite lives in the game too (training always has them). Kept for new games after a game over. |
 
 - **Moving:** a quick **nod down** moves the selection down, a quick **tilt up** moves it up (wrapping). The head must dip about **15°** from a neutral pitch that slowly follows it, so looking round slowly doesn't move it; each nod counts once, and holding the head away for 1.5 s becomes the new neutral.
 - **Picking:** a `clap` with confidence ≥ 0.6 (repeats ignored). A line under the items says what the selected one does.
@@ -296,6 +297,7 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
   | Stage | 1-1 | 1-2 | 1-3 | 1-4 | 2-1 | 2-2 | 2-3 | 2-4 |
   |---|---|---|---|---|---|---|---|---|
   | Enemies | 1 | 2 | 1 | 4 | 4 | 3 | 2 | 2 Koopas, plus Bowser |
+  | Since 2026-11-12 | 1 | 2 | 1 | 2 | 2 | 2 | 2 | 2 Koopas, plus Bowser |
 
   Difficulty no longer adds enemies; later stages still add cannon shots and shorten the time between them.
 - **Bigger fireballs.** The fire flower's fireballs are **35 % larger**. The hit distance and Bowser's fire are unchanged.
@@ -315,5 +317,16 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
 
   If exactly one fits, it resolves even if the classifier read another (a throw in front of a brick breaks the brick), and LAST ACTION shows `(READ AS THROW)`. If several fit, or none, the classifier's reading stands. A run of arm moves is one move for the repeat filter, and the start menu picks on any arm move.
 - **Training rounds move about.** Each round of a step (? block, brick, Goomba, fireball Goomba, Koopa) appears somewhere new: the first at the station, then about 0.5 m to one side, then the other, so the player walks over each time. A restarted round keeps its spot.
+
+## Playtest round 4 (2026-11-12)
+
+- **Gold objective arrows** (`ObjectiveIndicator`). Red arrows are for enemies; gold ones lead to what to do next.
+  - **Training:** a gold arrow bobs above the current target (the ? block, the brick, the shell, the cannon, the flag), pointing down at it, and a gold floor arrow points towards it from about 0.9 m out (gone within 0.8 m). A walking Goomba or Koopa already has the red arrows and gets no gold ones.
+  - **Out of view:** a gold arrow at the edge of the view points to the target, and the banner says `TRAINING n/7 - TURN AROUND: FOLLOW THE GOLD ARROW` (or LOOK LEFT / RIGHT / UP / DOWN) instead of the step hint.
+  - **A new stage:** until it has been within about 35° of the view once (or the player stands on it), the edge arrow points to it and the banner says `TURN AROUND - THE STAGE IS THIS WAY`.
+- **Training:** 2 rounds per step (was 3); the squat step's cannon fires every **2.5 s** (was 5).
+- **Fixed stage height:** stages are built for a **1.70 m** eye height (? blocks 2.05 m, bricks 1.33 m, coins 1.02 m).
+- **At most 2 enemies per stage, Koopas first** (table above). A spawner sends its Koopas before its Goombas, and a Goomba waits while another spawner on the stage still has a Koopa to send. 2-1's tip: "Clap a shell, throw it at the Goomba."
+- **God mode on by default** in the start menu.
 - **Bowser's hitbox (2026-11-10).** A fireball hits him anywhere on his body art (a box round his model, legs to horns), not just within 0.3 m of his head as before. Other targets still use their single hit point. Nothing hits him mid-leap.
 - **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.
