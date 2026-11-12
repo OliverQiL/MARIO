@@ -170,7 +170,7 @@ public class EventResolver : MonoBehaviour
 
     [Header("Player State Windows (seconds after the event arrives)")]
     [SerializeField] private float airborneSeconds = 1f;
-    [SerializeField] private float duckSeconds = 1f;
+    [SerializeField] private float duckSeconds = 1.5f;
 
     [Header("Fireball")]
     [SerializeField] private Fireball fireballPrefab;
@@ -221,7 +221,11 @@ public class EventResolver : MonoBehaviour
         // motion arrives as several events. Only the first of a run is processed; the rest are
         // ACKed and ignored. Low-confidence reports don't count (they're rejected below as usual).
         if (evt.confidence >= minConfidence && IsRepeat(evt))
+        {
+            // A held squat reported again and again: it's still one squat, but the player is still down.
+            if (evt.actionLabel == "squat" && gameState.IsSessionReady && !gameState.IsFinished) gameState.Duck(duckSeconds);
             return new ResolutionResult(2, RepeatReason);
+        }
 
         // Game over / game clear: only a (deliberate, later) jump does anything — it restarts.
         if (gameState.IsFinished)

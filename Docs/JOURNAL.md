@@ -250,3 +250,15 @@ A short log of each problem met after the visualizer was connected to John's gat
 
 **42. Demos ending in a game over**
 - **Choice:** god mode is **on by default** in the start menu; a clap on it turns it off.
+
+**43. Bullet Bills hit squatting players**
+- **Problem:** players squatting under a Bullet Bill were still hit. Tests showed why: the Bill checked only, in the one frame it drew level, whether a 1 s "ducked" window from the last squat event was still open. So it hit:
+  - a squat held from a little early (the window ran out);
+  - a held squat the classifier kept reporting (repeats were ignored);
+  - a squat reported a moment late (classifier latency);
+  - a head clearly below the Bill with no squat event (head height was never looked at). The phone's own squat detection only helps for squats deeper than 28 cm.
+- **Choice:** the duck is lenient.
+  - A head 10 cm or more below the Bill's centre counts as ducked, squat event or not.
+  - The Bill judges over a window from 0.6 m before the player to 0.6 m after (0.3 s each way), so a duck anywhere in it counts.
+  - Repeated squat reports keep the player ducked, and a squat event now lasts 1.5 s (was 1).
+  - Standing up, or a quick squat long before the Bill arrives, still gets hit. Bowser's fire, which flies like a Bill, gets the same rules.

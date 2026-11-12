@@ -34,7 +34,7 @@ This covers the live session (Prof Peh: the app and its AR features; the TA: the
    - 2 → stomp a Goomba; stomp a Koopa into its shell (a shell can't be stomped again: clap it)
    - 6 → clap to pick up the shell (HELD on the HUD), then 4 → throw it at enemies
    - 4 → throw a fireball (with the flower); 5 → punch a brick
-   - 3 → squat to dodge a Bullet Bill
+   - 3 → squat to dodge a Bullet Bill (any squat that gets the head ~20 cm down counts, even a moment late)
    - Walk to the flag and **jump** → STAGE CLEAR; the view irises out, the next stage is re-anchored and irises in.
    - The bottom-right **LAST ACTION** shows each class received, its confidence and the outcome (`(KEY)` for keys, `(PHONE)` for the phone's own jump/squat detection).
    - Red floor arrows point at approaching enemies (and an arrow at the edge of the view when one is out of sight); the ring round your feet turns **green** when a stomp would land and **gold** for a shell to clap.

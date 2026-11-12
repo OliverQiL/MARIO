@@ -14,7 +14,7 @@ Every action still passes the six-gate chain (session → validity → capabilit
 | Action | Outcome | Targeting (Gate 4) |
 |---|---|---|
 | `jump` | The player is **airborne** for 1.0 s: a Goomba reaching them does no damage and passes by. At the flag (or the unlocked axe) it grabs it and clears the stage; otherwise, if a "?" block is overhead, the jump hits it. | Optional: the goal within **0.5 m**, or a block **above eye level** within **0.5 m** horizontally |
-| `squat` | The player is **ducked** for 1.0 s, or for as long as they stay down when the phone sees the squat: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
+| `squat` | The player is **ducked** for 1.5 s (1.0 until 2026-11-12; renewed by repeated reports of a held squat), or for as long as they stay down when the phone sees the squat: projectiles at head height miss (pass 2). Standing on a warp pipe, it enters the pipe (pass 3). | Optional: a warp pipe within **0.35 m** horizontally |
 | `throw` | **Holding a shell:** throws it; it slides along the floor the way the player faces for 2.5 s at 3 m/s and knocks out every enemy it touches (+100 chain bonus per extra hit). **Otherwise, with a fire flower:** throws a fireball the way the camera faces (aim by looking); it hits the first enemy or brick on its path. **Gate 3:** at most 2 fireballs in flight; nothing to throw without a shell or a flower. | — (the projectile finds its own targets) |
 | `punch` | A forward punch: breaks a brick block (+50) or hits Bowser. | A target at chest height, within **0.8 m** and **±35°** of facing |
 | `clap` | Picks up a Koopa shell from the floor; the player holds it (HUD: HELD, and a small shell in the corner of the view) until they throw it. **Gate 3:** hands already full. Taking damage drops it. | A shell **below eye level** within **1.0 m** (the same as stomp) and **±60°** of facing |
@@ -328,5 +328,9 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
 - **Fixed stage height:** stages are built for a **1.70 m** eye height (? blocks 2.05 m, bricks 1.33 m, coins 1.02 m).
 - **At most 2 enemies per stage, Koopas first** (table above). A spawner sends its Koopas before its Goombas, and a Goomba waits while another spawner on the stage still has a Koopa to send. 2-1's tip: "Clap a shell, throw it at the Goomba."
 - **God mode on by default** in the start menu.
+- **A lenient duck under Bullet Bills (and Bowser's fire).** A Bill passing the player:
+  - **misses** if they're out of its path as it draws level (0.35 m), as before;
+  - **passes under** if at any moment from 0.6 m before them to 0.6 m after (0.3 s each way) they're ducked: a squat's window (now 1.5 s, renewed by the classifier's repeated reports of a held squat), the phone seeing a held squat, or simply their **head 10 cm or more below the Bill's centre**;
+  - otherwise **hits**, decided at the end of that window, so a squat reported a moment late still counts.
 - **Bowser's hitbox (2026-11-10).** A fireball hits him anywhere on his body art (a box round his model, legs to horns), not just within 0.3 m of his head as before. Other targets still use their single hit point. Nothing hits him mid-leap.
 - **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.

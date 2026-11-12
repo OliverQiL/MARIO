@@ -270,6 +270,8 @@ public static class GameplaySmokeTest
               "a Bullet Bill flies straight (no homing), so stepping aside dodges it");
         foreach (var b in UnityEngine.Object.FindObjectsByType<BulletBill>()) UnityEngine.Object.DestroyImmediate(b.gameObject);
 
+        BulletBillDuckChecks();
+
         // -- cannon: turns to face the player, holds fire when they're close, warns, then fires along its barrel
         var cannon = UnityEngine.Object.Instantiate(
             AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath).transform.Find("BulletBillCannon").gameObject,
@@ -1389,6 +1391,73 @@ public static class GameplaySmokeTest
         Resolve("jump");
         UnityEngine.Object.DestroyImmediate(b.gameObject);
         return s_Stage.GetComponentsInChildren<Pickup>().FirstOrDefault(p => !existing.Contains(p));
+    }
+
+    /// <summary>
+    /// How a Bullet Bill decides a hit on a squatting player (playtest 2026-11-12: "squatting, and it
+    /// still hit"). Bills fly at 2 m/s; the player's head is at 1.5 m and the Bill 0.1 m below it.
+    /// A game clock drives GameStateManager's ducked window.
+    /// </summary>
+    private static void BulletBillDuckChecks()
+    {
+        float now = 100f;
+        s_State.Clock = () => now;
+        var eye = new Vector3(0f, 1.5f, 0f);
+        var low = eye + Vector3.down * 0.35f; // squatting: the head ~35 cm lower
+        int lives = s_State.Lives;
+        bool Fly(System.Func<float, Vector3> head, System.Action<float> at = null)
+        {
+            SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+            SetField(s_State, "lives", 3); // never a game over here
+            var bill = LaunchBill(eye);
+            bill.transform.position = eye + new Vector3(0f, -0.1f, 3f); // 1.5 s away
+            float t = 0f;
+            for (int i = 0; i < 120 && bill != null && !bill.Decided; i++)
+            {
+                at?.Invoke(t);
+                bill.Tick(0.05f, head(t));
+                t += 0.05f;
+                now += 0.05f;
+            }
+            bool hit = bill != null && bill.HitPlayer;
+            if (bill != null) UnityEngine.Object.DestroyImmediate(bill.gameObject);
+            SetField(s_State, "_duckedUntil", float.NegativeInfinity);
+            return hit;
+        }
+
+        // 1. Squat event 1.2 s before the Bill arrives, the player holding the squat (head low) — the classifier sends one squat.
+        bool held = Fly(t => t < 0.3f ? eye : low, t => { if (Mathf.RoundToInt(t / 0.05f) == 6) Resolve("squat"); });
+        Check(!held, "Bill: a squat held from 1.2 s before it arrives ducks it (head low the whole time)");
+
+        // 2. The classifier reports the held squat again and again (repeats), head NOT tracked low (phone motion missed it).
+        int step = 0;
+        bool repeats = Fly(_ => eye, t =>
+        {
+            int k = Mathf.RoundToInt(t / 0.05f);
+            if (k == 4) { ResolveAfter(5, "squat"); step = k; }        // the first report, 1.3 s before
+            else if (k > 4 && k % 4 == 0) { ResolveAfter((k - step) * 0.05, "squat"); step = k; } // then every 0.2 s
+        });
+        Check(!repeats, "Bill: a held squat the classifier keeps reporting (repeats) stays ducked");
+
+        // 3. The squat is reported a little late (classifier latency): just after the Bill draws level.
+        bool late = Fly(_ => eye, t => { if (Mathf.RoundToInt(t / 0.05f) == 32) Resolve("squat"); });
+        Check(!late, "Bill: a squat reported up to ~0.25 s after it draws level still ducks it");
+
+        // 4. No squat event at all, but the head is clearly below the Bill (a squat the classifier and phone missed).
+        bool unseen = Fly(_ => low);
+        Check(!unseen, "Bill: a head clearly below the Bill isn't hit, even with no squat event");
+
+        // 5. Still hits: standing upright with no squat.
+        bool standing = Fly(_ => eye);
+        Check(standing, "Bill: a standing player who doesn't squat is still hit");
+
+        // 6. Still hits: a squat long finished (stood back up) before it arrived.
+        bool tooEarly = Fly(t => eye, t => { if (Mathf.RoundToInt(t / 0.05f) == 0) s_State.Duck(0.3f); });
+        Check(tooEarly, "Bill: a quick squat well before it arrives (stood back up) doesn't save the player");
+
+        s_State.Clock = null;
+        SetField(s_State, "_invulnerableUntil", float.NegativeInfinity);
+        SetField(s_State, "lives", lives);
     }
 
     /// <summary>A Bill 5 m in front of the player at head height, fired straight at them.</summary>

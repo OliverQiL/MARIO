@@ -105,14 +105,18 @@ public class GameStateManager : MonoBehaviour
     /// <summary>Game over or game clear: play has ended until a jump restarts it.</summary>
     public bool IsFinished => isGameOver || isGameClear;
     /// <summary>Seconds since the game ended (over or cleared).</summary>
-    public float SecondsSinceGameOver => Time.time - _gameOverAt;
+    public float SecondsSinceGameOver => Now - _gameOverAt;
     public HeldItem Held => heldItem;
     public Stats GameStats => _stats;
     /// <summary>Seconds of play since the first stage of this game started.</summary>
-    public float PlaySeconds => float.IsInfinity(_gameStartedAt) ? 0f : (IsFinished ? _gameOverAt : Time.time) - _gameStartedAt;
-    public bool IsAirborne => Time.time < _airborneUntil;
-    public bool IsDucked => Time.time < _duckedUntil;
-    public bool IsInvulnerable => Time.time < _invulnerableUntil;
+    public float PlaySeconds => float.IsInfinity(_gameStartedAt) ? 0f : (IsFinished ? _gameOverAt : Now) - _gameStartedAt;
+    public bool IsAirborne => Now < _airborneUntil;
+    /// <summary>The time source for the timed states (airborne, ducked, invulnerable, game over); tests inject one.</summary>
+    public System.Func<float> Clock { get; set; }
+    private float Now => Clock?.Invoke() ?? Time.time;
+
+    public bool IsDucked => Now < _duckedUntil;
+    public bool IsInvulnerable => Now < _invulnerableUntil;
     public int StartingLives => startingLives;
     public int MaxLives => maxLives;
 
@@ -120,8 +124,8 @@ public class GameStateManager : MonoBehaviour
 
     // ---- player action states ----
 
-    public void Jump(float seconds) => _airborneUntil = Time.time + seconds;
-    public void Duck(float seconds) => _duckedUntil = Time.time + seconds;
+    public void Jump(float seconds) => _airborneUntil = Now + seconds;
+    public void Duck(float seconds) => _duckedUntil = Now + seconds;
 
     /// <summary>Picks up an item (clap). Returns false if the hands are already full.</summary>
     public bool PickUp(HeldItem item)
@@ -161,7 +165,7 @@ public class GameStateManager : MonoBehaviour
         if (InfiniteLives)
         {
             // Infinite lives: the hit still shows (flash, damage buzz, tip) but costs nothing.
-            _invulnerableUntil = Time.time + invulnerableSeconds;
+            _invulnerableUntil = Now + invulnerableSeconds;
             Debug.Log($"[GameStateManager] Hit by {source} in {(InTraining ? "training" : "god mode")} — no life lost.");
             OnLifeLost?.Invoke(lives);
             return true;
@@ -170,7 +174,7 @@ public class GameStateManager : MonoBehaviour
         lives = Mathf.Max(0, lives - 1);
         hasFireFlower = false;
         heldItem = HeldItem.None; // dropped, as in Mario
-        _invulnerableUntil = Time.time + invulnerableSeconds;
+        _invulnerableUntil = Now + invulnerableSeconds;
         Debug.Log($"[GameStateManager] Hit by {source} — {lives} lives left.");
         OnLifeLost?.Invoke(lives);
 
@@ -178,7 +182,7 @@ public class GameStateManager : MonoBehaviour
         {
             isGameOver = true;
             isStageActive = false;
-            _gameOverAt = Time.time;
+            _gameOverAt = Now;
             Debug.Log($"[GameStateManager] GAME OVER — score {score}, stage {stageIndex}.");
             OnGameOver?.Invoke();
         }
@@ -191,7 +195,7 @@ public class GameStateManager : MonoBehaviour
         if (isGameClear) return;
         isGameClear = true;
         isStageActive = false;
-        _gameOverAt = Time.time;
+        _gameOverAt = Now;
         Debug.Log($"[GameStateManager] GAME CLEAR — score {score}, {_stats.enemiesDefeated} enemies, {PlaySeconds:F0}s.");
         OnGameClear?.Invoke();
     }
@@ -283,7 +287,7 @@ public class GameStateManager : MonoBehaviour
     public void BeginStage()
     {
         isStageActive = true;
-        if (float.IsInfinity(_gameStartedAt)) _gameStartedAt = Time.time;
+        if (float.IsInfinity(_gameStartedAt)) _gameStartedAt = Now;
         Debug.Log($"[GameStateManager] Stage {StageName} started.");
     }
 

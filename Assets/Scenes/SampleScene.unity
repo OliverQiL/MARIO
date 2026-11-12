@@ -888,7 +888,7 @@ MonoBehaviour:
   jumpBlockRadius: 0.5
   warpPipeRadius: 0.35
   airborneSeconds: 1
-  duckSeconds: 1
+  duckSeconds: 1.5
   fireballPrefab: {fileID: 7228211895968795838, guid: 698b8502f545e40d9853f7203ef22850, type: 3}
   maxFireballsInFlight: 2
   thrownShellPrefab: {fileID: 2373228981184697333, guid: 8ae0a4c94bc4341b4bb82eae35eb40e4, type: 3}
