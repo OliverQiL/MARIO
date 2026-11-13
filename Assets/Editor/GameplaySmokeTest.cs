@@ -108,10 +108,22 @@ public static class GameplaySmokeTest
         r = Resolve("jump");
         Check(r.Gate == 5, "second jump on the spent block is Gate 5", r);
 
-        // -- fire flower lands past the block, away from the player; collected by walking to it
-        var away = block.transform.position - s_Cam.transform.position;
-        away.y = 0f;
-        var landing = block.transform.position + away.normalized * 0.5f;
+        // -- the fire flower hops out and lands in front of the player (the way they face); collected by walking to it
+        var landing = new Vector3(s_Cam.transform.position.x, 0f, s_Cam.transform.position.z) + Vector3.forward * 0.9f;
+        Check(flower != null && FlatDistance(block.LandingSpot(), landing) < 0.01f && flower.IsLanding,
+              $"the power-up hops to 0.9 m in front of the player, the way they face (lands at {(flower != null ? block.LandingSpot().ToString("F2") : "-")})");
+        {
+            var stageCopy = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.StandardStagePath), new Vector3(0f, 0f, 30f), Quaternion.identity, s_Stage);
+            var qb = stageCopy.GetComponentInChildren<QuestionBlock>();
+            var floorMark = GetField<GameObject>(qb, "floorMark");
+            Check(floorMark != null && floorMark.activeSelf && Mathf.Abs(floorMark.transform.position.y - stageCopy.transform.position.y) < 0.02f
+                  && FlatDistance(floorMark.transform.position, qb.transform.position) < 0.01f,
+                  "an unused ? block has a '?' mark on the floor right below it");
+            qb.ResolveHit("jump", s_State);
+            Check(!floorMark.activeSelf, "the mark goes once the block is spent");
+            foreach (var p in stageCopy.GetComponentsInChildren<Pickup>()) UnityEngine.Object.DestroyImmediate(p.gameObject);
+            UnityEngine.Object.DestroyImmediate(stageCopy);
+        }
         Check(flower != null && !flower.TryCollect(s_Cam.transform.position) && !s_State.HasFireFlower, "the flower isn't collected where the player stands under the block");
         Check(flower != null && flower.TryCollect(landing) && s_State.HasFireFlower, "walking to the flower's landing spot collects it");
 
@@ -280,7 +292,26 @@ public static class GameplaySmokeTest
         cannon.Tick(2f, eye); // 2 s at 120°/s: plenty to turn
         var toEye = eye - cannonHead.position; toEye.y = 0f;
         Check(Vector3.Angle(cannonHead.forward, toEye) < 1f, "cannon turns to face the player");
+        Check(cannon.MarkerShown && cannon.Marker.position.y > cannonHead.position.y + 0.2f && Vector3.Dot(cannon.Marker.forward, Vector3.down) > 0.99f,
+              "a red arrow bobs over the cannon's head, pointing down at it");
         Check(cannon.Tick(6.1f, eye) == null && cannon.IsWarning, "after its initial delay (8 s) the cannon warns first");
+        {
+            // Out of view while it warns: the red edge pointer points at it (no enemies about).
+            var cannonIndicator = new GameObject("CannonIndicator").AddComponent<EnemyIndicator>();
+            SetField(cannonIndicator, "arrowPrefab", AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.EnemyArrowPath));
+            SetField(cannonIndicator, "arCamera", s_Cam);
+            var lookAway = s_Cam.transform.rotation;
+            s_Cam.transform.rotation = Quaternion.LookRotation(Vector3.left); // the cannon is to the right and ahead
+            Invoke(cannon, "OnEnable");
+            bool liveEnemies = UnityEngine.Object.FindObjectsByType<Goomba>().Any(g => g.IsMoving);
+            cannonIndicator.Tick(0.1f);
+            Check(liveEnemies || cannonIndicator.PointerShown, "a warning cannon out of view gets the red edge pointer");
+            s_Cam.transform.rotation = lookAway;
+            var edge = s_Cam.transform.Find("EnemyPointer");
+            if (edge != null) UnityEngine.Object.DestroyImmediate(edge.gameObject);
+            foreach (var a in cannonIndicator.Arrows) UnityEngine.Object.DestroyImmediate(a);
+            UnityEngine.Object.DestroyImmediate(cannonIndicator.gameObject);
+        }
         var fired = cannon.Tick(2.1f, eye); // a 2 s warning
         Check(fired != null && Vector3.Angle(fired.Direction, toEye) < 1f && fired.State == BulletBill.Phase.Flying, "then fires a Bill along its barrel, at the player");
         var nearCannon = cannonHead.position + (eye - cannonHead.position).normalized * 0.8f;
@@ -544,12 +575,18 @@ public static class GameplaySmokeTest
         while (bowser.State == Bowser.Phase.Leaping && bTicks++ < 120) bowser.Tick(0.1f, sidestep);
         Check(bowser.State == Bowser.Phase.Stunned && s_State.Lives == livesBefore && FlatDistance(bowser.transform.position, touchdown) < 0.01f && !marker.gameObject.activeSelf,
               "he lands on the target; sidestepping out of it dodges the shockwave");
+        Check(GetField<float>(bowser, "leapSeconds") >= 1.5f && GetField<float>(bowser, "stunSeconds") >= 3f, "a long leap (1.5 s) to get out of the target, a long stun (3 s) to hit back");
+        Check(bowser.StunBarShown && bowser.StunLeft > 0.9f, $"stunned: a full stun bar over his head ({bowser.StunLeft:F2})");
+        for (int i = 0; i < 15; i++) bowser.Tick(0.1f, sidestep);
+        var fill = bowser.transform.Find("StunBar/Fill");
+        Check(bowser.State == Bowser.Phase.Stunned && bowser.StunBarShown && Mathf.Abs(bowser.StunLeft - 0.5f) < 0.06f && fill.localScale.x < 0.35f,
+              $"halfway through the stun the bar is half drained ({bowser.StunLeft:F2}, fill {fill.localScale.x:F2})");
         s_Cam.transform.position = new Vector3(touchdown.x, 1.5f, touchdown.z - 0.7f);
         FaceForward();
         r = Resolve("stomp");
         Check(r.Resolved && r.Target == bowser && bowser.Health == 4, "stunned, a stomp hurts him (1)", r);
         while (bowser.State != Bowser.Phase.Pacing && bTicks++ < 200) bowser.Tick(0.1f, farPlayer);
-        Check(bowser.State == Bowser.Phase.Pacing && FlatDistance(bowser.transform.position, post) < 0.4f, "then he hops back to his post");
+        Check(bowser.State == Bowser.Phase.Pacing && FlatDistance(bowser.transform.position, post) < 0.4f && !bowser.StunBarShown, "then he hops back to his post (the stun bar gone)");
 
         // A player who stays in the target is hit; one who jumps as he lands isn't
         nearPlayer = new Vector3(bowser.transform.position.x, 1.5f, bowser.transform.position.z - 1f);
@@ -615,8 +652,11 @@ public static class GameplaySmokeTest
         Check(r.Resolved && r.Reason == EventResolver.GoalReason && r.Target == axe && axe.IsReached && reachedEvent, "a jump at the axe grabs it", r);
 
         // -- GAME CLEAR: play stops; a jump (after the grace period) starts a new game
+        SetField(s_State, "stageIndex", GameStateManager.FinalStage);
+        s_State.CompleteStage(); // LevelGenerator: the final stage's goal completes it, then clears the game
         s_State.ClearGame();
         Check(s_State.IsGameClear && s_State.IsFinished && !s_State.IsSessionReady, "reaching the axe is GAME CLEAR");
+        Check(s_State.StageName == "2-4", $"after the game is cleared the HUD stays on 2-4, not 3-1 ({s_State.StageName})");
         r = Resolve("punch");
         Check(r.Gate == 1 && r.Reason == "game clear", "actions are dropped after GAME CLEAR", r);
         SetField(s_State, "_gameOverAt", float.NegativeInfinity);
@@ -659,11 +699,23 @@ public static class GameplaySmokeTest
         Check(spawner.Tick(1f, far) == null, "the next of the wave waits its spacing (1.5 s)");
         var second = spawner.Tick(0.6f, far);
         Check(spawned is Koopa && second != null && !(second is Koopa), "Koopas first: the Koopa, then the Goomba (while the Koopa is still alive)");
-        UnityEngine.Object.DestroyImmediate(spawned.gameObject);
         UnityEngine.Object.DestroyImmediate(second.gameObject);
         bool more = false;
         for (int i = 0; i < 20; i++) more |= spawner.Tick(3f, far) != null;
-        Check(!more && spawner.WaveDone, "once the wave (2) is out and cleared, nothing more spawns");
+        Check(!more && spawner.WaveDone, "the wave (2) is out; while its Koopa is in play nothing more spawns");
+        UnityEngine.Object.DestroyImmediate(spawned.gameObject); // its shell used up
+        s_State.PickUp(HeldItem.Shell);
+        Check(spawner.Tick(5f, far) == null, "no new Koopa while its shell is held");
+        Resolve("throw");
+        foreach (var ts in UnityEngine.Object.FindObjectsByType<ThrownShell>()) UnityEngine.Object.DestroyImmediate(ts.gameObject);
+        var again = spawner.Tick(2f, far);
+        Check(again == null, "the next Koopa waits 3 s after the shell is used up");
+        again = spawner.Tick(1.1f, far);
+        Check(again is Koopa, "then a new Koopa comes (always one to come)");
+        more = false;
+        for (int i = 0; i < 10; i++) more |= spawner.Tick(3f, far) != null;
+        Check(!more, "only one Koopa at a time, and Goombas never come back");
+        if (again != null) UnityEngine.Object.DestroyImmediate(again.gameObject);
 
         // -- stage templates are complete
         var large = AssetDatabase.LoadAssetAtPath<GameObject>(GameContentSetup.LargeStagePath);
@@ -749,12 +801,13 @@ public static class GameplaySmokeTest
         Check(GameStateManager.FinalStage == StageDesigns.Campaign.Length && GameStateManager.NameOf(GameStateManager.FinalStage) == "2-4",
               "the final stage is the campaign's last, 2-4");
         var shortRun = new List<string>();
-        for (int i = 0; i < 6 && s_State.StageIndex <= GameStateManager.FinalStage; i++) { shortRun.Add(s_State.StageName); s_State.CompleteStage(); }
+        for (int i = 0; i < 6 && !shortRun.Contains("2-4"); i++) { shortRun.Add(s_State.StageName); s_State.CompleteStage(); }
         Check(string.Join(",", shortRun) == "1-1,1-2,1-3,1-4,2-4", $"short game: {string.Join(", ", shortRun)}");
         s_State.ShortGame = false;
         s_State.RestartGame();
         var fullRun = new List<string>();
-        for (int i = 0; i < 10 && s_State.StageIndex <= GameStateManager.FinalStage; i++) { fullRun.Add(s_State.StageName); s_State.CompleteStage(); }
+        for (int i = 0; i < 10 && !fullRun.Contains("2-4"); i++) { fullRun.Add(s_State.StageName); s_State.CompleteStage(); }
+        Check(s_State.StageName == "2-4", "completing 2-4 doesn't move the stage on (no 3-1)");
         Check(fullRun.Count == 8 && fullRun[4] == "2-1" && fullRun[7] == "2-4", $"full game: {string.Join(", ", fullRun)}");
         s_State.RestartGame();
         s_State.BeginStage();
@@ -940,6 +993,23 @@ public static class GameplaySmokeTest
               && arrow.transform.position.x > 0.5f && arrow.transform.position.x < 1.5f && Mathf.Abs(arrow.transform.position.y) < 0.05f,
               "a Goomba to the right gets a floor arrow ~1.2 m out, pointing at it");
         Check(indicator.PointerShown && indicator.PointerLocalPosition.x > 0.1f, "it's out of view, so the edge pointer shows on the right");
+        {
+            // Steady, not shaking: walking bob (±3 cm, 2 Hz) at 60 fps moves the arrow only a little a frame, and the pulse is gentle.
+            float maxStep = 0f, minScale = float.MaxValue, maxScale = 0f;
+            var last = arrow.transform.position;
+            for (int f = 0; f < 120; f++)
+            {
+                s_Cam.transform.position = new Vector3(0.03f * Mathf.Sin(f / 60f * 4f * Mathf.PI), 1.5f, 0f);
+                indicator.Tick(1f / 60f);
+                maxStep = Mathf.Max(maxStep, (arrow.transform.position - last).magnitude);
+                last = arrow.transform.position;
+                minScale = Mathf.Min(minScale, arrow.transform.localScale.x);
+                maxScale = Mathf.Max(maxScale, arrow.transform.localScale.x);
+            }
+            s_Cam.transform.position = new Vector3(0f, 1.5f, 0f);
+            Check(maxStep < 0.01f && maxScale / minScale < 1.15f,
+                  $"the floor arrow is steady: at most {maxStep * 100f:F1} cm a frame, its pulse {maxScale / minScale:F2}x");
+        }
 
         goomba.transform.position = new Vector3(0f, 0f, -3f); // behind
         indicator.Tick(0.1f);

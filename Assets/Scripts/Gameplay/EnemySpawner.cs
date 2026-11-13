@@ -19,6 +19,13 @@ using UnityEngine.Serialization;
 /// the wave's Koopas spawn before its Goombas, and a spawner about to send a
 /// Goomba waits (its delay starting again) while another spawner on the same
 /// stage still has a Koopa to send.
+///
+/// One Koopa at a time, and always one to come (Oliver 2026-11-13): a Koopa
+/// never spawns while another is in play on the stage (walking, a shell on
+/// the floor, held or sliding). Once the wave is out, a spawner whose wave
+/// had a Koopa sends a new one koopaRespawnSeconds after the last one's
+/// shell is used up (or it's defeated), for as long as the stage lasts.
+/// Goombas never come back.
 /// </summary>
 public class EnemySpawner : MonoBehaviour
 {
@@ -32,9 +39,11 @@ public class EnemySpawner : MonoBehaviour
     [SerializeField] private float waveSpacing = 1.5f;
     [Tooltip("Don't spawn while the player is closer than this (horizontal metres) to the spawn point.")]
     [SerializeField] private float minPlayerDistance = 1.2f;
+    [Tooltip("After the wave: seconds after the last Koopa's shell is used up before a new Koopa comes.")]
+    [SerializeField] private float koopaRespawnSeconds = 3f;
 
     private int _spawned;
-    private float _timer;
+    private float _timer, _koopaTimer;
 
     private void Update()
     {
@@ -46,13 +55,14 @@ public class EnemySpawner : MonoBehaviour
     {
         var gs = GameStateManager.Instance;
         if (gs == null || !gs.IsSessionReady || enemyPrefabs == null || enemyPrefabs.Length == 0) return null;
-        if (_spawned >= WaveSize) return null; // the wave is out: no more
+        if (_spawned >= WaveSize) return KoopaAgain(dt, playerPosition, gs); // the wave is out: only Koopas come back
 
         var prefab = WavePrefab(_spawned);
         if (prefab == null) return null;
-        if (!(prefab is Koopa) && SiblingHasKoopaToSend())
+        bool koopaInPlay = KoopaInPlay(gs);
+        if (prefab is Koopa ? koopaInPlay : !koopaInPlay && SiblingHasKoopaToSend())
         {
-            _timer = 0f; // after the Koopa, wait the usual delay
+            _timer = 0f; // one Koopa at a time / Goombas after the Koopa: wait, then the usual delay
             return null;
         }
 
@@ -68,6 +78,45 @@ public class EnemySpawner : MonoBehaviour
         var enemy = Instantiate(prefab, transform.position, transform.rotation, transform.parent);
         Debug.Log($"[EnemySpawner] Spawned {prefab.name} ({_spawned}/{WaveSize} of the wave).");
         return enemy;
+    }
+
+    /// <summary>After the wave: a new Koopa koopaRespawnSeconds after none is in play (its shell used up).</summary>
+    private Goomba KoopaAgain(float dt, Vector3 playerPosition, GameStateManager gs)
+    {
+        if (!HasKoopa || KoopaInPlay(gs)) { _koopaTimer = 0f; return null; }
+        _koopaTimer += dt;
+        if (_koopaTimer < koopaRespawnSeconds) return null;
+        var toPlayer = playerPosition - transform.position;
+        toPlayer.y = 0f;
+        if (toPlayer.magnitude < minPlayerDistance) return null;
+        _koopaTimer = 0f;
+        Goomba prefab = null;
+        foreach (var p in enemyPrefabs) if (p is Koopa) { prefab = p; break; }
+        var koopa = Instantiate(prefab, transform.position, transform.rotation, transform.parent);
+        Debug.Log("[EnemySpawner] A new Koopa (the last shell is used up).");
+        return koopa;
+    }
+
+    /// <summary>Its wave has a Koopa.</summary>
+    public bool HasKoopa
+    {
+        get
+        {
+            for (int i = 0; i < WaveSize; i++) if (WavePrefab(i) is Koopa) return true;
+            return false;
+        }
+    }
+
+    /// <summary>A Koopa is in play on this stage: walking, its shell on the floor, held, or sliding.</summary>
+    public bool KoopaInPlay(GameStateManager gs)
+    {
+        if (gs != null && gs.Held == HeldItem.Shell) return true;
+        if (ThrownShell.InFlight > 0) return true;
+        var stage = transform.parent;
+        if (stage == null) return false;
+        foreach (var k in stage.GetComponentsInChildren<Koopa>())
+            if (k.IsActionable) return true;
+        return false;
     }
 
     /// <summary>The <paramref name="index"/>th enemy of the wave: the cycled sequence, Koopas moved to the front.</summary>

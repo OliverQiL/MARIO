@@ -12,8 +12,10 @@ using UnityEngine;
 ///   leaps at where the player stood when it took off, landing with a
 ///   shockwave: get out of the red target, or jump as it lands. A player who
 ///   walks up to it doesn't get a free beating: once close, the next attack
-///   comes within closeReactionSeconds. After landing it's stunned for a
-///   moment (no contact damage), then hops back to its post.
+///   comes within closeReactionSeconds. After landing it's stunned (no contact
+///   damage; a bar over its head drains as the stun runs out), then hops back
+///   to its post. Oliver 2026-11-13: a longer leap (1.5 s, time to get out of
+///   the target) and a longer stun (3 s, time to hit back).
 ///
 /// It takes several hits: a punch, a stomp or a fireball (throw with the
 /// flower) takes 1 health, a thrown Koopa shell 2. Nothing reaches it in the
@@ -52,14 +54,17 @@ public class Bowser : InteractableBase
     [SerializeField] private float closeReactionSeconds = 1.2f;
     [Tooltip("The crouch before the leap; the red target follows the player.")]
     [SerializeField] private float jumpWarningSeconds = 0.9f;
-    [SerializeField] private float leapSeconds = 0.9f;
+    [SerializeField] private float leapSeconds = 1.5f;
     [SerializeField] private float leapHeight = 0.9f;
     [Tooltip("It leaps at most this far (metres) from where it is.")]
     [SerializeField] private float maxLeapDistance = 2f;
     [Tooltip("Landing hurts a player (not in the air) within this horizontal distance of where it lands.")]
     [SerializeField] private float shockRadius = 0.7f;
     [Tooltip("After landing: stunned (no contact damage), the moment to hit back.")]
-    [SerializeField] private float stunSeconds = 1.6f;
+    [SerializeField] private float stunSeconds = 3f;
+    [Tooltip("A bar over its head while stunned; stunFill shrinks (from the left) as the stun runs out.")]
+    [SerializeField] private GameObject stunBar;
+    [SerializeField] private Transform stunFill;
     [SerializeField] private float returnSeconds = 0.8f;
     [Tooltip("A red target on the floor where it will land (shown while it crouches and leaps).")]
     [SerializeField] private GameObject landingMarker;
@@ -67,6 +72,8 @@ public class Bowser : InteractableBase
 
     /// <summary>The boss on the current stage (for the HUD's health bar), or null.</summary>
     public static Bowser Active { get; private set; }
+
+    private Vector3 _stunFillScale, _stunFillPosition;
 
     public int Health => Mathf.Max(0, maxHealth - _damage);
     public int MaxHealth => maxHealth;
@@ -77,6 +84,9 @@ public class Bowser : InteractableBase
     /// <summary>Crouching or in the air on a leap at the player: get out of the red target. For tests and the HUD.</summary>
     public bool IsJumpAttack => _phase is Phase.JumpWarning or Phase.Leaping;
     public bool IsStunned => _phase == Phase.Stunned;
+    /// <summary>How much of the stun is left, 1 → 0 (0 when not stunned).</summary>
+    public float StunLeft => _phase == Phase.Stunned ? Mathf.Clamp01(1f - (_clock - _phaseStart) / Mathf.Max(0.01f, stunSeconds)) : 0f;
+    public bool StunBarShown => stunBar != null && stunBar.activeSelf;
     public bool IsAirborne => _phase is Phase.Leaping or Phase.Returning;
     /// <summary>Where the current leap lands (the player's position while it crouches).</summary>
     public Vector3 LandingPoint => _leapTo;
@@ -156,6 +166,7 @@ public class Bowser : InteractableBase
     {
         if (warningGlow != null) warningGlow.SetActive(false);
         if (landingMarker != null) landingMarker.SetActive(false);
+        if (stunBar != null) stunBar.SetActive(false);
         if (model != null) { _modelPosition = model.localPosition; _modelScale = model.localScale; }
         BodyBox(); // standing
     }
@@ -194,6 +205,7 @@ public class Bowser : InteractableBase
         if (_goal != null) _goal.Locked = false;
         if (warningGlow != null) warningGlow.SetActive(false);
         if (landingMarker != null) landingMarker.SetActive(false);
+        if (stunBar != null) stunBar.SetActive(false);
         ResetModel();
         if (defeatEffect != null) Instantiate(defeatEffect, HitPoint, Quaternion.identity);
         _knockVelocity = Vector3.up * 1.6f;
@@ -215,6 +227,21 @@ public class Bowser : InteractableBase
         if (model != null) model.gameObject.SetActive(Time.time >= _flashUntil || Mathf.Repeat(Time.time, 0.1f) < 0.05f);
         var cam = Camera.main;
         if (cam != null) Tick(Time.deltaTime, cam.transform.position);
+        if (cam != null && stunBar != null && stunBar.activeSelf)
+            stunBar.transform.rotation = Quaternion.LookRotation(stunBar.transform.position - cam.transform.position, Vector3.up); // faces the player
+    }
+
+    /// <summary>Shows the stun bar while stunned, its fill the stun left (anchored at the left end).</summary>
+    private void UpdateStunBar()
+    {
+        if (stunBar == null) return;
+        bool show = _phase == Phase.Stunned && !IsDefeated;
+        if (stunBar.activeSelf != show) stunBar.SetActive(show);
+        if (!show || stunFill == null) return;
+        if (_stunFillScale == Vector3.zero) { _stunFillScale = stunFill.localScale; _stunFillPosition = stunFill.localPosition; }
+        float left = StunLeft;
+        stunFill.localScale = new Vector3(_stunFillScale.x * left, _stunFillScale.y, _stunFillScale.z);
+        stunFill.localPosition = _stunFillPosition + Vector3.left * (_stunFillScale.x * (1f - left) * 0.5f);
     }
 
     /// <summary>Paces, faces the player, attacks (fire from afar, a leap up close) and hurts on contact. Returns a flame if one was fired this step.</summary>
@@ -290,10 +317,12 @@ public class Bowser : InteractableBase
                 break;
 
             case Phase.Stunned:
+                UpdateStunBar();
                 if (phaseAge < stunSeconds) break;
                 _leapFrom = transform.position;
                 _leapTo = PostPosition();
                 Enter(Phase.Returning);
+                UpdateStunBar();
                 AudioManager.Play(Sfx.Jump);
                 break;
 
@@ -356,6 +385,7 @@ public class Bowser : InteractableBase
         if (offset.magnitude <= shockRadius && !gs.IsAirborne) gs.TakeHit("Bowser's stomp");
         Debug.Log($"[Bowser] Landed {offset.magnitude:F2} m from the player{(gs.IsAirborne ? " (in the air)" : "")} — stunned.");
         Enter(Phase.Stunned);
+        UpdateStunBar();
     }
 
     private void ShowMarker(Vector3 at)

@@ -318,6 +318,8 @@ MonoBehaviour:
   speed: 1.6
   hitRadius: 0.3
   flyPastDistance: 3
+  passWindow: 0.6
+  headClearance: 0.1
 --- !u!1 &7225494155540042193
 GameObject:
   m_ObjectHideFlags: 0

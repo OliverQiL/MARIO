@@ -300,6 +300,7 @@ public class GameStateManager : MonoBehaviour
         isStageActive = false;
         Debug.Log($"[GameStateManager] Stage {StageName} cleared.");
         AddScore(stageClearBonus);
+        if (stageIndex >= FinalStage) return; // the last stage: the game is won, there's no next (the HUD stays on 2-4, not "3-1")
         stageIndex = ShortGame && stageIndex == StagesPerWorld ? FinalStage : stageIndex + 1;
     }
 }

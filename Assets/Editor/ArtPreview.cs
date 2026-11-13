@@ -89,13 +89,20 @@ public static class ArtPreview
 
         // World 2: Bowser, his flame, a thrown shell, the axe, and a score popup (for its size against them).
         var boss = new GameObject("Boss").transform;
-        Place(Load(GameContentSetup.BowserPath), boss, new Vector3(-0.3f, 0f, 0f), 200f);
+        var stunnedBowser = Place(Load(GameContentSetup.BowserPath), boss, new Vector3(-0.3f, 0f, 0f), 200f);
+        // Stunned, half way through: the bar over his head, half drained, facing the camera.
+        var stunBar = stunnedBowser.transform.Find("StunBar");
+        stunBar.gameObject.SetActive(true);
+        var stunFill = stunBar.Find("Fill");
+        stunFill.localScale = new Vector3(stunFill.localScale.x * 0.5f, stunFill.localScale.y, stunFill.localScale.z);
+        stunFill.localPosition += Vector3.left * stunFill.localScale.x * 0.5f;
+        stunBar.rotation = Quaternion.LookRotation(stunBar.position - new Vector3(0.1f, 0.85f, -2.6f), Vector3.up);
         Place(Load(GameContentSetup.BossFlamePath), boss, new Vector3(0.25f, 0.9f, 0f), 250f);
         Place(Load(GameContentSetup.ThrownShellPath), boss, new Vector3(0.3f, 0f, -0.2f), 200f);
         var castle = Load(GameContentSetup.CampaignStagePath("2-4"));
         Place(castle.transform.Find("Goal").gameObject, boss, new Vector3(0.75f, 0f, 0.1f), 180f);
         var font = AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P SDF.asset");
-        var popup = ScorePopup.Spawn("+1000", new Vector3(-0.3f, 1.25f, 0f), new Color(1f, 0.85f, 0.2f), font, null);
+        var popup = ScorePopup.Spawn("+1000", new Vector3(0.6f, 1.35f, 0f), new Color(1f, 0.85f, 0.2f), font, null);
         popup.transform.SetParent(boss, true);
         popup.transform.rotation = Quaternion.identity;
         popup.enabled = false;
@@ -130,6 +137,18 @@ public static class ArtPreview
         arrow.transform.SetLocalPositionAndRotation(new Vector3(0f, 0.01f, 0.05f), Quaternion.LookRotation(new Vector3(0.3f, 0f, 0.55f)));
         arrow.transform.localScale = Vector3.one * 1.2f;
         ShootLayout(arrowShot, Path.Combine(outDir, "enemy_arrow.png"), 0.35f);
+
+        // The cannon's red marker, from the player's eyes 2.5 m away.
+        EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+        var cannonShot = new GameObject("CannonShot");
+        var cannonCopy = Object.Instantiate(Load(GameContentSetup.StandardStagePath).transform.Find("BulletBillCannon").gameObject, cannonShot.transform);
+        cannonCopy.transform.localPosition = new Vector3(0.3f, 0f, 2.5f);
+        var cannonFloor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+        cannonFloor.transform.localScale = new Vector3(0.6f, 1f, 0.6f);
+        var cannonFloorRenderer = cannonFloor.GetComponent<Renderer>();
+        cannonFloorRenderer.sharedMaterial = new Material(cannonFloorRenderer.sharedMaterial) { color = new Color(0.72f, 0.66f, 0.58f) };
+        Shoot(Path.Combine(outDir, "cannon.png"), new Vector3(0f, 1.5f, 0f), new Vector3(0.3f, 1.3f, 2.5f), 1200, 1200);
+        Object.DestroyImmediate(cannonFloor);
 
         // The objective indicator: training's ? block with the gold marker above it and the gold floor arrow towards it.
         EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);

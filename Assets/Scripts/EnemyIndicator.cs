@@ -13,7 +13,8 @@ using UnityEngine;
 ///   player's feet (stomp range), where it can be seen.
 /// - Edge pointer: when the nearest one is outside the view (more than
 ///   inViewDegrees off the view direction, or behind), a small red arrow near
-///   the edge of the view points towards it. It's a child of the AR camera,
+///   the edge of the view points towards it. With no enemy to point at, a
+///   Bullet Bill cannon that's warning (about to fire) out of view gets it. It's a child of the AR camera,
 ///   so it's in both headset eyes.
 ///
 /// The arrows are instances of arrowPrefab (built by GameContentSetup:
@@ -37,7 +38,11 @@ public class EnemyIndicator : MonoBehaviour
     [SerializeField] private float pointerRadius = 0.15f;
     [SerializeField] private float pointerScale = 0.45f;
 
+    [Tooltip("Seconds for a floor arrow to settle on its new spot and heading (smooths head bob and enemies swapping order).")]
+    [SerializeField] private float followSeconds = 0.18f;
+
     private readonly List<GameObject> _arrows = new();
+    private readonly List<float> _phases = new();
     private GameObject _pointer;
     private float _clock;
 
@@ -74,29 +79,47 @@ public class EnemyIndicator : MonoBehaviour
             : new List<(Goomba enemy, float distance)>();
 
         // Floor arrows.
-        while (_arrows.Count < enemies.Count) _arrows.Add(Spawn(null, "EnemyArrow"));
+        while (_arrows.Count < enemies.Count) { _arrows.Add(Spawn(null, "EnemyArrow")); _phases.Add(0f); }
         for (int i = 0; i < _arrows.Count; i++)
         {
             var arrow = _arrows[i];
             bool show = i < enemies.Count;
+            bool appearing = show && !arrow.activeSelf;
             if (arrow.activeSelf != show) arrow.SetActive(show);
             if (!show) continue;
             var (enemy, distance) = enemies[i];
             var direction = Flat(enemy.transform.position - player).normalized;
             float along = Mathf.Min(floorDistance, distance - 0.4f);
             var at = player + direction * along;
-            arrow.transform.SetPositionAndRotation(new Vector3(at.x, enemy.transform.position.y + 0.01f, at.z), Quaternion.LookRotation(direction, Vector3.up));
+            var targetPosition = new Vector3(at.x, enemy.transform.position.y + 0.01f, at.z);
+            var targetRotation = Quaternion.LookRotation(direction, Vector3.up);
+            // Eased towards where it should be, so head bob and a change of nearest enemy glide rather than jump.
+            float follow = appearing || dt <= 0f ? 1f : 1f - Mathf.Exp(-dt / Mathf.Max(0.01f, followSeconds));
+            arrow.transform.SetPositionAndRotation(Vector3.Lerp(arrow.transform.position, targetPosition, follow),
+                                                   Quaternion.Slerp(arrow.transform.rotation, targetRotation, follow));
+            // A calm pulse: it quickens a little as the enemy closes in. The phase is accumulated,
+            // so a changing speed never makes it jump (that was the shaking).
             float urgency = Mathf.InverseLerp(range, nearHide, distance); // 0 far … 1 at the feet
-            float pulse = 1f + 0.15f * Mathf.Sin(_clock * Mathf.Lerp(4f, 14f, urgency));
-            arrow.transform.localScale = Vector3.one * (Mathf.Lerp(0.9f, 1.3f, urgency) * pulse);
+            _phases[i] += dt * Mathf.Lerp(3f, 6f, urgency);
+            float pulse = 1f + 0.06f * Mathf.Sin(_phases[i]);
+            float size = Mathf.Lerp(0.9f, 1.2f, urgency) * pulse;
+            arrow.transform.localScale = Vector3.Lerp(arrow.transform.localScale, Vector3.one * size, appearing ? 1f : follow);
         }
 
-        // Edge pointer for the nearest, when it's out of view.
+        // Edge pointer for the nearest, when it's out of view; else for a cannon about to fire.
         if (_pointer == null) _pointer = Spawn(cam, "EnemyPointer");
         bool pointer = false;
-        if (enemies.Count > 0)
+        Vector3? pointAt = enemies.Count > 0 ? enemies[0].enemy.HitPoint : null;
+        if (live && (pointAt == null || Vector3.Angle(cam.forward, pointAt.Value - player) <= inViewDegrees))
+            foreach (var cannon in BulletBillCannon.All)
+                if (cannon != null && cannon.isActiveAndEnabled && cannon.IsWarning && Vector3.Angle(cam.forward, cannon.HeadPosition - player) > inViewDegrees)
+                {
+                    pointAt = cannon.HeadPosition;
+                    break;
+                }
+        if (pointAt is { } target)
         {
-            var local = cam.InverseTransformPoint(enemies[0].enemy.HitPoint);
+            var local = cam.InverseTransformPoint(target);
             float offView = Vector3.Angle(Vector3.forward, local);
             if (offView > inViewDegrees)
             {

@@ -10,6 +10,11 @@ using UnityEngine;
 /// player is too close to have time to react. Paused while the session isn't ready.
 /// Difficulty adds shots, shortens the interval and speeds up Bills on later stages.
 ///
+/// A red pixel arrow (marker) bobs over its head, pointing down at it, while
+/// it has shots left, bobbing faster while it warns; EnemyIndicator also
+/// points at a warning cannon that's out of view (Oliver 2026-11-13: the
+/// cannon blended into the stage).
+///
 /// Tick(dt) drives it so headless tests can too.
 /// </summary>
 public class BulletBillCannon : MonoBehaviour
@@ -25,6 +30,8 @@ public class BulletBillCannon : MonoBehaviour
     [SerializeField] private GameObject warningGlow;
     [Tooltip("Smoke puff out of the barrel when it fires.")]
     [SerializeField] private GameObject fireEffect;
+    [Tooltip("The arrow over the head (a flat arrow, +Z its tip, +Y its face): faces the player and bobs.")]
+    [SerializeField] private Transform marker;
 
     [SerializeField] private int maxShots = 2;
     [SerializeField] private float initialDelay = 8f;
@@ -40,7 +47,14 @@ public class BulletBillCannon : MonoBehaviour
     /// <summary>Raised when a cannon starts its warning (for the HUD).</summary>
     public static event Action OnWarning;
 
+    /// <summary>The live cannons (EnemyIndicator points at warning ones).</summary>
+    public static readonly System.Collections.Generic.List<BulletBillCannon> All = new();
+
     public bool IsWarning => _warnLeft > 0f;
+    /// <summary>Its head, where a Bill comes from.</summary>
+    public Vector3 HeadPosition => head != null ? head.position : transform.position;
+    public bool MarkerShown => marker != null && marker.gameObject.activeSelf;
+    public Transform Marker => marker;
     public int Fired => _fired;
     public int MaxShots => maxShots + Difficulty.ExtraShots;
 
@@ -49,10 +63,17 @@ public class BulletBillCannon : MonoBehaviour
     private float _timer;
     private float _warnLeft;
     private Vector3 _glowScale = Vector3.one;
+    private Vector3 _markerLocal;
+    private float _markerClock;
+    private bool _markerReady;
+
+    private void OnEnable() { if (!All.Contains(this)) All.Add(this); }
+    private void OnDisable() => All.Remove(this);
 
     private void Awake()
     {
         if (warningGlow != null) _glowScale = warningGlow.transform.localScale;
+        if (marker != null) { _markerLocal = marker.localPosition; _markerReady = true; }
     }
 
     private void Start()
@@ -82,6 +103,7 @@ public class BulletBillCannon : MonoBehaviour
     /// <summary>Returns the Bill fired this tick, if any.</summary>
     public BulletBill Tick(float dt, Vector3 playerEyes)
     {
+        UpdateMarker(dt, playerEyes);
         var gs = GameStateManager.Instance;
         if (gs == null || !gs.IsSessionReady || head == null) return null;
 
@@ -110,6 +132,22 @@ public class BulletBillCannon : MonoBehaviour
         OnWarning?.Invoke();
         AudioManager.Play(Sfx.Warning);
         return null;
+    }
+
+    /// <summary>The arrow over the head: shown while it has shots left, bobbing (faster while warning), turned to face the player.</summary>
+    private void UpdateMarker(float dt, Vector3 playerEyes)
+    {
+        if (marker == null) return;
+        if (!_markerReady) { _markerLocal = marker.localPosition; _markerReady = true; } // edit-mode tests: no Awake
+        bool show = _fired < MaxShots || _warnLeft > 0f;
+        if (marker.gameObject.activeSelf != show) marker.gameObject.SetActive(show);
+        if (!show) return;
+        _markerClock += dt * (IsWarning ? 3f : 1f);
+        marker.localPosition = _markerLocal + Vector3.up * (0.06f * Mathf.Sin(_markerClock * 4f));
+        var toEye = playerEyes - marker.position;
+        toEye.y = 0f;
+        if (toEye.sqrMagnitude < 1e-4f) toEye = Vector3.forward;
+        marker.rotation = Quaternion.LookRotation(Vector3.down, toEye.normalized);
     }
 
     private void FacePlayer(float dt, Vector3 playerEyes)

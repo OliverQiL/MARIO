@@ -261,6 +261,90 @@ public static class PixelArt
         return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
     }
 
+    // A chunky 16×16 arrow pointing up (the texture's top = +Z on the floor quad): a dark
+    // outline, a lighter left edge and a darker right edge on the fill, like the NES sprites.
+    private static readonly string[] ArrowRows =
+    {
+        ".......OO.......",
+        "......OHFO......",
+        ".....OHFFSO.....",
+        "....OHFFFFSO....",
+        "...OHFFFFFFSO...",
+        "..OHFFFFFFFFSO..",
+        ".OHFFFFFFFFFFSO.",
+        "OOOOOHFFFFSOOOOO",
+        "....OHFFFFSO....",
+        "....OHFFFFSO....",
+        "....OHFFFFSO....",
+        "....OHFFFFSO....",
+        "....OHFFFFSO....",
+        "....OHFFFFSO....",
+        "....OSSSSSSO....",
+        "....OOOOOOOO....",
+    };
+
+    /// <summary>The red enemy arrow (EnemyIndicator, the cannon marker): Mario red.</summary>
+    public static Texture2D EnemyArrow() => Arrow("EnemyArrow", "3A0606", "FF8A70", "E52521", "9C1010");
+
+    /// <summary>The gold objective arrow (ObjectiveIndicator): ? block gold.</summary>
+    public static Texture2D ObjectiveArrow() => Arrow("ObjectiveArrow", "4A2A00", "FFF3A8", "FFC81E", "D68A00");
+
+    private static Texture2D Arrow(string name, string outline, string light, string fill, string shade)
+    {
+        var tex = Save(name, ArrowRows, new Dictionary<char, Color>
+        {
+            ['.'] = new Color(0f, 0f, 0f, 0f), ['O'] = Hex(outline), ['H'] = Hex(light), ['F'] = Hex(fill), ['S'] = Hex(shade),
+        });
+        var importer = (TextureImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(tex));
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.alphaIsTransparency = true;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
+    }
+
+    /// <summary>
+    /// The floor mark under a ? block (players miss blocks overhead): a soft square shadow
+    /// with a faint gold "?" in it, so a glance at the floor says "something above".
+    /// </summary>
+    public static Texture2D QuestionShadow()
+    {
+        string[] glyph =
+        {
+            "..GGGG..",
+            ".GG..GG.",
+            ".....GG.",
+            "....GG..",
+            "...GG...",
+            "...GG...",
+            "........",
+            "...GG...",
+        };
+        const int size = 32;
+        var rows = new string[size];
+        var palette = new Dictionary<char, Color> { ['G'] = new Color(1f, 0.85f, 0.25f, 0.55f) };
+        for (int i = 0; i <= 9; i++) palette[(char)('0' + i)] = new Color(0f, 0f, 0f, i / 9f * 0.4f);
+        for (int y = 0; y < size; y++)
+        {
+            var chars = new char[size];
+            for (int x = 0; x < size; x++)
+            {
+                // A rounded square, darker in the middle.
+                float dx = Mathf.Abs((x + 0.5f) / size * 2f - 1f), dy = Mathf.Abs((y + 0.5f) / size * 2f - 1f);
+                float d = Mathf.Pow(Mathf.Pow(dx, 4f) + Mathf.Pow(dy, 4f), 0.25f);
+                chars[x] = (char)('0' + Mathf.RoundToInt(Mathf.SmoothStep(0f, 1f, Mathf.Clamp01((1f - d) * 2.2f)) * 9f));
+                int gx = (x - 8) / 2, gy = (y - 8) / 2; // the glyph, 2×, in the middle
+                if (x >= 8 && y >= 8 && gx < 8 && gy < 8 && glyph[gy][gx] == 'G') chars[x] = 'G';
+            }
+            rows[y] = new string(chars);
+        }
+        var tex = Save("QuestionShadow", rows, palette);
+        var importer = (TextureImporter)AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(tex));
+        importer.wrapMode = TextureWrapMode.Clamp;
+        importer.alphaIsTransparency = true;
+        importer.SaveAndReimport();
+        return AssetDatabase.LoadAssetAtPath<Texture2D>(AssetDatabase.GetAssetPath(tex));
+    }
+
     /// <summary>Where Bowser will land: a bold red ring with a faint red fill and a dot in the middle, smooth and clamped.</summary>
     public static Texture2D LandingTarget()
     {

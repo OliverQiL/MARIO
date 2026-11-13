@@ -13,23 +13,27 @@ public class Pickup : MonoBehaviour
     [SerializeField] private float collectRadius = 0.45f;
     [SerializeField] private float spinDegreesPerSecond = 90f;
 
-    [SerializeField] private float dropSeconds = 0.5f;
+    [Tooltip("Seconds of the hop out of the ? block to where it lands.")]
+    [SerializeField] private float dropSeconds = 0.8f;
     [Tooltip("Sparkle shown when collected.")]
     [SerializeField] private GameObject collectEffect;
 
     public Kind PickupKind => kind;
 
     private Vector3 _dropStart, _dropEnd;
-    private float _dropElapsed = float.PositiveInfinity;
+    private float _dropElapsed = float.PositiveInfinity, _hopHeight;
 
-    /// <summary>Animates from <paramref name="start"/> down to the current (landing) position.</summary>
-    public void DropFrom(Vector3 start)
+    /// <summary>Hops from <paramref name="start"/> (the block), up <paramref name="height"/>, then down to the current (landing) position.</summary>
+    public void HopFrom(Vector3 start, float height)
     {
         _dropEnd = transform.position;
         _dropStart = start;
+        _hopHeight = height;
         _dropElapsed = 0f;
         transform.position = start;
     }
+
+    public bool IsLanding => _dropElapsed < dropSeconds;
 
     private void Update()
     {
@@ -38,9 +42,9 @@ public class Pickup : MonoBehaviour
         {
             _dropElapsed += Time.deltaTime;
             float t = Mathf.Clamp01(_dropElapsed / dropSeconds);
-            // Horizontal glide, vertical ease-in (falls faster as it goes).
+            // A hop: glides across while it rises a little above the block and falls to the floor.
             var p = Vector3.Lerp(_dropStart, _dropEnd, t);
-            p.y = Mathf.Lerp(_dropStart.y, _dropEnd.y, t * t);
+            p.y = Mathf.Lerp(_dropStart.y, _dropEnd.y, t * t) + 4f * _hopHeight * t * (1f - t);
             transform.position = p;
         }
         var cam = Camera.main;

@@ -332,5 +332,15 @@ The app opens on a menu, before the scan (it replaces "jump to start scanning");
   - **misses** if they're out of its path as it draws level (0.35 m), as before;
   - **passes under** if at any moment from 0.6 m before them to 0.6 m after (0.3 s each way) they're ducked: a squat's window (now 1.5 s, renewed by the classifier's repeated reports of a held squat), the phone seeing a held squat, or simply their **head 10 cm or more below the Bill's centre**;
   - otherwise **hits**, decided at the end of that window, so a squat reported a moment late still counts.
+
+## Final polish (2026-11-13)
+
+- **Pixel arrows.** The red (enemies, cannon) and gold (objectives) arrows are 16×16 pixel sprites with a dark outline and NES-style shading, unlit. The red floor arrows pulse calmly (±6 %, quickening a little as an enemy closes in) and glide to their spot over about 0.2 s instead of following every head bob.
+- **Power-ups land in view.** A power-up hops out of the ? block (25 cm up, 0.8 s) and lands **0.9 m in front of the player**, the way they face.
+- **A "?" on the floor.** Under each unused ? block, a soft square shadow with a faint gold "?" breathes slowly on the floor: a reminder of a block overhead. It goes when the block is spent.
+- **Bowser.** His leap takes **1.5 s** (was 0.9) and he's stunned for **3 s** (was 1.6), with a bar over his head that drains as the stun runs out.
+- **One Koopa at a time, always another.** A Koopa never spawns while another is in play (walking, a shell on the floor, held or sliding). After the wave, a spawner whose wave had a Koopa sends a new one 3 s after the last shell is used up, for the rest of the stage. Goombas don't come back.
+- **Cannon marker.** A red pixel arrow bobs over each cannon's head while it has shots left, faster while it warns. A warning cannon out of view gets the red edge pointer when no enemy needs it.
+- **Game clear.** The stage counter stops at 2-4; the HUD no longer shows 3-1 after the game is won.
 - **Bowser's hitbox (2026-11-10).** A fireball hits him anywhere on his body art (a box round his model, legs to horns), not just within 0.3 m of his head as before. Other targets still use their single hit point. Nothing hits him mid-leap.
 - **Spent ? blocks.** A block hit while see-through (head within 0.25 m) kept its "?" look afterwards: the see-through fade restored the material it had saved. The fade now keeps a material an object changes to.

@@ -355,6 +355,13 @@ public static class GameContentSetup
         so.FindProperty("column").objectReferenceValue = column.transform;
         so.FindProperty("warningGlow").objectReferenceValue = glow;
         so.FindProperty("fireEffect").objectReferenceValue = Effect(SmokePath);
+        // A red pixel arrow bobbing over the head, so the cannon is spotted (Oliver 2026-11-13: it blended in).
+        var marker = new GameObject("CannonMarker");
+        marker.transform.SetParent(head.transform, false);
+        marker.transform.localPosition = new Vector3(0f, 0.45f, 0f);
+        marker.transform.localRotation = Quaternion.LookRotation(Vector3.down, Vector3.back); // pointing down (turned to the player at runtime)
+        Visual(PrimitiveType.Quad, "Arrow", marker.transform, Vector3.zero, Vector3.one * 1.6f, m.EnemyArrow).GetComponent<MeshFilter>().sharedMesh = ArrowMesh();
+        so.FindProperty("marker").objectReferenceValue = marker.transform;
         so.ApplyModifiedPropertiesWithoutUndo();
     }
 
@@ -433,7 +440,7 @@ public static class GameContentSetup
         return Save(root, ObjectiveArrowPath);
     }
 
-    /// <summary>A flat arrow in the XZ plane facing up (+Y): a shaft and a wide triangular head, 0.3 m long, tip at +Z.</summary>
+    /// <summary>A 0.3 m square in the XZ plane facing up (+Y), textured with the pixel arrow: its tip at +Z.</summary>
     private static Mesh ArrowMesh()
     {
         var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(ArrowMeshPath);
@@ -442,18 +449,13 @@ public static class GameContentSetup
             mesh = new Mesh { name = "Arrow" };
             AssetDatabase.CreateAsset(mesh, ArrowMeshPath);
         }
-        var v = new[]
-        {
-            new Vector3(-0.035f, 0f, -0.15f), new Vector3(-0.035f, 0f, 0.02f), new Vector3(0.035f, 0f, 0.02f), new Vector3(0.035f, 0f, -0.15f), // shaft
-            new Vector3(-0.1f, 0f, 0.02f), new Vector3(0f, 0f, 0.15f), new Vector3(0.1f, 0f, 0.02f),                                          // head
-        };
+        const float h = 0.15f;
+        var v = new[] { new Vector3(-h, 0f, -h), new Vector3(-h, 0f, h), new Vector3(h, 0f, h), new Vector3(h, 0f, -h) };
         mesh.Clear();
         mesh.SetVertices(v);
-        var normals = new Vector3[v.Length];
-        for (int i = 0; i < normals.Length; i++) normals[i] = Vector3.up;
-        mesh.SetNormals(normals);
-        mesh.SetUVs(0, new Vector2[v.Length]);
-        mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3, 4, 5, 6 }, 0); // clockwise seen from above
+        mesh.SetNormals(new[] { Vector3.up, Vector3.up, Vector3.up, Vector3.up });
+        mesh.SetUVs(0, new[] { new Vector2(0f, 0f), new Vector2(0f, 1f), new Vector2(1f, 1f), new Vector2(1f, 0f) });
+        mesh.SetTriangles(new[] { 0, 1, 2, 0, 2, 3 }, 0); // clockwise seen from above
         mesh.RecalculateBounds();
         EditorUtility.SetDirty(mesh);
         return mesh;
@@ -980,6 +982,11 @@ public static class GameContentSetup
         Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.12f, -0.12f), new Vector3(0.22f, 0.18f, 0.2f), m.BowserHair);
         Visual(PrimitiveType.Sphere, "Mane", head, new Vector3(0f, 0.02f, -0.18f), new Vector3(0.2f, 0.18f, 0.16f), m.BowserHair);
         var glow = Visual(PrimitiveType.Sphere, "MouthGlow", head, new Vector3(0f, -0.08f, 0.24f), new Vector3(0.12f, 0.08f, 0.06f), m.CannonGlow);
+        // Stunned: a bar over his head that drains as the stun runs out (billboarded at runtime).
+        var stunBar = Group("StunBar", root.transform, new Vector3(0f, 1.3f, 0f));
+        Visual(PrimitiveType.Quad, "Back", stunBar, Vector3.zero, new Vector3(0.66f, 0.1f, 1f), m.StunBarBack);
+        var stunFill = Visual(PrimitiveType.Quad, "Fill", stunBar, new Vector3(0f, 0f, -0.01f), new Vector3(0.6f, 0.06f, 1f), m.StunBarFill);
+        stunBar.gameObject.SetActive(false);
         // Where his leap will land: a red target on the floor, its diameter the shockwave's (1.4 m in the world).
         var marker = Visual(PrimitiveType.Quad, "LandingMarker", root.transform, new Vector3(0f, 0.006f, 0f), Vector3.one, m.BowserLanding, new Vector3(90f, 0f, 0f));
 
@@ -991,6 +998,8 @@ public static class GameContentSetup
         so.FindProperty("defeatEffect").objectReferenceValue = Effect(ConfettiPath);
         so.FindProperty("landingMarker").objectReferenceValue = marker;
         so.FindProperty("landEffect").objectReferenceValue = Effect(SmokePath);
+        so.FindProperty("stunBar").objectReferenceValue = stunBar.gameObject;
+        so.FindProperty("stunFill").objectReferenceValue = stunFill.transform;
         so.ApplyModifiedPropertiesWithoutUndo();
         Enemy(root);
         // Sized in the world (after Enemy's growth) to the shockwave: 2 x shockRadius.
@@ -1079,6 +1088,10 @@ public static class GameContentSetup
         var eh = block.AddComponent<EyeHeightPlacement>();
         SetFloat(eh, "offsetFromEyes", 0.35f); // bottom clears the head; reached by jumping
         SetFloat(eh, "minHeightAboveFloor", 1.1f);
+        // Its mark on the floor below (a soft shadow with a faint "?"): blocks overhead are out of
+        // the narrow AR view, the floor isn't (Oliver 2026-11-13). Gone once the block is spent.
+        var mark = Visual(PrimitiveType.Quad, name + "Mark", parent, new Vector3(localPos.x, 0.005f, localPos.z), Vector3.one * 0.42f, m.QuestionShadow, new Vector3(90f, 0f, 0f));
+        Set(qb, "floorMark", mark);
     }
 
     // ---- effects (Burst variants) ----
@@ -1404,8 +1417,47 @@ public static class GameContentSetup
         public readonly Material BowserLanding = TransparentMat("BowserLanding", PixelArt.LandingTarget());
         public readonly Material Ghost = TransparentMat("Ghost", null); // ProximityFade tints it per object
         public readonly Material RangeRing = Mat("RangeRing", Color.white, emission: new Color(0.6f, 0.6f, 0.6f), smoothness: 0f);
-        public readonly Material EnemyArrow = Mat("EnemyArrow", new Color(1f, 0.12f, 0.08f), emission: new Color(0.9f, 0.05f, 0.02f), smoothness: 0.2f);
-        public readonly Material ObjectiveArrow = Mat("ObjectiveArrow", new Color(1f, 0.82f, 0.1f), emission: new Color(0.95f, 0.7f, 0.05f), smoothness: 0.2f);
+        // Pixel-art arrows (Oliver 2026-11-13: the plain ones were jarring), unlit so they read the same in any light.
+        public readonly Material EnemyArrow = SpriteMat("EnemyArrow", PixelArt.EnemyArrow());
+        public readonly Material ObjectiveArrow = SpriteMat("ObjectiveArrow", PixelArt.ObjectiveArrow());
+        public readonly Material QuestionShadow = TransparentMat("QuestionShadow", PixelArt.QuestionShadow());
+        public readonly Material StunBarBack = SolidMat("StunBarBack", new Color(0.12f, 0.06f, 0.02f));
+        public readonly Material StunBarFill = SolidMat("StunBarFill", new Color(1f, 0.82f, 0.15f));
+
+        /// <summary>Pixel art on a quad: unlit, alpha blended, both faces drawn.</summary>
+        private static Material SpriteMat(string name, Texture2D texture)
+        {
+            var mat = TransparentMat(name, texture);
+            mat.shader = Shader.Find("Universal Render Pipeline/Unlit");
+            TransparentMat(name, texture); // re-apply the transparent settings for the new shader
+            mat.SetFloat("_Cull", 0f);
+            mat.DisableKeyword("_EMISSION");
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
+
+        /// <summary>A flat, opaque unlit colour, both faces drawn (the stun bar: depth puts the fill in front of its back).</summary>
+        private static Material SolidMat(string name, Color color)
+        {
+            var path = $"{MaterialDir}/{name}.mat";
+            var mat = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (mat == null)
+            {
+                Directory.CreateDirectory(MaterialDir);
+                mat = new Material(Shader.Find("Universal Render Pipeline/Unlit"));
+                AssetDatabase.CreateAsset(mat, path);
+            }
+            mat.shader = Shader.Find("Universal Render Pipeline/Unlit");
+            mat.SetColor("_BaseColor", color);
+            mat.SetFloat("_Surface", 0f);
+            mat.SetFloat("_ZWrite", 1f);
+            mat.SetFloat("_Cull", 0f);
+            mat.SetOverrideTag("RenderType", "Opaque");
+            mat.DisableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            mat.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Geometry;
+            EditorUtility.SetDirty(mat);
+            return mat;
+        }
 
         /// <summary>Unlit, alpha-blended, no depth write: for soft shadows on the floor.</summary>
         private static Material TransparentMat(string name, Texture2D texture)

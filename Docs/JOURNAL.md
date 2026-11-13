@@ -262,3 +262,37 @@ A short log of each problem met after the visualizer was connected to John's gat
   - The Bill judges over a window from 0.6 m before the player to 0.6 m after (0.3 s each way), so a duck anywhere in it counts.
   - Repeated squat reports keep the player ducked, and a squat event now lasts 1.5 s (was 1).
   - Standing up, or a quick squat long before the Bill arrives, still gets hit. Bowser's fire, which flies like a Bill, gets the same rules.
+
+---
+
+## 2026-11-13 · Final polish
+
+**44. Arrows looked out of place**
+- **Problem:** the red and gold arrows were flat shapes in plain colours, jarring next to the pixel-art blocks.
+- **Choice:** both are now chunky 16×16 pixel sprites in the NES style: a dark outline, a light left edge and a shaded right edge. Red uses Mario red and gold uses ? block gold. They're unlit, so they read the same in any room. The arrow logic is unchanged.
+
+**45. Power-ups missed under the block**
+- **Problem:** a power-up dropped just past the ? block, often outside the view of a player looking up at it.
+- **Choice:** it hops out (25 cm above the block, 0.8 s) and lands 0.9 m in front of the player, the way they face.
+
+**46. ? blocks overhead went unnoticed**
+- **Problem:** with the narrow AR view, players looking ahead never saw blocks 2 m up. Enemies have arrows; blocks had nothing.
+- **Choice:** something subtle rather than another arrow: a soft square shadow on the floor under each unused block, with a faint gold "?" in it, breathing slowly. The floor is in view when the block isn't. It goes once the block is spent.
+
+**47. Bowser's jump too quick, his stun too short**
+- **Choice:** his leap now takes 1.5 s (was 0.9 s), leaving time to get out of the red target. He stays stunned for 3 s (was 1.6 s), with a bar over his head that drains as the stun runs out.
+
+**48. Koopas: too many, then none**
+- **Problem:** a stage could have two Koopas out at once, and once the wave's Koopas were used up there were no more shells, including for Bowser.
+- **Choice:** at most one Koopa in play at a time: walking, a shell on the floor, held, or sliding. After the wave, a new Koopa comes 3 s after the last shell is used up (or the Koopa is defeated), for as long as the stage lasts. Goombas still never come back.
+
+**49. The cannon blended in**
+- **Choice:** a red pixel arrow bobs over the cannon's head while it has shots left, faster while it warns. When it's about to fire out of view and no enemy needs the edge pointer, the red edge pointer points at it.
+
+**50. Floor arrows shook**
+- **Problem:** the red floor arrows pulsed violently. The pulse speed changed with distance, so its phase jumped every frame, and the arrows snapped to the head's position (walking bob).
+- **Choice:** a calm pulse (±6 %, its phase accumulated so a speed change never jumps), and the arrows glide to their spot and heading over about 0.2 s.
+
+**51. "3-1" after the game was won**
+- **Problem:** clearing Bowser's castle still moved the stage counter on, so the end screen's HUD showed 3-1.
+- **Choice:** the last stage doesn't advance the counter; the HUD stays on 2-4.
