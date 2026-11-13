@@ -486,15 +486,14 @@ public static class GameplaySmokeTest
         SetField(dSpawner, "enemyPrefabs", new[] { Load<Goomba>(GameContentSetup.GoombaPath) });
         SetField(dSpawner, "totalCount", 1);
         int spawnedCount = 0;
-        float firstSpeed = 0f;
         for (int i = 0; i < 6; i++)
         {
             var e = dSpawner.Tick(i == 0 ? 2.1f : 3.1f, s_Cam.transform.position);
             if (e == null) continue;
-            if (spawnedCount++ == 0) firstSpeed = e.SpeedMultiplier;
+            spawnedCount++;
             UnityEngine.Object.DestroyImmediate(e.gameObject);
         }
-        Check(spawnedCount == 1 && Mathf.Approximately(firstSpeed, 1f), "on stage 5 a 1-enemy spawner still spawns 1, at the same walking speed as stage 1");
+        Check(spawnedCount == 1, "on stage 5 a 1-enemy spawner still spawns 1 (enemy counts don't scale)");
         UnityEngine.Object.DestroyImmediate(dSpawnerGO);
         UnityEngine.Object.DestroyImmediate(difficulty);
         SetField(s_State, "stageIndex", 1);
@@ -1256,7 +1255,7 @@ public static class GameplaySmokeTest
         Check(FlatDistance(blockSpots[0], blockSpots[1]) > 0.3f,
               "each ? block round stands somewhere new (walk over to it)");
 
-        // 2: punch the brick, 3 times; a brick broken some other way doesn't count.
+        // 2: punch the brick, 2 times; a brick broken some other way doesn't count.
         var firstBrick = tutorial.CurrentRound.GetComponentInChildren<BrickBlock>();
         firstBrick.ResolveHit("fireball", s_State);
         tutorial.Tick(0.1f);

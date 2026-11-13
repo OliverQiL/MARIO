@@ -8,7 +8,7 @@ using UnityEngine;
 /// the HUD shows a warning via OnWarning), then fires a BulletBill along the
 /// barrel. The Bill flies straight from then on. It holds fire while the
 /// player is too close to have time to react. Paused while the session isn't ready.
-/// Difficulty adds shots, shortens the interval and speeds up Bills on later stages.
+/// Difficulty adds shots and shortens the interval on later stages; Bills fly at one speed throughout.
 ///
 /// A red pixel arrow (marker) bobs over its head, pointing down at it, while
 /// it has shots left, bobbing faster while it warns; EnemyIndicator also
@@ -166,7 +166,7 @@ public class BulletBillCannon : MonoBehaviour
         _fired++;
         var from = muzzle != null ? muzzle : head;
         _current = Instantiate(bulletBillPrefab, from.position, head.rotation, transform.parent);
-        _current.Launch(head.forward); // constant speed through the game
+        _current.Launch(head.forward);
         AudioManager.Play(Sfx.CannonFire);
         if (fireEffect != null) Instantiate(fireEffect, from.position, head.rotation);
         Debug.Log($"[BulletBillCannon] Fired ({_fired}/{MaxShots}).");

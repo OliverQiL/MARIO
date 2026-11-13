@@ -28,9 +28,6 @@ public class Goomba : InteractableBase
     private bool _knockedOut;              // fireball: flipped, popped up, falling
     private Vector3 _knockVelocity;
 
-    /// <summary>Set by the spawner from Difficulty.</summary>
-    public float SpeedMultiplier { get; set; } = 1f;
-
     public override bool IsActionable => !_dead;
     public override bool RespondsTo(string actionLabel) => actionLabel == "stomp" || actionLabel == "fireball" || actionLabel == ThrownShell.HitLabel;
     public override Vector3 HitPoint => transform.position + Vector3.up * bodyHeight;
@@ -95,7 +92,7 @@ public class Goomba : InteractableBase
         else if (distance > 0.01f) direction = toPlayer / distance;
         else direction = transform.forward;
 
-        transform.position += direction * (speed * SpeedMultiplier * dt);
+        transform.position += direction * (speed * dt);
         if (direction.sqrMagnitude > 0.01f) transform.rotation = Quaternion.LookRotation(direction, Vector3.up);
 
         if (_clock < _passUntil || distance > contactRadius) return;

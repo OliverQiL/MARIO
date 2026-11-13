@@ -35,7 +35,7 @@ public class EnemyWaddle : MonoBehaviour
             return;
         }
 
-        _phase += Time.deltaTime * stepsPerSecond * Mathf.PI * _enemy.SpeedMultiplier;
+        _phase += Time.deltaTime * stepsPerSecond * Mathf.PI;
         float s = Mathf.Sin(_phase);
         transform.localRotation = _restRotation * Quaternion.Euler(0f, 0f, s * rockDegrees);
         transform.localPosition = _restPosition + Vector3.up * (Mathf.Abs(s) * bounce);
