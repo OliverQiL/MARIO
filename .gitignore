@@ -132,3 +132,8 @@ InitTestScene*.unity*
 # Frozen builds and hashes (Builds/ is already ignored above; archives and IPAs anywhere else too)
 *.ipa
 *.xcarchive/
+
+# Background music: copyrighted, never committed. Put your own clip in Assets/Audio/
+# and assign it to AudioManager's Music field (the game runs without one).
+/[Aa]ssets/[Aa]udio/
+/[Aa]ssets/[Aa]udio.meta

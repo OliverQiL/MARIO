@@ -1,0 +1,36 @@
+MIT License
+
+Copyright (c) 2026 Qi Oliver (CG4002 Group B15)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+Third-party material in this repository keeps its own terms and is not covered
+by the licence above:
+
+- Press Start 2P font (Assets/Fonts/): SIL Open Font License 1.1,
+  see Assets/Fonts/PressStart2P-OFL.txt.
+- TextMesh Pro resources (Assets/TextMesh Pro/), including Liberation Sans:
+  shipped with Unity under the Unity Companion License and, for the font,
+  the SIL Open Font License.
+- Unity packages listed in Packages/manifest.json: their own licences.
+- Mario, Goomba, Koopa, Bowser, Bullet Bill and related names and designs are
+  trademarks of Nintendo. This is an unofficial, non-commercial student project,
+  not affiliated with or endorsed by Nintendo. The licence above grants no
+  rights to them.
