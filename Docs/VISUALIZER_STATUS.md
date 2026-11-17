@@ -1,8 +1,8 @@
-# CG4002 AR Visualizer — Project Status & Handoff
+# CG4002 AR Visualizer — Development Log and Handoff
 
-> **Current state (2026-11-13, final; no major changes planned):** integrated with the full system and playtested end to end (boards → Ultra96 → John's gateway → phone → haptics). The phone build **MARIO** points at John's laptop hotspot gateway; **MARIO Local** at the mock gateway on Oliver's Mac. Since the integration: jump-to-clear goals, iris wipes, 87 % gameplay objects with room-filling scenery, the `idle` class, a phone-side repeat filter (the gateway forwards every inference), a look-up hard reset, a training round after every scan, a LAST ACTION debug label, and jumps/squats detected from the phone's own tracking; then (2026-10-29, playtested on the headset) centred, facing-away stage placement, red arrows towards approaching enemies, a floor ring showing when a stomp/clap will register, 1.0 m stomp and clap reach, and 18 % larger enemies; then (2026-11-05, playtested on the headset) a start menu (training + game / game only / god mode, nod to move, clap to pick), Bowser's close-range jump-stomp and stomp damage, one enemy wave per stage, bigger fireballs, a staged shell training step, and a fix for ? blocks keeping their unspent look; then (2026-11-10) a FULL/SHORT game option (short: World 1, then Bowser's castle) and a whole-body hitbox for Bowser; then (2026-11-12/13) gold objective arrows, a fixed 1.70 m stage height, 2 training rounds per step, at most 2 enemies a stage with Koopas first and one at a time, god mode on by default, a lenient Bullet Bill duck, pixel-art arrows, power-ups landing in front of the player, floor "?" marks under ? blocks, a slower Bowser leap with a stun bar, and a cannon marker. Details: §7.2's "Gameplay polish" block and `Docs/GAME_DESIGN.md`. Latest commit synced to the team repo's `visualizer/`.
+> **Final state (2026-11-13).** Integrated with the full system and playtested end to end (wearables → Ultra96 → laptop gateway → phone → haptics). No major changes are planned. For a quick start read the [README](../README.md); for how the system fits together read [`ARCHITECTURE.md`](ARCHITECTURE.md); for current game rules read [`GAME_DESIGN.md`](GAME_DESIGN.md).
 
-**Purpose of this document:** a complete, self-contained summary of the Unity/ARKit AR visualizer subsystem for a university capstone project (CG4002, NUS, Group B15). Written so an AI coding agent with zero prior context on this conversation can pick up development immediately. If you are that agent: read this fully before touching any code, and treat the design report (not included here, but referenced throughout) as the authoritative spec whenever this document is ambiguous or silent.
+**What this document is.** The full development record of the visualizer: every module as it was built, the setup steps, known issues, and the history of decisions. Sections 4 onward are a dated log, so an entry describes a module as of its date and later work may have changed it. Where this file and `GAME_DESIGN.md` disagree, `GAME_DESIGN.md` (its last sections) is current. Names of teammates refer to the component owners: John (comms and the laptop gateway), Xavier (AI on the Ultra96) and Neo (wearables).
 
 ---
 
@@ -266,7 +266,7 @@ A TMP readout under the scan text: occlusion state, mesh chunk count, obstructed
   ```
   Unity -batchmode -quit -projectPath . -buildTarget iOS -executeMethod BuildScript.BuildIOSLocal   # or BuildIOSJohn
   xcodebuild -project ios-build-<profile>/Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Debug \
-    -destination "id=00008150-001259891EF8401C" -derivedDataPath <dd> -allowProvisioningUpdates build
+    -destination "id=<device-udid>" -derivedDataPath <dd> -allowProvisioningUpdates build
   xcrun devicectl device install app --device <id> <dd>/Build/Products/Debug-iphoneos/<App>.app
   xcrun devicectl device process launch --device <id> --console com.cg4002.mario.local   # or com.cg4002.mario
   ```
@@ -569,7 +569,7 @@ The design is in `Docs/GAME_DESIGN.md`, "Maps and layouts".
   2. `xcodebuild … -allowProvisioningUpdates build`
   3. `xcrun devicectl device install app --device <id> …/MARIO.app`
 
-  The iPhone 17's device id is `E0885DCE-CD0A-5C36-B1ED-B2B5869A3B8B`.
+  Find the device id with `xcrun devicectl list devices`.
 
 ### `HUDController.cs` — ⚠️ built; on-device check pending (2026-09-28)
 On the Canvas. It reads ARSessionManager, LevelGenerator, GameStateManager, EventResolver and NetworkClient; it only reads them and doesn't change anything. It has four TMP elements, laid out by `HUDSetup.cs` (**Tools ▸ MARIO ▸ Configure HUD**):
