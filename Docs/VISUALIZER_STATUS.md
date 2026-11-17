@@ -715,7 +715,7 @@ These cost real debugging time once already — don't rediscover them:
 
 - **Xavier**: the retrained model is deployed: one network reading both boards (12 channels), classes `CLAP PUNCH THROW JUMP SQUAT STOMP IDLE` (`integrated/README.md`). It's still unreliable, notably at jumps; `PhoneMotionDetector` backs up jumps and squats.
 - **John**: integration done (protocol, URL `wss://192.168.137.1:8765/`, certificate pinned in the MARIO build). His gateway forwards every inference (the phone filters repeats), uses push mode (estimated 150–230 ms from the end of a motion to the phone) and pings the phone every 100 ms to keep its Wi-Fi awake (the app answers by itself). **To confirm:** his README says the gateway skips `IDLE`, while the plan was to send `idle` to the phone; the phone handles both. Still open: the Section 4 haptic-origin correction mentioned above; possibly regenerating the leaked certificate key.
-- **General**: `EventResolver`'s `minConfidence` (0.6) is moot for now: the Ultra96 sends a fixed confidence (0.9) because the FPGA IP returns only the class. Revisit if real confidences arrive.
+- **General**: `EventResolver`'s `minConfidence` (0.6) is moot for now: the FPGA IP returns only the class, so the Ultra96 sends a vote share (the fraction of its last 5 windows that agree, `integrated/ultra96/models.board.json`) and already drops results below its own per-label thresholds (60-100 %). Revisit if real confidences arrive.
 
 ---
 
